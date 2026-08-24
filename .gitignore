@@ -1,0 +1,10 @@
+# AI デバッグログ（実行のたびに生成される、巨大）
+*.log
+
+# Claude Code のローカル設定
+.claude/settings.local.json
+
+# OS が作るゴミファイル
+Thumbs.db
+desktop.ini
+.DS_Store
