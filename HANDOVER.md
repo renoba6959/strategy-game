@@ -1,8 +1,8 @@
-# game_24.html AI 開発 引き継ぎ書
+# 戦略ゲーム.html AI 開発 引き継ぎ書
 
 ## プロジェクト概要
 
-- **ファイル**: `game_24.html` (単一 HTML ファイル、約 14100 行)
+- **ファイル**: `戦略ゲーム.html` (単一 HTML ファイル、約 14100 行。旧名 `game_24.html` → `game_24 (64).html` → 2026-09-06 に改名)
 - **ジャンル**: ターン制戦術シミュレーション (4 陣営: P/E/C/D)
 - **開発対象**: AI の思考ロジック (`aiTurn` 関数まわり)
 - **ユーザー**: 非エンジニアの日本語話者
@@ -47,7 +47,7 @@
 ```javascript
 node -e "
 var fs = require('fs');
-var html = fs.readFileSync('game_24.html', 'utf8');
+var html = fs.readFileSync('戦略ゲーム.html', 'utf8');
 var re = /<script[^>]*>([\s\S]*?)<\/script>/g;
 var m, n = 0, errs = [];
 while((m = re.exec(html)) !== null){
@@ -109,7 +109,7 @@ if(errs.length) console.log(errs.join('\n'));
 
 ## ファイル内主要関数の位置 (2026-06-02 時点)
 
-現在の game_24.html では以下の位置に主要関数がある。ただし str_replace で編集するたびに行番号がずれるので、grep で最新の位置を確認すること。
+現在の 戦略ゲーム.html では以下の位置に主要関数がある。ただし str_replace で編集するたびに行番号がずれるので、grep で最新の位置を確認すること。
 
 | 関数/位置 | おおよその行 | 説明 |
 |---|---|---|
@@ -164,10 +164,8 @@ if(errs.length) console.log(errs.join('\n'));
 
 ## 出力先
 
-- 作業用: `/home/claude/game_24.html`
-- 公開用 (ユーザーに渡す): `/mnt/user-data/outputs/game_24.html`
-
-作業ファイルを編集したら、コピーして `present_files` でユーザーに渡す。
+- `/Users/renoba/Desktop/戦略ゲーム/戦略ゲーム.html` を直接編集する (Git 管理下)。
+  ※ 旧環境 (`/home/claude/` + `present_files` でのファイル受け渡し) の記述は廃止。
 
 ## 過去セッションの全履歴
 
