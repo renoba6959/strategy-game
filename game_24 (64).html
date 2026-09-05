@@ -3679,6 +3679,20 @@ function applyTurnStart(owner){
   }
   units = units.filter(function(uu){ return uu.hp > 0; });
 
+  // 0e. 収入(占領済み拠点から)
+  // ※ 修理費(下記 1・2・2b)はこの収入から支払う。
+  //   以前は収入の加算が修理の「後」だったため、前のターンに資金を使い切っていると
+  //   修理が部分回復すらせず丸ごとスキップされていた。
+  var income = 0;
+  for(var k in captures){
+    var capObj = captures[k];
+    if(capObj.owner !== owner) continue;
+    var xy = k.split(',');
+    var ter = TER[M[parseInt(xy[1])][parseInt(xy[0])]];
+    if(ter.income) income += ter.income;
+  }
+  funds[owner] += income;
+
   // 1. ユニットHP回復(待機修理 +2、施設マス上)
   for(var i=0; i<units.length; i++){
     var u = units[i];
@@ -3742,17 +3756,6 @@ function applyTurnStart(owner){
       repairCargoRecursive(cg, ct.carrierHeal, owner);
     }
   }
-
-  // 3. 収入(占領済み拠点から)
-  var income = 0;
-  for(var k in captures){
-    var capObj = captures[k];
-    if(capObj.owner !== owner) continue;
-    var xy = k.split(',');
-    var ter = TER[M[parseInt(xy[1])][parseInt(xy[0])]];
-    if(ter.income) income += ter.income;
-  }
-  funds[owner] += income;
 
   // 4. 生産進行(アップグレード中の施設はスキップ)
   for(var i=0; i<production.length; i++){
@@ -6031,7 +6034,7 @@ function _aiOwnHeavyIslands(aiFaction, heavyIslandMap){
     if(u.owner !== aiFaction || u.hp <= 0) continue;
     var costTbl = COST[TYPE[u.type].cost];
     if(!costTbl || costTbl.RIVER !== Infinity) continue; // 川を渡れるユニットは無視
-    var id2 = heavyIslandMap[u.y] && heavyIslandMap[u.x] && heavyIslandMap[u.y][u.x];
+    var id2 = heavyIslandMap[u.y] && heavyIslandMap[u.y][u.x];
     if(id2) owned[id2] = true;
   }
   return owned;
@@ -7386,6 +7389,61 @@ function aiNearestCapturable(faction, fromX, fromY){
   return bestK;
 }
 
+// AI: 輸送ユニットが「運ぶべき」目標 = 海越え目標 (歩いて行けない拠点) の一覧
+// 地続きの拠点は歩兵が自分で歩いて行けるので、輸送する意味がない。
+function _aiTransportTargets(aiFaction){
+  var all = _aiCaptureTargets(aiFaction);
+  var sea = [];
+  for(var i=0; i<all.length; i++){ if(!all[i].reachable) sea.push(all[i]); }
+  return sea;
+}
+
+// AI: 積載中の輸送ユニットの「接岸(降下)計画」を立てる
+// 海越え目標それぞれについて、
+//   ・輸送ユニット自身が航行して到達できる
+//   ・そこから降車できる (canDeployFrom)
+//   ・隣接マスから cargo が目標まで歩いて行ける
+// を満たす海岸マスを探し、(航行距離 + 上陸後の徒歩距離×3) が最小の組を返す。
+// 戻り値: { target:{x,y,...}, land:{x,y}, landDist:{"x,y":徒歩距離} } または null
+function _aiTransportLandingPlan(u, aiFaction, cargoType){
+  var seaTargets = _aiTransportTargets(aiFaction);
+  if(seaTargets.length === 0) return null;
+  var shipDist = bfsPathDistances(u.x, u.y, u); // 輸送ユニットが到達できる範囲
+  var cargoProbe = { type: cargoType };
+  var isAirT = (u.type === 'TRANSPORT_PLANE');
+  var dirs = [[1,0],[-1,0],[0,1],[0,-1]];
+  var best = null;
+  for(var ti=0; ti<seaTargets.length; ti++){
+    var T = seaTargets[ti];
+    // cargo が目標 T まで歩ける範囲 (T からの経路距離)
+    var landDist = bfsPathDistances(T.x, T.y, cargoProbe);
+    for(var sy=0; sy<H; sy++){
+      for(var sx=0; sx<W; sx++){
+        var key = sx+','+sy;
+        var sd = shipDist[key];
+        if(sd === undefined) continue;                                   // 輸送ユニットが行けない
+        if(!canDeployFrom(M[sy][sx], isAirT ? cargoType : null)) continue; // ここからは降ろせない
+        // 隣接マスのうち「目標まで歩ける」最短のものを探す
+        var bestWalk = Infinity;
+        for(var di=0; di<dirs.length; di++){
+          var nx = sx + dirs[di][0], ny = sy + dirs[di][1];
+          if(nx<0||ny<0||nx>=W||ny>=H) continue;
+          var wd = landDist[nx+','+ny];
+          if(wd === undefined) continue;
+          if(wd < bestWalk) bestWalk = wd;
+        }
+        if(bestWalk === Infinity) continue; // 降ろしても目標へ歩いて行けない岸
+        // 航行距離より「上陸後の徒歩距離」を重く見る (目標の近くに上陸させたい)
+        var score = sd + bestWalk * 3;
+        if(!best || score < best.score){
+          best = { score: score, target: T, land: { x: sx, y: sy }, landDist: landDist };
+        }
+      }
+    }
+  }
+  return best;
+}
+
 // AI: 輸送ユニットの行動を試みる。成功したら true (このユニットの行動完了)
 function aiTransportAction(u, aiFaction){
   var t = TYPE[u.type];
@@ -7393,53 +7451,27 @@ function aiTransportAction(u, aiFaction){
   // 1. 既に積載中なら、敵拠点近くまで運んで降ろす
   if(u.cargo && u.cargo.length > 0){
     if(window.AI_DEBUG) try{ console.log('  → 輸送 cargo='+u.cargo.length+' 降車地点を探す'); }catch(e){}
-    // 各 cargo について、降ろせる拠点を探す
-    var nearestCap = aiNearestCapturable(aiFaction, u.x, u.y);
-    if(!nearestCap){ u.acted = true; return true; }
-    if(window.AI_DEBUG) try{ console.log('    nearestCap=('+nearestCap.x+','+nearestCap.y+')'); }catch(e){}
-
-    // === 真の移動目標を決定: 占領目標に最も近い「降車可能な地形マス」 ===
-    // 輸送船なら浅瀬・港 (canDeployFrom が true のマス)、輸送ヘリ/輸送機なら陸地全般
-    // 占領目標 (nearestCap) に最も近い、輸送ユニットが侵入可能でかつ降車可能な地形を探す
-    var moveGoal = null, moveGoalDist = Infinity;
-    var carrierCostKey = TYPE[u.type].cost;
+    // === 行き先の決定 ===
+    // 【修正1】運ぶ先は「海越え目標 (歩いて行けない拠点)」に限定する。
+    //   従来は aiNearestCapturable (直線距離で最寄りの未占領拠点) を使っていたため、
+    //   歩兵が歩いて行ける自陣側の拠点へ運んでしまい、敵地へ渡らなかった。
+    // 【修正2】接岸地点は「占領目標の真隣」に限らず、
+    //   「そこから cargo が目標まで歩いて行ける海岸マス」全体から選ぶ。
     var capCargoType = (u.cargo[0] && u.cargo[0].type) ? u.cargo[0].type : 'INFANTRY';
-    var isAirT = (u.type === 'TRANSPORT_PLANE');
-    // マップ全体から候補を探す (輸送船なら浅瀬・港、輸送ヘリ/機なら陸地)
-    for(var sy=0; sy<M.length; sy++){
-      for(var sx=0; sx<M[sy].length; sx++){
-        var sTer = M[sy][sx];
-        // 自分(輸送ユニット)が侵入可能か
-        if(COST[carrierCostKey][sTer] === Infinity) continue;
-        // ここから cargo を降ろせるか? (canDeployFrom 判定)
-        if(!canDeployFrom(sTer, isAirT ? capCargoType : null)) continue;
-        // 占領目標に隣接 (Manhattan 1) で、かつ降車先(隣接マス)に cargo が侵入可能
-        var d = manhattan(sx, sy, nearestCap.x, nearestCap.y);
-        if(d > 6) continue; // 占領目標から遠すぎは候補外 (探索コスト削減)
-        // この位置から占領目標 (nearestCap) に直接降ろせるかチェック
-        // 隣接マスが nearestCap と一致するか
-        var canUnloadHere = false;
-        var dirs = [[1,0],[-1,0],[0,1],[0,-1]];
-        for(var di=0; di<dirs.length; di++){
-          var nx2 = sx + dirs[di][0], ny2 = sy + dirs[di][1];
-          if(nx2 === nearestCap.x && ny2 === nearestCap.y){
-            // 降車先 nearestCap が cargo の進入可能地形か
-            var capTer = M[nearestCap.y][nearestCap.x];
-            if(COST[TYPE[capCargoType].cost][capTer] !== Infinity){
-              canUnloadHere = true;
-              break;
-            }
-          }
-        }
-        if(!canUnloadHere) continue;
-        // 自分の現在位置からこのマスまでのマンハッタン距離 (簡易評価、実際の到達可能性は別)
-        var myDist = manhattan(u.x, u.y, sx, sy);
-        if(myDist < moveGoalDist){ moveGoalDist = myDist; moveGoal = { x: sx, y: sy }; }
-      }
+    var landPlan = _aiTransportLandingPlan(u, aiFaction, capCargoType);
+    var nearestCap, moveGoal, planLandDist = null;
+    if(landPlan){
+      nearestCap = landPlan.target;
+      moveGoal = landPlan.land;
+      planLandDist = landPlan.landDist;
+      if(window.AI_DEBUG) try{ console.log('    海越え目標=('+nearestCap.x+','+nearestCap.y+') 接岸地点=('+moveGoal.x+','+moveGoal.y+')'); }catch(e){}
+    } else {
+      // 海越え目標が無い / 接岸できる海岸が無い → 従来動作 (最寄り拠点へ運ぶ)
+      nearestCap = aiNearestCapturable(aiFaction, u.x, u.y);
+      if(!nearestCap){ u.acted = true; return true; }
+      moveGoal = { x: nearestCap.x, y: nearestCap.y };
+      if(window.AI_DEBUG) try{ console.log('    接岸計画なし → 最寄り拠点=('+nearestCap.x+','+nearestCap.y+')'); }catch(e){}
     }
-    // 降車可能な接岸ポイントが見つからなかったら、占領目標自体を目標にする (従来動作)
-    if(!moveGoal) moveGoal = { x: nearestCap.x, y: nearestCap.y };
-    if(window.AI_DEBUG) try{ console.log('    moveGoal=('+moveGoal.x+','+moveGoal.y+') dist='+moveGoalDist); }catch(e){}
 
     // 危険を避けつつ目標に近づく
     var bestMove = aiBestMoveTowards(u, moveGoal.x, moveGoal.y, aiFaction);
@@ -7455,12 +7487,26 @@ function aiTransportAction(u, aiFaction){
     for(var ci = u.cargo.length - 1; ci >= 0; ci--){
       var cg = u.cargo[ci];
       var tiles = aiUnloadableTiles(u, cg.type);
+      // 【修正2】途中の自陣側の海岸で降ろしてしまわないようにする。
+      //   降車先は「そこから目標まで歩いて行けるマス」だけに限定する。
+      //   海越え目標なので、歩いて到達できる = 目的地側の岸に着いている、と判定できる。
+      var walkDist = null;
+      if(landPlan){
+        walkDist = (cg.type === capCargoType) ? planLandDist
+                 : bfsPathDistances(nearestCap.x, nearestCap.y, { type: cg.type });
+        var reachTiles = [];
+        for(var fi=0; fi<tiles.length; fi++){
+          if(walkDist[tiles[fi].x+','+tiles[fi].y] !== undefined) reachTiles.push(tiles[fi]);
+        }
+        tiles = reachTiles;
+      }
       // スコア計算: 占領目標までの距離 (近いほど優先) + 防御値 (高いほど優先)
       // 占領担当ユニット系は距離も防御も重要 (生存して占領を完遂するため)
       // 仕様書: 山(def 4) > 森(def 3) > 都市/施設(def 1〜) > 平地(def 0)
+      var wd = walkDist;
       tiles.sort(function(a, b){
-        var dA = manhattan(a.x, a.y, nearestCap.x, nearestCap.y);
-        var dB = manhattan(b.x, b.y, nearestCap.x, nearestCap.y);
+        var dA = wd ? wd[a.x+','+a.y] : manhattan(a.x, a.y, nearestCap.x, nearestCap.y);
+        var dB = wd ? wd[b.x+','+b.y] : manhattan(b.x, b.y, nearestCap.x, nearestCap.y);
         var defA = (TER[a.ter] && TER[a.ter].def) || 0;
         var defB = (TER[b.ter] && TER[b.ter].def) || 0;
         // 川マスは無防備 (def0) で、しかも橋を架けるべき場所を塞ぐので強く避ける。
@@ -7493,8 +7539,13 @@ function aiTransportAction(u, aiFaction){
   //   第1: 占領担当ユニット (canCapture) - 仕様書「占領目標を持つ歩兵を運ぶ」
   //   第2: 戦闘ユニット (track > wheel > inf) - 上陸戦力として
   var canCarryTypes = Array.isArray(t.canCarry) ? t.canCarry : null;
-  var pickupTarget = null, pickupDist = Infinity;
-  for(var i=0; i<units.length; i++){
+  var pickupTarget = null, pickupDist = Infinity, pickupMeet = null;
+  // 【修正3】海越え目標が無いなら拾いに行かない (運ぶ必要が無いのに積み込むのを防ぐ)
+  var wantPickup = (_aiTransportTargets(aiFaction).length > 0);
+  // 【修正3】合流可能性の判定用: 輸送ユニット自身が航行して到達できるマス一覧
+  var shipReach = wantPickup ? bfsPathDistances(u.x, u.y, u) : {};
+  if(!wantPickup && window.AI_DEBUG) try{ console.log('  → 輸送 海越え目標なし: 拾いに行かない'); }catch(e){}
+  for(var i=0; wantPickup && i<units.length; i++){
     var c = units[i];
     if(c.owner !== aiFaction || c.hp <= 0) continue;
     if(c.id === u.id) continue;
@@ -7512,7 +7563,22 @@ function aiTransportAction(u, aiFaction){
     }
     // 優先順位: 占領担当を最優先 (canCapture)、その後 track > wheel > inf
     // 同距離なら占領担当 > 大型重火力 (海越え目標を運ぶ主目的)
-    var d = manhattan(u.x, u.y, c.x, c.y);
+    // 【修正3】合流できる相手だけを対象にする。
+    //   従来は直線距離で最寄りの味方を選んでいたため、内陸や別の島の味方を選んでしまい、
+    //   永久に合流できずその場でうろうろしていた。
+    //   輸送ユニットが「相手のマス」か「相手の隣接マス」まで航行できることを条件にする。
+    var meet = null, meetD = Infinity;
+    if(shipReach[c.x+','+c.y] !== undefined){ meetD = shipReach[c.x+','+c.y]; meet = { x: c.x, y: c.y }; }
+    var mdirs = [[1,0],[-1,0],[0,1],[0,-1]];
+    for(var mi=0; mi<mdirs.length; mi++){
+      var mx2 = c.x + mdirs[mi][0], my2 = c.y + mdirs[mi][1];
+      if(mx2<0||my2<0||mx2>=W||my2>=H) continue;
+      var md = shipReach[mx2+','+my2];
+      if(md === undefined) continue;
+      if(md < meetD){ meetD = md; meet = { x: mx2, y: my2 }; }
+    }
+    if(!meet) continue; // 内陸 / 別の島 → 合流できないので対象外
+    var d = meetD;
     var landCat = _aiLandTransportCat(c.type);
     var catPriority;
     if(TYPE[c.type].canCapture) catPriority = -1; // 占領担当最優先 (海越え目標を運ぶ役割)
@@ -7521,7 +7587,7 @@ function aiTransportAction(u, aiFaction){
     else if(landCat === 'inf') catPriority = 2;    // 重歩兵(占領不可)
     else catPriority = 3;                          // それ以外
     var score = d + catPriority * 0.5; // 1カテゴリ差 = 0.5マス分の優先差
-    if(score < pickupDist){ pickupDist = score; pickupTarget = c; }
+    if(score < pickupDist){ pickupDist = score; pickupTarget = c; pickupMeet = meet; }
   }
   if(pickupTarget){
     if(window.AI_DEBUG) try{ console.log('  → 輸送 pickupTarget='+pickupTarget.type+'@('+pickupTarget.x+','+pickupTarget.y+') dist='+pickupDist); }catch(e){}
@@ -7564,9 +7630,11 @@ function aiTransportAction(u, aiFaction){
       u.acted = true;
       return true;
     }
-    var bestMove = aiBestMoveTowards(u, pickupTarget.x, pickupTarget.y, aiFaction);
+    // 【修正3】相手のマスではなく「合流点」を目指す (相手が内陸寄りでも岸まで行ける)
+    var meetGoal = pickupMeet || { x: pickupTarget.x, y: pickupTarget.y };
+    var bestMove = aiBestMoveTowards(u, meetGoal.x, meetGoal.y, aiFaction);
     if(bestMove){
-      if(window.AI_DEBUG) try{ console.log('    輸送船 MOVE→('+bestMove.x+','+bestMove.y+') (pickupに近づく)'); }catch(e){}
+      if(window.AI_DEBUG) try{ console.log('    輸送船 MOVE→('+bestMove.x+','+bestMove.y+') (合流点('+meetGoal.x+','+meetGoal.y+')へ)'); }catch(e){}
       var aiMoveR1 = executeMoveWithAmbushCheck(u, bestMove.x, bestMove.y);
       if(window.AI_DEBUG && aiMoveR1.stoppedEarly) try{ console.log('    伏兵察知で早期停止 (target=('+aiMoveR1.targetX+','+aiMoveR1.targetY+'), 実際=('+aiMoveR1.toX+','+aiMoveR1.toY+'))'); }catch(e){}
     } else {
