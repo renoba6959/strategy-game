@@ -1617,7 +1617,15 @@ function getSupplySource(unit){
   //    補給車(supplyFuel:true, supplyAmmo:true)、補給艦(supplyFuel:false, supplyAmmo:true)、
   //    給油艦/空中給油機(supplyFuel:true, supplyAmmo:false) を独立に判定
   //    弾薬補給は供給側のカウンター(supplyAmmoCount)を消費する
+  //
+  //    隣接する補給ユニットを全部調べ、「燃料を出せる相手」と「弾薬を出せる相手」を
+  //    それぞれ採用する。以前は最初に見つかった1つだけを採用して打ち切っていたため、
+  //    燃料専門の給油艦・空中給油機が先に見つかると、隣にいる補給車・補給艦からの
+  //    弾薬補給が丸ごと無視されていた。
+  //    同じ種類の補給源が複数あるときは、在庫が残っている方を優先する。
   var dirs = [[1,0],[-1,0],[0,1],[0,-1]];
+  var fuelAny = null, fuelStocked = null;   // 燃料を出せる隣接補給ユニット
+  var ammoAny = null, ammoStocked = null;   // 弾薬を出せる隣接補給ユニット
   for(var i=0; i<dirs.length; i++){
     var nx = unit.x + dirs[i][0], ny = unit.y + dirs[i][1];
     if(!inBounds(nx, ny)) continue;
@@ -1629,12 +1637,40 @@ function getSupplySource(unit){
     // 旧仕様 (supplyFuel未定義) は supplyAmmo の真偽から推定: supplyAmmo=true なら両方、false なら燃料のみ
     var canFuel = (typeof nt.supplyFuel === 'boolean') ? nt.supplyFuel : true;
     var canAmmo = !!nt.supplyAmmo;
+    if(canFuel){
+      if(!fuelAny) fuelAny = n;
+      if(!fuelStocked && _supplyStockLeft(n, 'fuel') > 0) fuelStocked = n;
+    }
+    if(canAmmo){
+      if(!ammoAny) ammoAny = n;
+      if(!ammoStocked && _supplyStockLeft(n, 'ammo') > 0) ammoStocked = n;
+    }
+  }
+  var fuelSrc = fuelStocked || fuelAny;
+  var ammoSrc = ammoStocked || ammoAny;
+  if(fuelSrc || ammoSrc){
+    var srcNames = [];
+    if(fuelSrc) srcNames.push(TYPE[fuelSrc.type].name);
+    if(ammoSrc && ammoSrc !== fuelSrc) srcNames.push(TYPE[ammoSrc.type].name);
     // 燃料庫(supplyFuelMax)を持つ補給ユニットのみ fuelFromUnit を設定
     // (持たないユニットは旧仕様=無制限燃料補給)
-    var fuelFromUnit = (canFuel && typeof nt.supplyFuelMax === 'number') ? n : null;
-    return { name: nt.name, fuel: canFuel, ammo: canAmmo, ammoFromUnit: n, fuelFromUnit: fuelFromUnit, rate: 1.0 };
+    var fuelFromUnit = (fuelSrc && typeof TYPE[fuelSrc.type].supplyFuelMax === 'number') ? fuelSrc : null;
+    return { name: srcNames.join('+'), fuel: !!fuelSrc, ammo: !!ammoSrc,
+             ammoFromUnit: ammoSrc, fuelFromUnit: fuelFromUnit, rate: 1.0 };
   }
   return null;
+}
+
+// 補給ユニット n の残り在庫を返す (kind: 'fuel' / 'ammo')
+// 在庫の概念を持たない (最大値が未定義の) 補給ユニットは無制限扱い
+function _supplyStockLeft(n, kind){
+  var nt = TYPE[n.type];
+  if(kind === 'fuel'){
+    if(typeof nt.supplyFuelMax !== 'number') return Infinity;
+    return (typeof n.supplyFuelCount === 'number') ? n.supplyFuelCount : nt.supplyFuelMax;
+  }
+  if(typeof nt.supplyAmmoMax !== 'number') return Infinity;
+  return (typeof n.supplyAmmoCount === 'number') ? n.supplyAmmoCount : nt.supplyAmmoMax;
 }
 
 // 搭載可能ユニットtypeの判定
@@ -7817,15 +7853,17 @@ function aiSupplyAction(u, aiFaction){
   // [0] 自身の補給庫が空 → 自軍施設へ帰投
   // 燃料補給ユニット (supplyFuel:true) は燃料庫 (supplyFuelMax) を消費する
   // 弾薬補給ユニット (supplyAmmo:true) は弾薬庫 (supplyAmmoMax) を消費する
-  // ※ supplyFuel/supplyAmmo の在庫は u.supplyFuel / u.supplyAmmo で管理されている想定
-  //    なければ未追跡 (常に満タン扱い)
+  // ※ 在庫はユニット側の u.supplyFuelCount / u.supplyAmmoCount で管理されている
+  //    (makeUnit / applyTurnStart の 0c で初期化。なければ満タン扱い)
+  //    以前は存在しない u.supplyFuel / u.supplyAmmo を見ていたため、在庫が空でも
+  //    常に「満タン」と判定され、補給ユニットが補充のために帰投しなかった。
   var supplyOut = false;
   if(t.supplyFuel && t.supplyFuelMax){
-    var sfNow = (typeof u.supplyFuel === 'number') ? u.supplyFuel : t.supplyFuelMax;
+    var sfNow = (typeof u.supplyFuelCount === 'number') ? u.supplyFuelCount : t.supplyFuelMax;
     if(sfNow <= 0) supplyOut = true;
   }
   if(t.supplyAmmo && t.supplyAmmoMax){
-    var saNow = (typeof u.supplyAmmo === 'number') ? u.supplyAmmo : t.supplyAmmoMax;
+    var saNow = (typeof u.supplyAmmoCount === 'number') ? u.supplyAmmoCount : t.supplyAmmoMax;
     if(saNow <= 0) supplyOut = true;
   }
   if(supplyOut){
