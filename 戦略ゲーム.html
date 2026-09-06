@@ -68,7 +68,6 @@ button:hover { background: #f0f0f0; }
   <div id="cap-counter" style="font-size:12px; padding:4px 10px; background: var(--color-background-secondary); border-radius: var(--border-radius-md);"></div>
   <div id="wind-indicator" style="display:none; font-size:12px; padding:4px 10px; background: #E6F1FB; border:1px solid #BAD3EE; border-radius: var(--border-radius-md);" title="現ラウンドの風 / 次ラウンドの予測"></div>
   <div id="funds-counter" style="font-size:12px; padding:4px 10px; background: var(--color-background-secondary); border-radius: var(--border-radius-md);"></div>
-  <button id="end-turn-btn">ターン終了</button>
   <button id="reset-btn">リセット</button>
   <button id="stage-change-btn" title="別のステージを選ぶ">🗺 ステージ変更</button>
   <button id="spec-btn">📖 仕様書</button>
@@ -84,11 +83,14 @@ button:hover { background: #f0f0f0; }
   </div>
   <button id="player-ai-toggle" style="padding:2px 8px; border:1px solid #ccc; background:#fff; cursor:pointer; font-size:11px; border-radius:3px;" title="プレイヤー陣営もAIが自動操作するシミュレーションモード">🤖 プレイヤーAI化: OFF</button>
 </div>
-<div id="command-panel" style="display:none; padding: 8px 12px; background: var(--color-background-info); border: 1px solid var(--color-border-info); border-radius: var(--border-radius-md); margin-bottom: 8px;">
-  <span id="command-label" style="font-size: 13px; font-weight: 500; margin-right: 8px;"></span>
-  <span id="command-buttons" style="display:inline-flex; gap: 6px; flex-wrap:wrap;"></span>
+<div id="command-panel" style="visibility:hidden; display:flex; align-items:center; gap:10px; min-height:40px; padding: 6px 12px; background: var(--color-background-info); border: 1px solid var(--color-border-info); border-radius: var(--border-radius-md); margin-bottom: 8px; overflow:hidden;">
+  <span id="command-label" style="font-size: 13px; font-weight: 500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex:0 1 auto;"></span>
+  <span id="command-buttons" style="display:inline-flex; gap: 6px; flex-wrap:nowrap; flex:none; overflow-x:auto; max-width:100%;"></span>
 </div>
-<div id="stage-info" style="font-size: 12px; color: var(--color-text-secondary); margin-bottom: 8px; min-height: 18px;"></div>
+<div style="display:flex; align-items:center; gap:12px; margin-bottom:8px; min-height:30px;">
+  <span id="stage-info" style="font-size: 12px; color: var(--color-text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"></span>
+  <button id="end-turn-btn" style="font-weight:600; flex:none;">ターン終了</button>
+</div>
 <div style="display: flex; gap: 12px; margin-bottom: 12px; align-items: flex-start; flex-wrap: wrap;">
   <div id="board-wrap" style="overflow-x: auto;">
     <div id="board" style="position: relative; display: grid; gap: 1px; background: var(--color-border-tertiary); padding: 1px; border-radius: var(--border-radius-md);"></div>
@@ -2041,6 +2043,19 @@ function payTakeOutSupply(newU, cg, fx, fy){
         newU.ammo[i] = had;
       }
     }
+  }
+  // 補給ユニットの積載庫 (燃料庫・弾薬庫)
+  // makeUnit で作り直すと満タンで復活してしまうため、収容時の値に戻したうえで
+  // 補充ぶんだけ施設の備蓄から払う。記録が無い古いデータは満タンのまま (セーブ互換)
+  if(typeof t.supplyFuelMax === 'number' && typeof cg.supplyFuelCount === 'number'){
+    var needSF = Math.max(0, t.supplyFuelMax - cg.supplyFuelCount);
+    var gotSF = needSF > 0 ? takeFacilityStock(pos, 'fuel', needSF) : 0;
+    newU.supplyFuelCount = Math.min(t.supplyFuelMax, cg.supplyFuelCount + gotSF);
+  }
+  if(typeof t.supplyAmmoMax === 'number' && typeof cg.supplyAmmoCount === 'number'){
+    var needSA = Math.max(0, t.supplyAmmoMax - cg.supplyAmmoCount);
+    var gotSA = needSA > 0 ? takeFacilityStock(pos, 'ammo', needSA) : 0;
+    newU.supplyAmmoCount = Math.min(t.supplyAmmoMax, cg.supplyAmmoCount + gotSA);
   }
 }
 
@@ -7625,6 +7640,9 @@ function aiStoreInFacilityForService(u, aiFaction){
     // 段階2: 取り出し時の補給を施設の備蓄から払うため、収容時の燃料・弾薬を記録する
     fuel: u.fuel,
     ammo: u.ammo ? u.ammo.slice() : null,
+    // 補給ユニットの積載庫も記録する (記録しないと取り出し時に満タンで湧いてしまう)
+    supplyFuelCount: u.supplyFuelCount,
+    supplyAmmoCount: u.supplyAmmoCount,
     storedRound: roundNumber // 同ラウンド中は取り出せない (翌ラウンドから)
   });
   units = units.filter(function(uu){ return uu.id !== u.id; });
@@ -10885,36 +10903,78 @@ function showCommandPanel(unit, justMoved){
   // 解除は右のユニット詳細パネルのボタンで行う。
   if(canCarrySupplyStock(unit)){
     addBtn(unit.route ? '🚚 補給ルートを設定し直す' : '🚚 補給ルート設定', enterRouteSetMode, true);
-    // 自軍施設の上または隣接なら、手動で積み降ろしできる
-    var rf = nearestRouteFacility(unit);
-    if(rf){
-      addBtn('📦 積む', function(){ doManualLoad(rf); });
-      addBtn('📦 降ろす', function(){ doManualUnload(rf); });
+    // 自軍拠点の上または隣接なら、手動で積み降ろしできる
+    // 隣接する拠点が複数あるときは、どこに積み降ろしするかを選ばせる
+    var rfs = routeFacilitiesAround(unit);
+    if(rfs.length === 1){
+      addBtn('📦 積む', function(){ doManualLoad(rfs[0]); });
+      addBtn('📦 降ろす', function(){ doManualUnload(rfs[0]); });
+    } else if(rfs.length > 1){
+      addBtn('📦 積む', function(){ showFacilityChoice('load', rfs); });
+      addBtn('📦 降ろす', function(){ showFacilityChoice('unload', rfs); });
     }
   }
   if(canSubmergeNow) addBtn(unit.submerged ? '浮上' : '潜航', doSubmerge);
   if(canStealth) addBtn(unit.stealth ? 'ステルス解除' : 'ステルスON', doStealth);
   addBtn('待機', doWait);
   addBtn('移動キャンセル', cancelMove);
-  panel.style.display = 'block';
+  panel.style.visibility = 'visible';
   setClear(attackableSet);
   setStatus(TYPE[unit.type].name + 'のコマンドを選択してください');
   render();
 }
-function hideCommandPanel(){ document.getElementById('command-panel').style.display = 'none'; }
+function hideCommandPanel(){
+  // 場所は残したまま隠す (出し入れで盤面が上下しないように)
+  var p = document.getElementById('command-panel');
+  p.style.visibility = 'hidden';
+  document.getElementById('command-label').textContent = '';
+  document.getElementById('command-buttons').innerHTML = '';
+}
 
 // 補給ルートの指定モード (段階3)
 // routeSetMode = { unitId, stage:'from'|'to', from:{x,y} }
 var routeSetMode = null;
 
-// 補給ユニットの現在地から、積み降ろしできる自軍施設 (同じマスか隣接) を返す
-function nearestRouteFacility(unit){
+// 補給ユニットの現在地から、積み降ろしできる自軍拠点 (同じマスか隣接) を全部返す
+function routeFacilitiesAround(unit){
   var dirs = [[0,0],[1,0],[-1,0],[0,1],[0,-1]];
+  var list = [];
   for(var i=0; i<dirs.length; i++){
     var nx = unit.x + dirs[i][0], ny = unit.y + dirs[i][1];
-    if(isSupplyRouteFacility(nx, ny, unit.owner)) return { x: nx, y: ny };
+    if(isSupplyRouteFacility(nx, ny, unit.owner)) list.push({ x: nx, y: ny });
   }
-  return null;
+  return list;
+}
+
+// どの拠点に積み降ろしするかを選ばせる (隣接する自軍拠点が複数あるとき)
+function showFacilityChoice(kind, list){
+  if(!pendingUnit) return;
+  var panel = document.getElementById('command-panel');
+  document.getElementById('command-label').textContent =
+    (kind === 'load' ? '📦 どの拠点から積みますか？' : '📦 どの拠点へ降ろしますか？');
+  var wrap = document.getElementById('command-buttons');
+  wrap.innerHTML = '';
+  for(var i=0; i<list.length; i++){
+    (function(pos){
+      var terHere = TER[M[pos.y][pos.x]];
+      var capHere = captures[pos.x+','+pos.y];
+      var st = facilityStock(capHere, M[pos.y][pos.x]);
+      var label = terHere.name + '(' + pos.x + ',' + pos.y + ')';
+      if(st.spec) label += ' 燃' + st.fuel + '/' + st.spec.fuelMax + ' 弾' + st.ammo + '/' + st.spec.ammoMax;
+      var b = document.createElement('button');
+      b.textContent = label;
+      b.onclick = function(e){
+        e.stopPropagation();
+        if(kind === 'load') doManualLoad(pos); else doManualUnload(pos);
+      };
+      wrap.appendChild(b);
+    })(list[i]);
+  }
+  var back = document.createElement('button');
+  back.textContent = '戻る';
+  back.onclick = function(e){ e.stopPropagation(); showCommandPanel(pendingUnit, pendingJustMoved); };
+  wrap.appendChild(back);
+  panel.style.visibility = 'visible';
 }
 
 // 指定モード中のパネル (中止ボタンだけを出す)
@@ -10929,7 +10989,7 @@ function renderRouteSetPanel(msg){
   b.textContent = '中止';
   b.onclick = function(e){ e.stopPropagation(); cancelRouteSetMode(); };
   wrap.appendChild(b);
-  panel.style.display = 'block';
+  panel.style.visibility = 'visible';
 }
 
 function enterRouteSetMode(){
@@ -10937,7 +10997,7 @@ function enterRouteSetMode(){
   // 中止したときにコマンド選択へ戻せるよう、対象と「移動済みか」を覚えておく
   routeSetMode = { unitId: pendingUnit.id, justMoved: pendingJustMoved, stage: 'from', from: null };
   setClear(movableSet); setClear(attackableSet);
-  renderRouteSetPanel('🚚 補給ルート設定: 積み元にする自軍拠点をクリック');
+  renderRouteSetPanel('🚚 積み元の自軍拠点をクリック');
   setStatus('🚚 積み元にする自軍拠点をクリックしてください（補給車が乗っている拠点でもかまいません）');
   render();
 }
@@ -10975,7 +11035,7 @@ function handleRouteSetClick(x, y){
     }
     routeSetMode.from = { x: x, y: y };
     routeSetMode.stage = 'to';
-    renderRouteSetPanel('🚚 補給ルート設定: 降ろし先をクリック（拠点=備蓄を降ろす / それ以外=そこに駐留）');
+    renderRouteSetPanel('🚚 降ろし先をクリック（拠点=降ろす / それ以外=駐留）');
     setStatus('🚚 積み元: ' + TER[M[y][x]].name + '('+x+','+y+') → 次に降ろし先をクリック（自軍拠点なら備蓄を降ろし、それ以外のマスならそこに駐留して周りへ補給します）');
     render();
     return true;
@@ -11078,6 +11138,9 @@ function doRepair(){
     // 段階2: 取り出し時の補給を施設の備蓄から払うため、収容時の燃料・弾薬を記録する
     fuel: u.fuel,
     ammo: u.ammo ? u.ammo.slice() : null,
+    // 補給ユニットの積載庫も記録する (記録しないと取り出し時に満タンで湧いてしまう)
+    supplyFuelCount: u.supplyFuelCount,
+    supplyAmmoCount: u.supplyAmmoCount,
     storedRound: roundNumber // 格納したラウンドを記録 (このラウンドの間は取り出せない)
   });
   // unitsから削除
