@@ -13137,8 +13137,9 @@ function openProductionMenu(x, y){
           turnsText = '<span style="color:#0F6E56;"><s style="color:#aaa;">'+t.prodTurns+'T</s> '+displayTurns+'T</span>';
         }
         var buttonStyle = 'display:flex; align-items:center; gap:6px; padding:6px 10px; border:1px solid #ccc; border-radius:4px; background:#fff; text-align:left; cursor:pointer; font-size:12px;';
-        if(disabled) buttonStyle += 'opacity:0.5; cursor:not-allowed;';
-        html += '<button '+(disabled?'disabled ':'')+'onclick="startProduction(\''+key+'\')" style="'+buttonStyle+'">';
+        // 生産できない場合も「能力を見る」ためだけに押せるようにする (確認画面側で生産を止める)
+        if(disabled) buttonStyle += 'opacity:0.6;';
+        html += '<button onclick="showProduceConfirm(\''+key+'\')" style="'+buttonStyle+'">';
         html += '<span style="display:inline-block; width:16px; height:16px; flex-shrink:0;">'+ICONS[key]+'</span>';
         html += '<div style="flex:1; line-height:1.3;">';
         html += '<div>'+t.name+'</div>';
@@ -13188,6 +13189,113 @@ function openProductionMenu(x, y){
       html += '</button>';
     }
   }
+
+  body.innerHTML = html;
+  document.getElementById('prod-overlay').style.display = 'flex';
+}
+
+// 生産の確認画面
+// 生産ボタンを押した瞬間に確定してしまうと、ユニットの能力を確認できず誤生産も起きるため、
+// 一度この画面を挟んで能力を見せてから確定させる。
+function showProduceConfirm(unitType){
+  if(prodFacilityX < 0 || prodFacilityY < 0) return;
+  var t = TYPE[unitType];
+  if(!t) return;
+  var ter = TER[M[prodFacilityY][prodFacilityX]];
+  var capObj = captures[prodFacilityX+','+prodFacilityY];
+  var body = document.getElementById('prod-body');
+  if(!body) return;
+
+  // 実際の製造ターン数 (兵器廠などの prodTurnBonus を反映)
+  var bonus = (ter && ter.prodTurnBonus) ? ter.prodTurnBonus : 0;
+  var turns = Math.max(1, t.prodTurns + bonus);
+  // 空きスロット判定 (openProductionMenu と同じ計算)
+  var slots = (capObj && capObj.upgrading) ? 0 : (ter.slots || 0);
+  var ongoing = 0;
+  for(var i=0; i<production.length; i++){
+    if(production[i].x === prodFacilityX && production[i].y === prodFacilityY) ongoing++;
+  }
+  var stored = (capObj && capObj.cargo) ? capObj.cargo.length : 0;
+  var available = slots - (ongoing + stored);
+
+  // 生産できない理由 (あれば)
+  var reason = null;
+  if(capObj && capObj.upgrading) reason = 'アップグレード中は生産できません';
+  else if(available <= 0) reason = 'スロットに空きがありません';
+  else if(funds.P < t.price) reason = '資金が足りません (不足 ' + (t.price - funds.P).toLocaleString() + 'G)';
+
+  var html = '';
+  html += '<button onclick="openProductionMenu('+prodFacilityX+','+prodFacilityY+')" style="font-size:11px; margin-bottom:10px;">← 一覧に戻る</button>';
+
+  // 見出し (名前・価格・製造ターン)
+  html += '<div style="display:flex; align-items:center; gap:10px; padding:10px 12px; background:#f5f4f0; border-radius:4px;">';
+  html += '<span style="display:inline-block; width:28px; height:28px; flex-shrink:0;">'+(ICONS[unitType]||'')+'</span>';
+  html += '<div style="flex:1; line-height:1.4;">';
+  html += '<div style="font-size:15px; font-weight:600;">'+t.name+'</div>';
+  html += '<div style="font-size:11px; color:#666;">'+t.price.toLocaleString()+'G / '+turns+'ターン';
+  if(bonus < 0) html += ' <span style="color:#0F6E56;">(施設ボーナス '+bonus+'ターン)</span>';
+  html += '</div></div></div>';
+
+  // 基本性能
+  html += '<div style="margin-top:10px; font-size:12px; line-height:1.7;">';
+  html += '<div>分類: <b>'+(ARMOR_LABELS[t.armorClass]||t.armorClass)+'</b> ・ '+catName(t.cat)+'</div>';
+  html += '<div>移動 <b>'+t.move+'</b> ・ 視界 <b>'+(t.sight||2)+'</b> ・ 装甲 <b>'+(t.armor||0)+'</b> ・ 燃料 <b>'+(t.fuelMax||99)+'</b></div>';
+  // 特性
+  var traits = [];
+  if(t.canCapture) traits.push('拠点を占領できる');
+  if(t.canSubmerge) traits.push('潜航できる');
+  if(t.canStealth) traits.push('ステルスあり');
+  if(t.quickDeploy) traits.push('降車後すぐ行動できる');
+  if(t.isMountainTroop) traits.push('山岳戦に強い');
+  if(t.capacity) traits.push('輸送 '+t.capacity+'ユニット');
+  if(t.isSupply){
+    var sup = [];
+    if(typeof t.supplyFuelMax === 'number') sup.push('燃料庫'+t.supplyFuelMax);
+    if(typeof t.supplyAmmoMax === 'number') sup.push('弾薬庫'+t.supplyAmmoMax);
+    traits.push('補給ユニット'+(sup.length?'('+sup.join('/')+')':''));
+  }
+  if(t.carrierHeal) traits.push('搭載機を毎ターン+'+t.carrierHeal+'回復');
+  if(traits.length) html += '<div>特性: '+traits.join(' ・ ')+'</div>';
+  if(t.note) html += '<div style="color:#666; font-size:11px; margin-top:2px;">'+t.note+'</div>';
+  html += '</div>';
+
+  // 武器
+  if(t.weapons && t.weapons.length > 0){
+    html += '<div style="font-size:12px; font-weight:600; margin:12px 0 4px;">武器</div>';
+    for(var wi=0; wi<t.weapons.length; wi++){
+      var w = t.weapons[wi];
+      var rmin = w.range ? w.range[0] : 1, rmax = w.range ? w.range[1] : 1;
+      var rangeText = (rmin === rmax) ? ('射程'+rmin) : ('射程'+rmin+'〜'+rmax);
+      var ammoText = w.infiniteAmmo ? '弾数無限' : ('弾'+(w.ammo !== undefined ? w.ammo : 6));
+      html += '<div style="padding:6px 10px; background:#f5f4f0; border-radius:4px; margin-bottom:4px; font-size:11px; line-height:1.6;">';
+      html += '<div><b>'+w.name+'</b> ・ '+rangeText+' ・ '+(w.indirect?'間接':'直接')+' ・ '+ammoText;
+      if(w.vsFacility) html += ' ・ 対拠点'+w.vsFacility;
+      html += '</div>';
+      // 相手の分類ごとの攻撃力 (0 は表示しない)
+      var atkParts = [];
+      for(var ak in ARMOR_LABELS){
+        var v = w.atk ? (w.atk[ak] || 0) : 0;
+        if(v > 0) atkParts.push(ARMOR_LABELS[ak]+' <b>'+v+'</b>');
+      }
+      html += '<div style="color:#555;">'+(atkParts.length ? atkParts.join(' / ') : '攻撃力なし')+'</div>';
+      html += '</div>';
+    }
+    html += '<div style="font-size:10px; color:#888;">※ 実ダメージ = 攻撃力 × (HP÷最大HP) − 相手の装甲 − 地形防御</div>';
+  } else {
+    html += '<div style="font-size:12px; color:#888; margin-top:10px;">武器を持たない</div>';
+  }
+
+  // 確定ボタン
+  html += '<div style="margin-top:14px; display:flex; gap:8px; align-items:center;">';
+  if(reason){
+    html += '<button disabled style="padding:8px 14px; font-size:13px; opacity:0.5; cursor:not-allowed;">この兵器を生産</button>';
+    html += '<span style="font-size:11px; color:#A32D2D;">'+reason+'</span>';
+  } else {
+    html += '<button onclick="startProduction(\''+unitType+'\')" style="padding:8px 14px; font-size:13px; background:#0F6E56; color:white; border:none; border-radius:4px; cursor:pointer;">この兵器を生産 ('+t.price.toLocaleString()+'G)</button>';
+  }
+  html += '<button onclick="openProductionMenu('+prodFacilityX+','+prodFacilityY+')" style="padding:8px 14px; font-size:13px;">戻る</button>';
+  html += '</div>';
+  html += '<div style="font-size:11px; color:#666; margin-top:8px;">資金: <b style="color:#185FA5;">'+funds.P.toLocaleString()+'G</b></div>';
 
   body.innerHTML = html;
   document.getElementById('prod-overlay').style.display = 'flex';
@@ -13417,6 +13525,8 @@ document.getElementById('prod-overlay').onclick = function(e){ if(e.target.id ==
 
 // 生産メニューのonclick用にグローバル公開
 window.startProduction = startProduction;
+window.showProduceConfirm = showProduceConfirm;
+window.openProductionMenu = openProductionMenu;
 window.cancelProduction = cancelProduction;
 window.takeOutProduction = takeOutProduction;
 window.takeOutFromFacility = takeOutFromFacility;
