@@ -70,6 +70,7 @@ button:hover { background: #f0f0f0; }
   <div id="funds-counter" style="font-size:12px; padding:4px 10px; background: var(--color-background-secondary); border-radius: var(--border-radius-md);"></div>
   <button id="end-turn-btn">ターン終了</button>
   <button id="reset-btn">リセット</button>
+  <button id="stage-change-btn" title="別のステージを選ぶ">🗺 ステージ変更</button>
   <button id="spec-btn">📖 仕様書</button>
   <button id="editor-btn">🛠 マップエディタ</button>
   <button id="team-config-btn" title="陣営をチームに分けて同盟関係を設定">🤝 チーム設定</button>
@@ -1574,58 +1575,61 @@ function _supplyTargetMatches(supplierType, targetUnit){
 function getSupplySource(unit){
   var t = TYPE[unit.type];
   var cat = t.cat; // 'LAND' / 'SEA' / 'AIR'
-  // 1. 自軍占領済み生産施設の上にいるか? (燃料+弾薬、毎ターン50%補給)
-  var ter = TER[M[unit.y][unit.x]];
-  var cap = captures[unit.x+','+unit.y];
-  if(cap && cap.owner === unit.owner && ter.healCat === cat){
-    return { name: ter.name, fuel: true, ammo: true, ammoFromUnit: null, rate: 0.5, isFacility: true };
+
+  // === A. 施設・拠点からの補給 (範囲補給) ===
+  // 自軍が占領している施設・拠点から一定範囲内にいれば補給を受けられる。
+  // 「施設マスの上に乗らないと補給できない」仕様だと1マスの取り合いになるため、
+  // 範囲を広げている (段階1: 補給範囲の拡大)。
+  //   ・弾薬工廠 : 3マス以内 / 毎ターン100% (航空ユニットは対象外)
+  //   ・生産施設 : 2マス以内 / 毎ターン50%  (工場=地上, 港=艦船, 空港=航空)
+  //   ・都市系/首都: 2マス以内 / 毎ターン20% (地上ユニットのみ)
+  // 複数の施設が範囲内にある場合は、補給量(rate)が最も大きいものを採用する。
+  var FAC_RANGE = 2;    // 生産施設・都市系の補給範囲
+  var DEPOT_RANGE = 3;  // 弾薬工廠の補給範囲
+  var facRate = 0, facName = null;
+  for(var fk in captures){
+    var fcap = captures[fk];
+    if(fcap.owner !== unit.owner) continue;
+    var fxy = fk.split(',');
+    var fx = parseInt(fxy[0]), fy = parseInt(fxy[1]);
+    var fter = TER[M[fy][fx]];
+    if(!fter) continue;
+    var fd = manhattan(fx, fy, unit.x, unit.y);
+    var r = 0;
+    if(fter.ammoDepot && cat !== 'AIR' && fd <= DEPOT_RANGE){
+      // 弾薬工廠 (航空ユニットは対象外: 街中で固定翼を補給できるのは強すぎるため)
+      r = 1.0;
+    } else if(fter.healCat === cat && fd <= FAC_RANGE){
+      // 生産施設 (カテゴリが一致するもののみ)
+      r = 0.5;
+    } else if(cat === 'LAND' && (fter.group === 'city' || fter.group === 'capital') && fd <= FAC_RANGE){
+      // 都市・大都市・商業都市・首都 (地上ユニットのみ)
+      r = 0.2;
+    }
+    if(r > facRate){ facRate = r; facName = fter.name; }
   }
-  // 1b. 自軍占領済み都市系の上にいるか? (燃料+弾薬、毎ターン20%補給)
-  //     都市/大都市/商業都市/首都 (LAND ユニットのみ)
-  if(cap && cap.owner === unit.owner && cat === 'LAND' && (ter.group === 'city' || ter.group === 'capital')){
-    return { name: ter.name, fuel: true, ammo: true, ammoFromUnit: null, rate: 0.2, isFacility: true };
-  }
-  // 2. 空母系艦船の上にいる(航空機限定、燃料+弾薬両方補給)
-  //    空母も弾薬カウンター(supplyAmmoCount)を消費する
+
+  // === B. 空母系艦船の上にいるか (航空ユニット限定、燃料+弾薬とも100%) ===
+  //     空母の弾薬庫・燃料庫を消費する
+  var carrierUnit = null;
   if(cat === 'AIR'){
     for(var i=0; i<units.length; i++){
       var c = units[i];
       if(c.id === unit.id) continue;
       if(c.owner !== unit.owner || c.hp <= 0) continue;
       if(TYPE[c.type].canCarry !== 'AIR') continue;
-      if(c.x === unit.x && c.y === unit.y){
-        return { name: TYPE[c.type].name, fuel: true, ammo: true, ammoFromUnit: c, fuelFromUnit: c, rate: 1.0 };
-      }
+      if(c.x === unit.x && c.y === unit.y){ carrierUnit = c; break; }
     }
   }
-  // 3. 自軍占領済み「弾薬工廠」が隣接マスにあるか? (燃料+弾薬両方補給)
-  //    弾薬工廠そのものに乗っている場合も含む (距離0でもOK)
-  //    ただし航空ユニット(cat==='AIR')は対象外 (街中で固定翼補給は強すぎるため)
-  if(cat !== 'AIR'){
-    var dirsAll = [[0,0],[1,0],[-1,0],[0,1],[0,-1]];
-    for(var i=0; i<dirsAll.length; i++){
-      var nx = unit.x + dirsAll[i][0], ny = unit.y + dirsAll[i][1];
-      if(!inBounds(nx, ny)) continue;
-      var depTer = TER[M[ny][nx]];
-      if(!depTer || !depTer.ammoDepot) continue;
-      var depCap = captures[nx+','+ny];
-      if(!depCap || depCap.owner !== unit.owner) continue;
-      return { name: depTer.name, fuel: true, ammo: true, ammoFromUnit: null, rate: 1.0, isFacility: true };
-    }
-  }
-  // 4. 補給専門ユニットが隣接しているか?
-  //    補給車(supplyFuel:true, supplyAmmo:true)、補給艦(supplyFuel:false, supplyAmmo:true)、
-  //    給油艦/空中給油機(supplyFuel:true, supplyAmmo:false) を独立に判定
-  //    弾薬補給は供給側のカウンター(supplyAmmoCount)を消費する
-  //
+
+  // === C. 隣接する補給専門ユニット (毎ターン100%) ===
+  //    補給車(燃料+弾薬)、補給艦(弾薬のみ)、給油艦/空中給油機(燃料のみ) を独立に判定。
   //    隣接する補給ユニットを全部調べ、「燃料を出せる相手」と「弾薬を出せる相手」を
-  //    それぞれ採用する。以前は最初に見つかった1つだけを採用して打ち切っていたため、
-  //    燃料専門の給油艦・空中給油機が先に見つかると、隣にいる補給車・補給艦からの
-  //    弾薬補給が丸ごと無視されていた。
-  //    同じ種類の補給源が複数あるときは、在庫が残っている方を優先する。
+  //    それぞれ採用する (最初の1つで打ち切ると、燃料専門の相手が先に見つかったときに
+  //    弾薬補給が丸ごと無視されてしまうため)。同種が複数あるときは在庫が残っている方を優先。
   var dirs = [[1,0],[-1,0],[0,1],[0,-1]];
-  var fuelAny = null, fuelStocked = null;   // 燃料を出せる隣接補給ユニット
-  var ammoAny = null, ammoStocked = null;   // 弾薬を出せる隣接補給ユニット
+  var fuelAny = null, fuelStocked = null;
+  var ammoAny = null, ammoStocked = null;
   for(var i=0; i<dirs.length; i++){
     var nx = unit.x + dirs[i][0], ny = unit.y + dirs[i][1];
     if(!inBounds(nx, ny)) continue;
@@ -1646,19 +1650,43 @@ function getSupplySource(unit){
       if(!ammoStocked && _supplyStockLeft(n, 'ammo') > 0) ammoStocked = n;
     }
   }
-  var fuelSrc = fuelStocked || fuelAny;
-  var ammoSrc = ammoStocked || ammoAny;
-  if(fuelSrc || ammoSrc){
-    var srcNames = [];
-    if(fuelSrc) srcNames.push(TYPE[fuelSrc.type].name);
-    if(ammoSrc && ammoSrc !== fuelSrc) srcNames.push(TYPE[ammoSrc.type].name);
+  var uFuel = fuelStocked || fuelAny;
+  var uAmmo = ammoStocked || ammoAny;
+
+  // === D. 燃料・弾薬それぞれについて、補給量の多い源を採用する ===
+  //    同率なら 施設 > 空母 > 補給ユニット の順 (施設は在庫を消費しないため)
+  var fuelRate = 0, fuelFromUnit = null, fuelName = null;
+  var ammoRate = 0, ammoFromUnit = null, ammoName = null;
+  if(facRate > 0){
+    fuelRate = facRate; fuelName = facName;
+    ammoRate = facRate; ammoName = facName;
+  }
+  if(carrierUnit){
+    if(1.0 > fuelRate){ fuelRate = 1.0; fuelFromUnit = carrierUnit; fuelName = TYPE[carrierUnit.type].name; }
+    if(1.0 > ammoRate){ ammoRate = 1.0; ammoFromUnit = carrierUnit; ammoName = TYPE[carrierUnit.type].name; }
+  }
+  if(uFuel && 1.0 > fuelRate){
+    fuelRate = 1.0;
     // 燃料庫(supplyFuelMax)を持つ補給ユニットのみ fuelFromUnit を設定
     // (持たないユニットは旧仕様=無制限燃料補給)
-    var fuelFromUnit = (fuelSrc && typeof TYPE[fuelSrc.type].supplyFuelMax === 'number') ? fuelSrc : null;
-    return { name: srcNames.join('+'), fuel: !!fuelSrc, ammo: !!ammoSrc,
-             ammoFromUnit: ammoSrc, fuelFromUnit: fuelFromUnit, rate: 1.0 };
+    fuelFromUnit = (typeof TYPE[uFuel.type].supplyFuelMax === 'number') ? uFuel : null;
+    fuelName = TYPE[uFuel.type].name;
   }
-  return null;
+  if(uAmmo && 1.0 > ammoRate){
+    ammoRate = 1.0; ammoFromUnit = uAmmo; ammoName = TYPE[uAmmo.type].name;
+  }
+  if(fuelRate <= 0 && ammoRate <= 0) return null;
+  var srcNames = [];
+  if(fuelName) srcNames.push(fuelName);
+  if(ammoName && ammoName !== fuelName) srcNames.push(ammoName);
+  return {
+    name: srcNames.join('+'),
+    fuel: fuelRate > 0, ammo: ammoRate > 0,
+    fuelRate: fuelRate, ammoRate: ammoRate,
+    rate: Math.max(fuelRate, ammoRate), // 後方互換 (fuelRate/ammoRate が無い呼び出し用)
+    fuelFromUnit: fuelFromUnit, ammoFromUnit: ammoFromUnit,
+    isFacility: (!fuelFromUnit && !ammoFromUnit)
+  };
 }
 
 // 補給ユニット n の残り在庫を返す (kind: 'fuel' / 'ammo')
@@ -2103,6 +2131,9 @@ function loadStage(key){
   }
   render();
   updateStageButtons();
+  // ステージ選択はプレイ中は不要なので隠す (上部の「🗺 ステージ変更」ボタンで開く)
+  var stageSelEl = document.getElementById('stage-select');
+  if(stageSelEl) stageSelEl.style.display = 'none';
   updateInfoPanel();
   // プレイヤーAI化ON、かつターンがP陣営なら、AIを起動
   if(playerIsAI && isPlayerFaction(turn) && !gameOver){
@@ -3554,7 +3585,8 @@ function applyTurnStart(owner){
         fSupplier.supplyFuelCount = fCounter;
       } else {
         // 施設からの補給: rate に応じて部分補給 (弾薬工廠=1.0、生産施設=0.5、都市系=0.2)
-        var fRate = (typeof src.rate === 'number') ? src.rate : 1.0;
+        var fRate = (typeof src.fuelRate === 'number') ? src.fuelRate
+                  : ((typeof src.rate === 'number') ? src.rate : 1.0);
         if(fuelNeed > 0){
           var addFuel = Math.ceil(fuelMax * fRate);
           u.fuel = Math.min(fuelMax, curFuel + addFuel);
@@ -3632,7 +3664,8 @@ function applyTurnStart(owner){
       } else {
         // 施設(生産施設/弾薬工廠)・空母 からの補給
         // 補給率(rate)に応じて部分補給 (弾薬工廠=1.0、生産施設=0.5、都市系=0.2)
-        var rate = (typeof src.rate === 'number') ? src.rate : 1.0;
+        var rate = (typeof src.ammoRate === 'number') ? src.ammoRate
+                 : ((typeof src.rate === 'number') ? src.rate : 1.0);
         var stillNeedSomething = false;
         for(var j=0; j<t.weapons.length; j++){
           var w = t.weapons[j];
@@ -13305,6 +13338,12 @@ function takeOutFromFacility(idx){
 function closeSpec(){ document.getElementById('modal-overlay').style.display = 'none'; }
 
 document.getElementById('reset-btn').onclick = function(){ if(currentStage) loadStage(currentStage); };
+// ステージ選択の開閉 (プレイ中は隠れている。ステージを選ぶと loadStage 側で再び隠れる)
+document.getElementById('stage-change-btn').onclick = function(){
+  var el = document.getElementById('stage-select');
+  if(!el) return;
+  el.style.display = (el.style.display === 'none') ? '' : 'none';
+};
 document.getElementById('end-turn-btn').onclick = function(){
   if(turn === 'P' && !gameOver){
     for(var i=0; i<units.length; i++){ if(units[i].owner === 'P') units[i].acted = true; }
