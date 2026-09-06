@@ -1553,6 +1553,35 @@ function isHelicopter(u){
   return TYPE[u.type].armorClass === 'HE';
 }
 
+// 固定翼機か (航空ユニットのうちヘリ以外)
+function isFixedWing(u){
+  return TYPE[u.type].cat === 'AIR' && !isHelicopter(u);
+}
+
+// ===== ヘリの地形隠匿 =====
+// ヘリは超低空で樹林や稜線を遮蔽に使う (ポップアップ攻撃) ため、森・山に隠れられる。
+// ただし遮蔽が効くのは「横から見る相手」だけ。高高度から見下ろす固定翼機には隠れられず、
+// 地形防御も効かない。対空戦車・対空ミサイルは専用の索敵で炙り出せる。
+var AA_SPOTTER_TYPES = { AA_TANK: true, AA_MISSILE: true };
+function heliHidesInTerrain(u){
+  if(!isHelicopter(u)) return false;
+  var terKey = M[u.y][u.x];
+  return (terKey === 'FOREST' || terKey === 'MOUNTAIN');
+}
+
+// 隠れているヘリを見つけられる相手が viewerOwner 側にいるか
+// (対空戦車・対空ミサイル、または固定翼機。いずれも自分の視界内であること)
+function heliHideRevealed(u, viewerOwner, excluderId){
+  for(var i=0; i<units.length; i++){
+    var v = units[i];
+    if(!isAlly(v.owner, viewerOwner) || v.hp <= 0) continue;
+    if(excluderId !== undefined && v.id === excluderId) continue;
+    if(!AA_SPOTTER_TYPES[v.type] && !isFixedWing(v)) continue;
+    if(manhattan(v.x, v.y, u.x, u.y) <= getEffectiveSight(v)) return true;
+  }
+  return false;
+}
+
 // ある補給ユニット (supplier) が、対象 (unit) を補給対象にできるか
 // supplier.supplyTarget は配列 (例: ['LAND','HELI'], ['SEA'], ['AIR','HELI'])
 function _supplyTargetMatches(supplierType, targetUnit){
@@ -2306,7 +2335,10 @@ function isAmbushHidden(u, viewerOwner, excluderId){
   // - ステルス爆撃機のステルス (stealth): 戦闘機・対空以外には隠匿
   var ter = TER[M[u.y][u.x]];
   var defCat = TYPE[u.type].cat;
-  var hiddenByTerrain = !!(ter && ter.sightBlock && defCat !== 'AIR');
+  // 固定翼機は森・山に隠れないが、ヘリは低空で遮蔽を使うので隠れる
+  var hiddenByTerrain = !!(ter && ter.sightBlock && (defCat !== 'AIR' || heliHidesInTerrain(u)));
+  // 対空ユニットか固定翼機が視界に収めていれば、隠れたヘリは伏兵にならない
+  if(hiddenByTerrain && heliHidesInTerrain(u) && heliHideRevealed(u, viewerOwner, excluderId)) hiddenByTerrain = false;
   var hiddenByWeather = weatherHidesUnit(u);
   var hiddenBySubmerge = !!(TYPE[u.type].canSubmerge && u.submerged);
   var hiddenByStealth = !!(TYPE[u.type].canStealth && u.stealth);
@@ -2392,9 +2424,12 @@ function isUnitVisibleToExcl(u, viewerOwner, excluderId){
   var hidden = false;
   var ter = TER[M[u.y][u.x]];
   if(ter && ter.sightBlock){
-    // ただし航空ユニットは森・山に隠れない (上空にいる)
+    // 固定翼機は森・山に隠れない (上空にいる)。ヘリは低空で遮蔽を使うので隠れる
     if(TYPE[u.type].cat !== 'AIR') hidden = true;
+    else if(heliHidesInTerrain(u)) hidden = true;
   }
+  // 隠れているヘリは、対空ユニットか固定翼機が視界に収めていれば見える
+  if(hidden && heliHidesInTerrain(u) && heliHideRevealed(u, viewerOwner, excluderId)) hidden = false;
   // 天候による隠匿 (雲/雨雲)
   if(weatherHidesUnit(u)) hidden = true;
   for(var i=0; i<units.length; i++){
@@ -3041,12 +3076,17 @@ function effectiveAtkW(unit, weapon, def, attackMode){
 //    将来的に岩礁など海上隠匿地形を導入する場合は同様に group 単位で許可していく)
 // - 航空ユニット: 地形効果一切なし (常に 0)
 // + 天候による防御ボーナス (雲: 航空のみ +1, 雨雲: 全カテゴリ +2)
-function getTerrainDefFor(defUnit){
+function getTerrainDefFor(defUnit, attacker){
   var ter = TER[M[defUnit.y][defUnit.x]];
   var defCat = TYPE[defUnit.type].cat;
   var base = 0;
   if(ter){
-    if(defCat === 'AIR') base = 0;
+    if(defCat === 'AIR'){
+      // ヘリが森・山を遮蔽に使っている場合のみ地形防御を得る。
+      // 見下ろして撃つ固定翼機には遮蔽が効かない
+      if(heliHidesInTerrain(defUnit) && !(attacker && isFixedWing(attacker))) base = ter.def || 0;
+      else base = 0;
+    }
     else if(defCat === 'SEA'){
       // 港系: 通常の地形防御
       if(ter.group === 'port') base = ter.def || 0;
@@ -3159,7 +3199,7 @@ function bestAttackOn(att, def, fromX, fromY, justMoved, attackMode){
     var obsMult = getObserverMultiplier(att, w, def, attackMode);
     var armor = TYPE[def.type].armor;
     // 地形防御: 守備側カテゴリで判定 (地上=全効果, 海上=港系のみ, 航空=無し) + 天候
-    var terrainDef = getTerrainDefFor(def);
+    var terrainDef = getTerrainDefFor(def, att);
     var dmg = eAtk + bonus - armor - terrainDef;
     // 0以下でも攻撃可能 (弾薬は消費するが、ダメージは0になる)
     // ただし負のダメージは0として扱う
@@ -3220,7 +3260,8 @@ function computeAttackable(unit, fromX, fromY, justMoved){
             // 簡易: 移動前位置と敵位置の距離が、移動前の有効視界以内 (隠匿地形なら隣接のみ)
             var preDist = manhattan(unit.preMoveX, unit.preMoveY, u.x, u.y);
             var targetTer = TER[M[u.y][u.x]];
-            var targetHidden = !!(targetTer && targetTer.sightBlock && TYPE[u.type].cat !== 'AIR');
+            var targetHidden = !!(targetTer && targetTer.sightBlock
+              && (TYPE[u.type].cat !== 'AIR' || heliHidesInTerrain(u)));
             // 天候による隠匿
             if(weatherHidesUnit(u)) targetHidden = true;
             var preSight = getEffectiveSight(unit); // 視界は移動前後で変わらない想定 (山にいると+1 等の地形ボーナスは反映)
@@ -3448,7 +3489,7 @@ function performFireForEffect(att, defOrTarget, justMoved){
     var fakeTarget = centerUnit;
     var eAtk = effectiveAtkW(att, bestW, fakeTarget, 'fire_for_effect');
     var armor = TYPE[fakeTarget.type].armor;
-    var terrainDef = getTerrainDefFor(fakeTarget);
+    var terrainDef = getTerrainDefFor(fakeTarget, att);
     var dmg = Math.max(0, eAtk - armor - terrainDef);
     fakeTarget.hp = Math.max(0, fakeTarget.hp - dmg * 10);
     hits.push({ unit: fakeTarget, dmg: dmg, role: 'center' });
@@ -3475,7 +3516,7 @@ function performFireForEffect(att, defOrTarget, justMoved){
     if(mult !== 1.0) baseAtk = Math.floor(baseAtk * mult);
     eAtk = Math.round(baseAtk * att.hp / HP_MAX);
     var armor = TYPE[fakeT.type].armor;
-    var terrainDef = getTerrainDefFor(fakeT);
+    var terrainDef = getTerrainDefFor(fakeT, att);
     var dmg = Math.max(0, eAtk - armor - terrainDef);
     fakeT.hp = Math.max(0, fakeT.hp - dmg * 10);
     hits.push({ unit: fakeT, dmg: dmg, role: 'splash' });
@@ -7924,7 +7965,11 @@ function _aiTerrainDefAt(unit, x, y){
   var ter = TER[terKey];
   if(!ter) return 0;
   var cat = TYPE[unit.type].cat;
-  if(cat === 'AIR') return 0;
+  if(cat === 'AIR'){
+    // ヘリは森・山を遮蔽に使えるので、そこでは地形防御を得る (固定翼機は0のまま)
+    if(isHelicopter(unit) && (terKey === 'FOREST' || terKey === 'MOUNTAIN')) return ter.def || 0;
+    return 0;
+  }
   if(cat === 'SEA'){
     // 港系: 通常の地形防御
     if(ter.group === 'port') return ter.def || 0;
