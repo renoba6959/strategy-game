@@ -1580,26 +1580,272 @@ function _supplyTargetMatches(supplierType, targetUnit){
 function facilityStockSpec(terKey){
   var ter = TER[terKey];
   if(!ter || !ter.capturable || ter.isRuins) return null;
+  // fuelInit / ammoInit = ゲーム開始時の備蓄。生産できる施設は満タンで始まる。
   // 弾薬工廠: 補給範囲3マス・補給率100%と消費が激しいぶん、生産量も上位
-  if(ter.ammoDepot) return { fuelGain: 150, ammoGain: 20, fuelMax: 800, ammoMax: 80 };
+  if(ter.ammoDepot) return { fuelGain: 150, ammoGain: 20, fuelMax: 800, ammoMax: 80, fuelInit: 800, ammoInit: 80 };
   // 生産施設 (工場系・港系・空港系): レベル1〜4に応じて増える。上限は生産量の5ターン分
   if(ter.slots){
     var lv = ter.level || 1;
     var fg = 20 + 20 * lv, ag = 2 + 2 * lv;
-    return { fuelGain: fg, ammoGain: ag, fuelMax: fg * 5, ammoMax: ag * 5 };
+    return { fuelGain: fg, ammoGain: ag, fuelMax: fg * 5, ammoMax: ag * 5, fuelInit: fg * 5, ammoInit: ag * 5 };
   }
   // 都市・大都市・商業都市・首都: 自力では生産しない (貯めておくことはできる)
-  if(ter.group === 'city' || ter.group === 'capital') return { fuelGain: 0, ammoGain: 0, fuelMax: 200, ammoMax: 20 };
+  // 開始時は上限の半分だけ。使い切ると運んでもらうしかなく、補給の大切さが分かるようにする
+  if(ter.group === 'city' || ter.group === 'capital') return { fuelGain: 0, ammoGain: 0, fuelMax: 200, ammoMax: 20, fuelInit: 100, ammoInit: 10 };
   return null;
 }
 
-// 施設の備蓄を取得 (未初期化なら上限まで満タンで初期化する = ゲーム開始時は満タン)
+// 施設の備蓄を取得 (未初期化なら開始時の値で初期化する)
+// 生産できる施設は満タン、都市系・首都は上限の半分から始まる
 function facilityStock(cap, terKey){
   var spec = facilityStockSpec(terKey);
   if(!spec) return { fuel: 0, ammo: 0, spec: null };
-  if(typeof cap.stockFuel !== 'number') cap.stockFuel = spec.fuelMax;
-  if(typeof cap.stockAmmo !== 'number') cap.stockAmmo = spec.ammoMax;
+  if(typeof cap.stockFuel !== 'number') cap.stockFuel = (typeof spec.fuelInit === 'number') ? spec.fuelInit : spec.fuelMax;
+  if(typeof cap.stockAmmo !== 'number') cap.stockAmmo = (typeof spec.ammoInit === 'number') ? spec.ammoInit : spec.ammoMax;
   return { fuel: cap.stockFuel, ammo: cap.stockAmmo, spec: spec };
+}
+
+// ===== 補給ルート / 兵站 (補給システム 段階3) =====
+// 補給ユニットに「積み元の施設」と「降ろし先の施設」を指定すると、
+// 毎ターン自動で往復し、備蓄を運ぶ。
+//   unit.route       = { from:{x,y}, to:{x,y} }
+//   unit.routeTarget = 'from'(積みに行く) / 'to'(降ろしに行く)
+// 施設マスの上でなくても、隣接していれば積み降ろしできる (施設マスを塞がないため)。
+
+// この補給ユニットが運べるか (燃料庫または弾薬庫を持っているか)
+function canCarrySupplyStock(u){
+  var t = TYPE[u.type];
+  if(!t || !t.isSupply) return false;
+  return (typeof t.supplyFuelMax === 'number') || (typeof t.supplyAmmoMax === 'number');
+}
+
+// 積み元・降ろし先に指定できる施設か (自軍が占領していて備蓄を持てる拠点)
+function isSupplyRouteFacility(x, y, owner){
+  if(!inBounds(x, y)) return false;
+  var cap = captures[x+','+y];
+  if(!cap || cap.owner !== owner) return false;
+  return !!facilityStockSpec(M[y][x]);
+}
+
+// 積む: 施設の備蓄 → 補給ユニットの在庫 (満載まで、上限なし=備蓄を空にしてもよい)
+function supplyRouteLoad(u, pos){
+  var t = TYPE[u.type];
+  var moved = 0;
+  if(typeof t.supplyFuelMax === 'number'){
+    var curF = (typeof u.supplyFuelCount === 'number') ? u.supplyFuelCount : t.supplyFuelMax;
+    var needF = t.supplyFuelMax - curF;
+    if(needF > 0){
+      var gotF = takeFacilityStock(pos, 'fuel', needF);
+      u.supplyFuelCount = curF + gotF; moved += gotF;
+    }
+  }
+  if(typeof t.supplyAmmoMax === 'number'){
+    var curA = (typeof u.supplyAmmoCount === 'number') ? u.supplyAmmoCount : t.supplyAmmoMax;
+    var needA = t.supplyAmmoMax - curA;
+    if(needA > 0){
+      var gotA = takeFacilityStock(pos, 'ammo', needA);
+      u.supplyAmmoCount = curA + gotA; moved += gotA;
+    }
+  }
+  return moved;
+}
+
+// 降ろす: 補給ユニットの在庫 → 施設の備蓄 (施設の上限まで)
+function supplyRouteUnload(u, pos){
+  var cap = captures[pos.x+','+pos.y];
+  if(!cap) return 0;
+  var st = facilityStock(cap, M[pos.y][pos.x]);
+  if(!st.spec) return 0;
+  var t = TYPE[u.type];
+  var moved = 0;
+  if(typeof t.supplyFuelMax === 'number'){
+    var curF = (typeof u.supplyFuelCount === 'number') ? u.supplyFuelCount : t.supplyFuelMax;
+    var roomF = st.spec.fuelMax - st.fuel;
+    var giveF = Math.min(curF, roomF);
+    if(giveF > 0){ cap.stockFuel = st.fuel + giveF; u.supplyFuelCount = curF - giveF; moved += giveF; }
+  }
+  if(typeof t.supplyAmmoMax === 'number'){
+    var curA = (typeof u.supplyAmmoCount === 'number') ? u.supplyAmmoCount : t.supplyAmmoMax;
+    var st2 = facilityStock(cap, M[pos.y][pos.x]);
+    var roomA = st2.spec.ammoMax - st2.ammo;
+    var giveA = Math.min(curA, roomA);
+    if(giveA > 0){ cap.stockAmmo = st2.ammo + giveA; u.supplyAmmoCount = curA - giveA; moved += giveA; }
+  }
+  return moved;
+}
+
+// 在庫が乏しいか (運べるものがどれも上限の2割以下)
+// 前線の駐留地点から積み元へ戻る判断に使う。空になる前に動くので補給の切れ目が短い
+function supplyStockLow(u){
+  var t = TYPE[u.type];
+  if(typeof t.supplyFuelMax === 'number'){
+    var f = (typeof u.supplyFuelCount === 'number') ? u.supplyFuelCount : t.supplyFuelMax;
+    if(f > t.supplyFuelMax * 0.2) return false;
+  }
+  if(typeof t.supplyAmmoMax === 'number'){
+    var a = (typeof u.supplyAmmoCount === 'number') ? u.supplyAmmoCount : t.supplyAmmoMax;
+    if(a > t.supplyAmmoMax * 0.2) return false;
+  }
+  return true;
+}
+
+// 航空補給ユニット (空中給油機) が燃料を補給できる最寄りの地点を返す
+// 自軍が占領している空港系施設、または自軍の空母。経路距離で最寄りを選ぶ
+// 戻り値: { x, y, dist } または null
+function nearestAirRefuelPoint(u){
+  var cands = [];
+  for(var k in captures){
+    var cap = captures[k];
+    if(cap.owner !== u.owner) continue;
+    var xy = k.split(',');
+    var fx = parseInt(xy[0]), fy = parseInt(xy[1]);
+    var ter = TER[M[fy][fx]];
+    if(!ter || ter.healCat !== 'AIR') continue; // 空港系のみ
+    cands.push({ x: fx, y: fy });
+  }
+  for(var i=0; i<units.length; i++){
+    var c = units[i];
+    if(c.id === u.id) continue;
+    if(c.owner !== u.owner || c.hp <= 0) continue;
+    if(TYPE[c.type].canCarry !== 'AIR') continue; // 空母系
+    cands.push({ x: c.x, y: c.y });
+  }
+  var best = null;
+  for(var ci=0; ci<cands.length; ci++){
+    var cd = cands[ci];
+    var dm = manhattan(u.x, u.y, cd.x, cd.y);
+    if(best && dm > best.dist) continue; // 直線距離で明らかに遠いものは経路計算を省く
+    var dist = bfsPathDistances(cd.x, cd.y, u);
+    var d = dist[u.x+','+u.y];
+    if(d === undefined) continue;
+    if(!best || d < best.dist) best = { x: cd.x, y: cd.y, dist: d };
+  }
+  return best;
+}
+
+// 航空補給ユニットが墜落しないために、いま帰投すべきか
+// 航空機は停止だけで毎ターン燃料-1、移動は1マス-2、燃料0で墜落する。
+// 「最寄りの空港・空母まで戻るのに必要な燃料 + 余裕」を常に確保する。
+// 戻り値: 帰投先 { x, y } または null (まだ余裕がある / 帰る場所が無い)
+function airRefuelPlan(u){
+  var t = TYPE[u.type];
+  if(t.cat !== 'AIR' || u.fuel === undefined) return null;
+  var pt = nearestAirRefuelPoint(u);
+  if(!pt) return null;
+  // 移動 2/マス + 移動にかかるターン数ぶんの停止消費 1/ターン + 予備6
+  // (着陸マスが塞がって遠回りする場合に備えて予備を多めに取る)
+  var need = pt.dist * 2 + Math.ceil(pt.dist / Math.max(1, t.move)) + 6;
+  if(u.fuel <= need) return { x: pt.x, y: pt.y, dist: pt.dist };
+  return null;
+}
+
+// 積み元で自分の燃料が回復するまで待つべきか (航空補給ユニットのみ)
+function supplyRouteWaitingForFuel(u){
+  var t = TYPE[u.type];
+  if(t.cat !== 'AIR' || u.fuel === undefined) return false;
+  return u.fuel < (t.fuelMax || 99) * 0.8;
+}
+
+// 在庫が満載か (積み元へ戻る必要があるかの判定に使う)
+function supplyStockFull(u){
+  var t = TYPE[u.type];
+  if(typeof t.supplyFuelMax === 'number'){
+    var curF = (typeof u.supplyFuelCount === 'number') ? u.supplyFuelCount : t.supplyFuelMax;
+    if(curF < t.supplyFuelMax) return false;
+  }
+  if(typeof t.supplyAmmoMax === 'number'){
+    var curA = (typeof u.supplyAmmoCount === 'number') ? u.supplyAmmoCount : t.supplyAmmoMax;
+    if(curA < t.supplyAmmoMax) return false;
+  }
+  return true;
+}
+
+// 目標へ最短で近づく (迂回はしない。ZOC=見える敵への隣接で止まるのは他ユニットと同じ)
+function supplyRouteMove(u, tx, ty){
+  var dist = bfsPathDistances(tx, ty, u);
+  var curD = dist[u.x+','+u.y];
+  if(curD === undefined) curD = Infinity;
+  var movable = computeMovable(u);
+  var best = null, bestD = curD;
+  for(var k in movable){
+    var xy = k.split(',');
+    var mx = parseInt(xy[0]), my = parseInt(xy[1]);
+    if(mx === u.x && my === u.y) continue;
+    if(unitAt(mx, my)) continue;
+    var d = dist[k];
+    if(d === undefined) continue;
+    if(d < bestD){ bestD = d; best = { x: mx, y: my }; }
+  }
+  if(!best) return false;
+  var fromX = u.x, fromY = u.y;
+  u.preMoveX = fromX; u.preMoveY = fromY;
+  u.x = best.x; u.y = best.y;
+  consumeFuelForMove(u, fromX, fromY);
+  return true;
+}
+
+// 目的地 (積み元/降ろし先) に着いていれば積み降ろしし、目的地を入れ替える
+// 施設マスの上でなくても隣接していればよい (施設マスを塞がないため)
+function supplyRouteTransfer(u, owner){
+  for(var pass=0; pass<2; pass++){
+    var isFrom = (u.routeTarget === 'from');
+    // 前線の駐留地点では降ろさない (そこに留まり、隣接する味方へ直接補給する)
+    if(!isFrom && u.route.toKind === 'point') return;
+    var tgt = isFrom ? u.route.from : u.route.to;
+    if(manhattan(u.x, u.y, tgt.x, tgt.y) > 1) return;
+    var amount = isFrom ? supplyRouteLoad(u, tgt) : supplyRouteUnload(u, tgt);
+    if(owner === 'P' && window.plog){
+      try{ plog('🚚 ' + TYPE[u.type].name + (isFrom ? ' 積込' : ' 荷降ろし') + ' ('+tgt.x+','+tgt.y+') ' + amount); }catch(e){}
+    }
+    u.routeTarget = isFrom ? 'to' : 'from';
+  }
+}
+
+// 補給ルートの自動往復を1ターンぶん実行する (ターン開始時に呼ぶ)
+function runSupplyRoutes(owner){
+  for(var i=0; i<units.length; i++){
+    var u = units[i];
+    if(u.owner !== owner || u.hp <= 0) continue;
+    if(!u.route) continue;
+    if(!canCarrySupplyStock(u)){ delete u.route; delete u.routeTarget; continue; }
+    // 積み元が自軍でなくなったらルート解除 (降ろし先が施設の場合はそちらも見る)
+    var toIsFacility = (u.route.toKind !== 'point');
+    if(!isSupplyRouteFacility(u.route.from.x, u.route.from.y, owner)
+       || (toIsFacility && !isSupplyRouteFacility(u.route.to.x, u.route.to.y, owner))){
+      delete u.route; delete u.routeTarget;
+      if(owner === 'P') setStatus('🚚 補給ルートの施設が失われたため、ルートを解除しました');
+      continue;
+    }
+    if(u.routeTarget !== 'from' && u.routeTarget !== 'to'){
+      u.routeTarget = supplyStockFull(u) ? 'to' : 'from';
+    }
+    // 前線の駐留地点へのルート: 在庫が2割以下になったら積み元へ戻る
+    if(!toIsFacility && u.routeTarget === 'to' && supplyStockLow(u)) u.routeTarget = 'from';
+    // 目的地に着いていれば積み降ろしする → 移動 → 移動先が目的地ならその場で積み降ろし
+    // (移動と積み降ろしを同じターンに行う。到着の翌ターンまで待たせない)
+    supplyRouteTransfer(u, owner);
+    // 空中給油機など航空補給ユニットの燃料管理 (墜落防止)
+    if(TYPE[u.type].cat === 'AIR'){
+      var nearPt = nearestAirRefuelPoint(u);
+      // 補給できる場所にいて燃料が満タン近くでなければ、動かずに給油を待つ
+      if(nearPt && nearPt.dist <= 1 && supplyRouteWaitingForFuel(u)){
+        u.moved = true; u.acted = true;
+        continue;
+      }
+      // 帰らないと墜落する見込みなら、最寄りの空港・空母へ戻る (ルートは解除しない)
+      var backTo = airRefuelPlan(u);
+      if(backTo){
+        supplyRouteMove(u, backTo.x, backTo.y);
+        u.moved = true; u.acted = true;
+        continue;
+      }
+    }
+    var goal = (u.routeTarget === 'from') ? u.route.from : u.route.to;
+    supplyRouteMove(u, goal.x, goal.y);
+    supplyRouteTransfer(u, owner);
+    u.moved = true;
+    u.acted = true;
+  }
 }
 
 // 収容ユニットの取り出し補給を、施設の備蓄から払う (段階2)
@@ -3432,6 +3678,31 @@ function updateInfoPanel(){
       uhtml += '<div style="margin-top:1px;font-size:11px;color:'+color+';padding-left:8px;">📦 弾薬在庫: '+counter+'/'+t.supplyAmmoMax+'</div>';
     }
   }
+  // 補給ルートの表示 (段階3)
+  if(u.route){
+    var rFrom = TER[M[u.route.from.y][u.route.from.x]];
+    var isPointRoute = (u.route.toKind === 'point');
+    var rToLabel = isPointRoute
+      ? ('駐留地点('+u.route.to.x+','+u.route.to.y+')')
+      : (TER[M[u.route.to.y][u.route.to.x]].name + '('+u.route.to.x+','+u.route.to.y+')');
+    var goingTo;
+    if(u.routeTarget === 'from'){
+      goingTo = rFrom.name + '('+u.route.from.x+','+u.route.from.y+') へ積みに移動中';
+    } else if(isPointRoute){
+      var arrivedPt = (manhattan(u.x, u.y, u.route.to.x, u.route.to.y) <= 1);
+      goingTo = arrivedPt ? (rToLabel + ' に駐留中 (周りの味方へ補給)') : (rToLabel + ' へ移動中');
+    } else {
+      goingTo = rToLabel + ' へ降ろしに移動中';
+    }
+    // 航空補給ユニットは燃料の都合で最寄りの空港・空母へ帰ることがある
+    if(TYPE[u.type].cat === 'AIR'){
+      var backNow = airRefuelPlan(u);
+      if(backNow) goingTo = '⛽ 燃料が少ないため ('+backNow.x+','+backNow.y+') へ帰投中';
+    }
+    uhtml += '<div style="margin-top:3px;color:#0F6E56;font-size:11px;">🚚 補給ルート: '
+      + rFrom.name + '('+u.route.from.x+','+u.route.from.y+') → ' + rToLabel + '</div>';
+    uhtml += '<div style="font-size:11px;color:#666;padding-left:8px;">' + goingTo + '</div>';
+  }
   // 空母系の弾薬庫表示 (isSupplyではないが、艦載航空機への補給用に弾薬庫を持つ)
   if(!t.isSupply && t.canCarry === 'AIR'){
     if(t.supplyFuel && typeof t.supplyFuelMax === 'number' || t.supplyAmmo && typeof t.supplyAmmoMax === 'number'){
@@ -4049,6 +4320,8 @@ function endTurn(){
   if(roundEnded) advanceWeather();
   applyTurnStart(turn);
   for(var i=0; i<units.length; i++){ if(units[i].owner === turn){ units[i].moved = false; units[i].acted = false; } }
+  // 補給ルート (段階3): ルート指定済みの補給ユニットを自動で往復させる
+  runSupplyRoutes(turn);
   // ステータスメッセージ
   var phaseMsg = '';
   if(phaseChanged){
@@ -10386,6 +10659,17 @@ function showCommandPanel(unit, justMoved){
   if(canRebuild) addBtn('再建', doRebuild, true);
   if(canRepairFacility) addBtn('施設修復', doRepairFacility, true);
   if(canBuildBridge) addBtn('橋建設', enterBridgeMode, true);
+  // 補給ルート (段階3): 補給ユニットのみ
+  if(canCarrySupplyStock(unit)){
+    if(unit.route) addBtn('🚚 ルート解除', doClearSupplyRoute);
+    else addBtn('🚚 補給ルート設定', enterRouteSetMode, true);
+    // 自軍施設の上または隣接なら、手動で積み降ろしできる
+    var rf = nearestRouteFacility(unit);
+    if(rf){
+      addBtn('📦 積む', function(){ doManualLoad(rf); });
+      addBtn('📦 降ろす', function(){ doManualUnload(rf); });
+    }
+  }
   if(canSubmergeNow) addBtn(unit.submerged ? '浮上' : '潜航', doSubmerge);
   if(canStealth) addBtn(unit.stealth ? 'ステルス解除' : 'ステルスON', doStealth);
   addBtn('待機', doWait);
@@ -10396,6 +10680,113 @@ function showCommandPanel(unit, justMoved){
   render();
 }
 function hideCommandPanel(){ document.getElementById('command-panel').style.display = 'none'; }
+
+// 補給ルートの指定モード (段階3)
+// routeSetMode = { unitId, stage:'from'|'to', from:{x,y} }
+var routeSetMode = null;
+
+// 補給ユニットの現在地から、積み降ろしできる自軍施設 (同じマスか隣接) を返す
+function nearestRouteFacility(unit){
+  var dirs = [[0,0],[1,0],[-1,0],[0,1],[0,-1]];
+  for(var i=0; i<dirs.length; i++){
+    var nx = unit.x + dirs[i][0], ny = unit.y + dirs[i][1];
+    if(isSupplyRouteFacility(nx, ny, unit.owner)) return { x: nx, y: ny };
+  }
+  return null;
+}
+
+function enterRouteSetMode(){
+  if(!pendingUnit) return;
+  routeSetMode = { unitId: pendingUnit.id, stage: 'from', from: null };
+  hideCommandPanel();
+  setClear(movableSet); setClear(attackableSet);
+  setStatus('🚚 積み元にする自軍拠点をクリックしてください (もう一度このユニットをクリックで中止)');
+  render();
+}
+
+function cancelRouteSetMode(){
+  routeSetMode = null;
+  setStatus('補給ルートの設定を中止しました');
+  render();
+}
+
+// 補給ルートの指定モード中のクリック処理。処理したら true
+function handleRouteSetClick(x, y){
+  if(!routeSetMode) return false;
+  var u = null;
+  for(var i=0; i<units.length; i++){ if(units[i].id === routeSetMode.unitId){ u = units[i]; break; } }
+  if(!u || u.hp <= 0){ routeSetMode = null; return false; }
+  // 積み元は「備蓄のある自軍拠点」に限る
+  if(routeSetMode.stage === 'from'){
+    if(!isSupplyRouteFacility(x, y, u.owner)){
+      setStatus('🚚 積み元は自軍が占領している拠点を選んでください');
+      return true;
+    }
+    routeSetMode.from = { x: x, y: y };
+    routeSetMode.stage = 'to';
+    setStatus('🚚 積み元: ' + TER[M[y][x]].name + '('+x+','+y+') → 次に降ろし先をクリック（自軍拠点なら備蓄を降ろし、それ以外のマスならそこに駐留して周りへ補給します）');
+    render();
+    return true;
+  }
+  // 降ろし先: 自軍拠点なら「施設へ降ろす」、それ以外のマスなら「そこに駐留する」
+  if(routeSetMode.from.x === x && routeSetMode.from.y === y){
+    setStatus('🚚 積み元と同じ場所は指定できません。別の場所を選んでください');
+    return true;
+  }
+  var isFac = isSupplyRouteFacility(x, y, u.owner);
+  if(!isFac){
+    // 駐留地点: そのユニットが入れる地形で、到達できる必要がある
+    if(moveCost(u.type, M[y][x]) === Infinity){
+      setStatus('🚚 そのマスには入れません。別の場所を選んでください');
+      return true;
+    }
+    var reach = bfsPathDistances(x, y, u);
+    if(reach[u.x+','+u.y] === undefined && reach[routeSetMode.from.x+','+routeSetMode.from.y] === undefined){
+      setStatus('🚚 そこへは到達できません。別の場所を選んでください');
+      return true;
+    }
+  }
+  u.route = { from: routeSetMode.from, to: { x: x, y: y }, toKind: isFac ? 'facility' : 'point' };
+  u.routeTarget = supplyStockFull(u) ? 'to' : 'from';
+  var fTer = TER[M[u.route.from.y][u.route.from.x]];
+  var toLabel = isFac ? (TER[M[y][x]].name + '('+x+','+y+')') : ('駐留地点('+x+','+y+')');
+  setStatus('🚚 補給ルートを設定しました: ' + fTer.name + '('+u.route.from.x+','+u.route.from.y+') → ' + toLabel);
+  routeSetMode = null;
+  render();
+  updateInfoPanel();
+  return true;
+}
+
+function doClearSupplyRoute(){
+  if(!pendingUnit) return;
+  delete pendingUnit.route;
+  delete pendingUnit.routeTarget;
+  setStatus('🚚 補給ルートを解除しました');
+  hideCommandPanel();
+  pendingUnit = null;
+  setClear(attackableSet);
+  afterAction();
+}
+
+function doManualLoad(pos){
+  if(!pendingUnit) return;
+  var got = supplyRouteLoad(pendingUnit, pos);
+  setStatus(got > 0 ? ('📦 ' + TER[M[pos.y][pos.x]].name + 'から積み込みました (合計'+got+')') : '📦 積み込めるものがありません');
+  pendingUnit.acted = true;
+  pendingUnit = null;
+  setClear(attackableSet); hideCommandPanel();
+  afterAction();
+}
+
+function doManualUnload(pos){
+  if(!pendingUnit) return;
+  var put = supplyRouteUnload(pendingUnit, pos);
+  setStatus(put > 0 ? ('📦 ' + TER[M[pos.y][pos.x]].name + 'に降ろしました (合計'+put+')') : '📦 降ろせるものがありません (在庫が空か、備蓄が満杯)');
+  pendingUnit.acted = true;
+  pendingUnit = null;
+  setClear(attackableSet); hideCommandPanel();
+  afterAction();
+}
 
 function doSubmerge(){
   if(!pendingUnit) return;
@@ -10956,6 +11347,12 @@ function onCellClick(x, y){
   var k = x+','+y;
   var clicked = unitAt(x, y);
   infoX = x; infoY = y; updateInfoPanel();
+  // 補給ルートの指定モード (段階3)
+  if(routeSetMode){
+    // 対象の補給ユニット自身をクリックしたら中止
+    if(clicked && clicked.id === routeSetMode.unitId){ cancelRouteSetMode(); return; }
+    if(handleRouteSetClick(x, y)) return;
+  }
   if(attackMode && pendingUnit && setHas(attackableSet, k)){
     // 効力射の場合は空マスでも着弾点として OK
     var isFFE = (pendingAttackMode === 'fire_for_effect');
@@ -11425,6 +11822,16 @@ function render(){
       // 敵脅威範囲表示 (敵ユニットクリック時)。重なったら赤(脅威)優先
       if(setHas(enemyMoveSet, k)){ bg = '#B8D8F0'; border = '1.5px solid #185FA5'; }
       if(setHas(enemyThreatSet, k)){ bg = '#F5B0B0'; border = '1.5px solid #A32D2D'; }
+      // 補給ルートの指定モード中: 指定できる場所を強調 (段階3)
+      if(routeSetMode){
+        if(isSupplyRouteFacility(x, y, 'P')){
+          bg = '#FFE9B8'; border = '2px dashed #BA7517';
+          if(routeSetMode.from && routeSetMode.from.x === x && routeSetMode.from.y === y) border = '2px solid #0F6E56';
+        } else if(routeSetMode.stage === 'to'){
+          // 降ろし先の選択中は、駐留地点にできるマスも薄く示す
+          border = '1px dashed #BA7517';
+        }
+      }
       if(selected && selected.x === x && selected.y === y) border = '2px solid #BA7517';
       if(pendingUnit && pendingUnit.x === x && pendingUnit.y === y) border = '2px solid #BA7517';
       cell.style.cssText = 'width:42px;height:42px;background:'+bg+';border:'+border+';box-sizing:border-box;display:flex;align-items:center;justify-content:center;cursor:pointer;position:relative;';
