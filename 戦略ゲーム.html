@@ -1572,6 +1572,88 @@ function _supplyTargetMatches(supplierType, targetUnit){
   return false;
 }
 
+// ===== 施設の備蓄 (補給システム 段階2) =====
+// 施設は燃料・弾薬の備蓄を持ち、ユニットへの補給で減っていく。
+// 工場系と弾薬工廠だけが毎ターン備蓄を生産する。都市系・首都は生産しない
+// (段階3で補給車が運んでくる)。
+// 単位: 燃料1 = ユニットの燃料1、弾薬1 = 弾1発 (補給ユニットの在庫と同じ単位)
+function facilityStockSpec(terKey){
+  var ter = TER[terKey];
+  if(!ter || !ter.capturable || ter.isRuins) return null;
+  // 弾薬工廠: 補給範囲3マス・補給率100%と消費が激しいぶん、生産量も上位
+  if(ter.ammoDepot) return { fuelGain: 150, ammoGain: 20, fuelMax: 800, ammoMax: 80 };
+  // 生産施設 (工場系・港系・空港系): レベル1〜4に応じて増える。上限は生産量の5ターン分
+  if(ter.slots){
+    var lv = ter.level || 1;
+    var fg = 20 + 20 * lv, ag = 2 + 2 * lv;
+    return { fuelGain: fg, ammoGain: ag, fuelMax: fg * 5, ammoMax: ag * 5 };
+  }
+  // 都市・大都市・商業都市・首都: 自力では生産しない (貯めておくことはできる)
+  if(ter.group === 'city' || ter.group === 'capital') return { fuelGain: 0, ammoGain: 0, fuelMax: 200, ammoMax: 20 };
+  return null;
+}
+
+// 施設の備蓄を取得 (未初期化なら上限まで満タンで初期化する = ゲーム開始時は満タン)
+function facilityStock(cap, terKey){
+  var spec = facilityStockSpec(terKey);
+  if(!spec) return { fuel: 0, ammo: 0, spec: null };
+  if(typeof cap.stockFuel !== 'number') cap.stockFuel = spec.fuelMax;
+  if(typeof cap.stockAmmo !== 'number') cap.stockAmmo = spec.ammoMax;
+  return { fuel: cap.stockFuel, ammo: cap.stockAmmo, spec: spec };
+}
+
+// 収容ユニットの取り出し補給を、施設の備蓄から払う (段階2)
+// 収容中は makeUnit で作り直すため燃料・弾薬が満タンになるが、そのぶんを施設の備蓄から引く。
+// 備蓄が足りなければ、足りるぶんだけ補給された状態で出てくる。
+// 収容時の燃料・弾薬が記録されていない古いデータは、従来どおり満タン (課金なし) とする。
+function payTakeOutSupply(newU, cg, fx, fy){
+  if(!cg || typeof cg.fuel !== 'number' || !cg.ammo) return;
+  var t = TYPE[newU.type];
+  var pos = { x: fx, y: fy };
+  // 燃料
+  var fullFuel = t.fuelMax || 99;
+  var needFuel = Math.max(0, fullFuel - cg.fuel);
+  if(needFuel > 0){
+    var gotFuel = takeFacilityStock(pos, 'fuel', needFuel);
+    newU.fuel = Math.min(fullFuel, cg.fuel + gotFuel);
+  } else {
+    newU.fuel = cg.fuel;
+  }
+  // 弾薬 (有限武器のみ。無限武器は -1 のまま)
+  if(newU.ammo && t.weapons){
+    for(var i=0; i<t.weapons.length; i++){
+      var w = t.weapons[i];
+      if(w.infiniteAmmo){ newU.ammo[i] = -1; continue; }
+      var maxA = (w.ammo !== undefined ? w.ammo : 6);
+      var had = (typeof cg.ammo[i] === 'number' && cg.ammo[i] !== -1) ? cg.ammo[i] : maxA;
+      var needA = Math.max(0, maxA - had);
+      if(needA > 0){
+        var gotA = takeFacilityStock(pos, 'ammo', needA);
+        newU.ammo[i] = Math.min(maxA, had + gotA);
+      } else {
+        newU.ammo[i] = had;
+      }
+    }
+  }
+}
+
+// 施設の備蓄から取り出す。実際に取り出せた量を返す
+// pos が null の場合は無制限扱い (在庫の概念を持たない旧仕様の補給ユニットなど)
+function takeFacilityStock(pos, kind, amount){
+  if(amount <= 0) return 0;
+  if(!pos) return amount;
+  var cap = captures[pos.x+','+pos.y];
+  if(!cap) return amount;
+  var st = facilityStock(cap, M[pos.y][pos.x]);
+  if(!st.spec) return amount;
+  var have = (kind === 'fuel') ? st.fuel : st.ammo;
+  var give = Math.min(amount, have);
+  if(give <= 0) return 0;
+  if(kind === 'fuel') cap.stockFuel = have - give;
+  else cap.stockAmmo = have - give;
+  return give;
+}
+
 function getSupplySource(unit){
   var t = TYPE[unit.type];
   var cat = t.cat; // 'LAND' / 'SEA' / 'AIR'
@@ -1586,7 +1668,9 @@ function getSupplySource(unit){
   // 複数の施設が範囲内にある場合は、補給量(rate)が最も大きいものを採用する。
   var FAC_RANGE = 2;    // 生産施設・都市系の補給範囲
   var DEPOT_RANGE = 3;  // 弾薬工廠の補給範囲
-  var facRate = 0, facName = null;
+  // 備蓄(段階2)が残っている施設のみ候補にする。燃料と弾薬で別々に選ぶ
+  var facFuelRate = 0, facFuelName = null, facFuelPos = null;
+  var facAmmoRate = 0, facAmmoName = null, facAmmoPos = null;
   for(var fk in captures){
     var fcap = captures[fk];
     if(fcap.owner !== unit.owner) continue;
@@ -1606,7 +1690,10 @@ function getSupplySource(unit){
       // 都市・大都市・商業都市・首都 (地上ユニットのみ)
       r = 0.2;
     }
-    if(r > facRate){ facRate = r; facName = fter.name; }
+    if(r <= 0) continue;
+    var fst = facilityStock(fcap, M[fy][fx]);
+    if(fst.fuel > 0 && r > facFuelRate){ facFuelRate = r; facFuelName = fter.name; facFuelPos = { x: fx, y: fy }; }
+    if(fst.ammo > 0 && r > facAmmoRate){ facAmmoRate = r; facAmmoName = fter.name; facAmmoPos = { x: fx, y: fy }; }
   }
 
   // === B. 空母系艦船の上にいるか (航空ユニット限定、燃料+弾薬とも100%) ===
@@ -1655,25 +1742,24 @@ function getSupplySource(unit){
 
   // === D. 燃料・弾薬それぞれについて、補給量の多い源を採用する ===
   //    同率なら 施設 > 空母 > 補給ユニット の順 (施設は在庫を消費しないため)
-  var fuelRate = 0, fuelFromUnit = null, fuelName = null;
-  var ammoRate = 0, ammoFromUnit = null, ammoName = null;
-  if(facRate > 0){
-    fuelRate = facRate; fuelName = facName;
-    ammoRate = facRate; ammoName = facName;
-  }
+  var fuelRate = 0, fuelFromUnit = null, fuelName = null, fuelFacility = null;
+  var ammoRate = 0, ammoFromUnit = null, ammoName = null, ammoFacility = null;
+  if(facFuelRate > 0){ fuelRate = facFuelRate; fuelName = facFuelName; fuelFacility = facFuelPos; }
+  if(facAmmoRate > 0){ ammoRate = facAmmoRate; ammoName = facAmmoName; ammoFacility = facAmmoPos; }
   if(carrierUnit){
-    if(1.0 > fuelRate){ fuelRate = 1.0; fuelFromUnit = carrierUnit; fuelName = TYPE[carrierUnit.type].name; }
-    if(1.0 > ammoRate){ ammoRate = 1.0; ammoFromUnit = carrierUnit; ammoName = TYPE[carrierUnit.type].name; }
+    if(1.0 > fuelRate){ fuelRate = 1.0; fuelFromUnit = carrierUnit; fuelFacility = null; fuelName = TYPE[carrierUnit.type].name; }
+    if(1.0 > ammoRate){ ammoRate = 1.0; ammoFromUnit = carrierUnit; ammoFacility = null; ammoName = TYPE[carrierUnit.type].name; }
   }
   if(uFuel && 1.0 > fuelRate){
     fuelRate = 1.0;
     // 燃料庫(supplyFuelMax)を持つ補給ユニットのみ fuelFromUnit を設定
     // (持たないユニットは旧仕様=無制限燃料補給)
     fuelFromUnit = (typeof TYPE[uFuel.type].supplyFuelMax === 'number') ? uFuel : null;
+    fuelFacility = null;
     fuelName = TYPE[uFuel.type].name;
   }
   if(uAmmo && 1.0 > ammoRate){
-    ammoRate = 1.0; ammoFromUnit = uAmmo; ammoName = TYPE[uAmmo.type].name;
+    ammoRate = 1.0; ammoFromUnit = uAmmo; ammoFacility = null; ammoName = TYPE[uAmmo.type].name;
   }
   if(fuelRate <= 0 && ammoRate <= 0) return null;
   var srcNames = [];
@@ -1685,6 +1771,7 @@ function getSupplySource(unit){
     fuelRate: fuelRate, ammoRate: ammoRate,
     rate: Math.max(fuelRate, ammoRate), // 後方互換 (fuelRate/ammoRate が無い呼び出し用)
     fuelFromUnit: fuelFromUnit, ammoFromUnit: ammoFromUnit,
+    fuelFacility: fuelFacility, ammoFacility: ammoFacility,
     isFacility: (!fuelFromUnit && !ammoFromUnit)
   };
 }
@@ -3121,6 +3208,15 @@ function performCapture(unit, cap){
       var fx = parseInt(xy[0]), fy = parseInt(xy[1]);
       production = production.filter(function(p){ return !(p.x === fx && p.y === fy); });
     }
+    // 段階2: 備蓄は半分だけ残り、新しい所有者のものになる
+    if(xy){
+      var sfx = parseInt(xy[0]), sfy = parseInt(xy[1]);
+      var capSt = facilityStock(cap, M[sfy][sfx]);
+      if(capSt.spec){
+        cap.stockFuel = Math.floor(capSt.fuel / 2);
+        cap.stockAmmo = Math.floor(capSt.ammo / 2);
+      }
+    }
     // 収容中ユニットも破棄
     cap.cargo = [];
     // 防御スロットの設置物も破棄(占領時にリセット)
@@ -3197,6 +3293,20 @@ function updateInfoPanel(){
     if(ter.defenseSlots){
       var installed = (cap.defenseInstalls || []).length;
       html += '<div>🛡 防御スロット: ' + installed + '/' + ter.defenseSlots + '</div>';
+    }
+    // 備蓄表示 (段階2、自軍拠点のみ)
+    if(cap.owner === 'P'){
+      var stInfo = facilityStock(cap, M[infoY][infoX]);
+      if(stInfo.spec){
+        var gainText = (stInfo.spec.fuelGain > 0 || stInfo.spec.ammoGain > 0)
+          ? ' <span style="color:#0F6E56;">(毎ターン +' + stInfo.spec.fuelGain + '/+' + stInfo.spec.ammoGain + ')</span>'
+          : ' <span style="color:#888;">(生産なし)</span>';
+        var lowF = (stInfo.fuel <= stInfo.spec.fuelMax * 0.2), lowA = (stInfo.ammo <= stInfo.spec.ammoMax * 0.2);
+        html += '<div style="margin-top:3px;font-size:11px;">📦 備蓄: '
+          + '<span style="color:' + (lowF ? '#A32D2D' : '#222') + ';">燃料 ' + stInfo.fuel + '/' + stInfo.spec.fuelMax + '</span>'
+          + ' ・ <span style="color:' + (lowA ? '#A32D2D' : '#222') + ';">弾薬 ' + stInfo.ammo + '/' + stInfo.spec.ammoMax + '</span>'
+          + gainText + '</div>';
+      }
     }
     // アップグレード中表示
     if(cap.upgrading){
@@ -3522,6 +3632,21 @@ function applyTurnStart(owner){
     }
   }
 
+  // 0c-2. 施設の備蓄生産 (段階2)
+  // 工場系と弾薬工廠だけが毎ターン燃料・弾薬を貯めていく (都市系・首都は生産しない)
+  // アップグレード中は生産スロットが止まるのに合わせ、備蓄の生産も止める
+  for(var k in captures){
+    var scap = captures[k];
+    if(scap.owner !== owner) continue;
+    var sxy2 = k.split(',');
+    var sTerKey = M[parseInt(sxy2[1])][parseInt(sxy2[0])];
+    var sst = facilityStock(scap, sTerKey);
+    if(!sst.spec) continue;
+    if(scap.upgrading) continue;
+    if(sst.spec.fuelGain > 0) scap.stockFuel = Math.min(sst.spec.fuelMax, sst.fuel + sst.spec.fuelGain);
+    if(sst.spec.ammoGain > 0) scap.stockAmmo = Math.min(sst.spec.ammoMax, sst.ammo + sst.spec.ammoGain);
+  }
+
   // 0d. 補給判定: 補給可能ユニットを補給
   var supplied = [];
   for(var i=0; i<units.length; i++){
@@ -3587,19 +3712,26 @@ function applyTurnStart(owner){
         // 施設からの補給: rate に応じて部分補給 (弾薬工廠=1.0、生産施設=0.5、都市系=0.2)
         var fRate = (typeof src.fuelRate === 'number') ? src.fuelRate
                   : ((typeof src.rate === 'number') ? src.rate : 1.0);
+        // 段階2: 施設の備蓄から引く (必要以上には出さない)
         if(fuelNeed > 0){
-          var addFuel = Math.ceil(fuelMax * fRate);
-          u.fuel = Math.min(fuelMax, curFuel + addFuel);
-          didSupply = true;
+          var wantFuel = Math.min(fuelNeed, Math.ceil(fuelMax * fRate));
+          var gotFuel = takeFacilityStock(src.fuelFacility, 'fuel', wantFuel);
+          if(gotFuel > 0){
+            u.fuel = Math.min(fuelMax, curFuel + gotFuel);
+            didSupply = true;
+          }
           if(u.fuel < fuelMax) partial = true;
         }
-        // 補給ユニット自身の燃料庫も rate に応じて補給
+        // 補給ユニット自身の燃料庫も rate に応じて補給 (これも施設の備蓄から引く)
         if(t.supplyFuel && typeof t.supplyFuelMax === 'number'){
           var ownFuelCnt = (typeof u.supplyFuelCount === 'number') ? u.supplyFuelCount : t.supplyFuelMax;
           if(ownFuelCnt < t.supplyFuelMax){
-            var addFuelStock = Math.ceil(t.supplyFuelMax * fRate);
-            u.supplyFuelCount = Math.min(t.supplyFuelMax, ownFuelCnt + addFuelStock);
-            didSupply = true;
+            var wantFuelStock = Math.min(t.supplyFuelMax - ownFuelCnt, Math.ceil(t.supplyFuelMax * fRate));
+            var gotFuelStock = takeFacilityStock(src.fuelFacility, 'fuel', wantFuelStock);
+            if(gotFuelStock > 0){
+              u.supplyFuelCount = Math.min(t.supplyFuelMax, ownFuelCnt + gotFuelStock);
+              didSupply = true;
+            }
             if(u.supplyFuelCount < t.supplyFuelMax) partial = true;
           }
         }
@@ -3673,11 +3805,11 @@ function applyTurnStart(owner){
           var maxA = (w.ammo !== undefined ? w.ammo : 6);
           var cur = (u.ammo[j] !== undefined && u.ammo[j] !== -1) ? u.ammo[j] : maxA;
           if(cur >= maxA) continue;
-          // 補給量 = 最大値 × rate (切り上げ)
-          var addAmount = Math.ceil(maxA * rate);
-          var newAmmo = Math.min(maxA, cur + addAmount);
-          u.ammo[j] = newAmmo;
-          if(newAmmo < maxA) stillNeedSomething = true;
+          // 補給量 = 最大値 × rate (切り上げ)。段階2: 施設の備蓄から引く
+          var wantA = Math.min(maxA - cur, Math.ceil(maxA * rate));
+          var gotA = takeFacilityStock(src.ammoFacility, 'ammo', wantA);
+          u.ammo[j] = cur + gotA;
+          if(u.ammo[j] < maxA) stillNeedSomething = true;
         }
         // 残り武器を埋める処理 (補給対象外の武器の初期化)
         for(var j=0; j<t.weapons.length; j++){
@@ -3688,8 +3820,9 @@ function applyTurnStart(owner){
         if(t.supplyAmmo && typeof t.supplyAmmoMax === 'number'){
           var ownCnt = (typeof u.supplyAmmoCount === 'number') ? u.supplyAmmoCount : t.supplyAmmoMax;
           if(ownCnt < t.supplyAmmoMax){
-            var addStock = Math.ceil(t.supplyAmmoMax * rate);
-            u.supplyAmmoCount = Math.min(t.supplyAmmoMax, ownCnt + addStock);
+            var wantStock = Math.min(t.supplyAmmoMax - ownCnt, Math.ceil(t.supplyAmmoMax * rate));
+            var gotStock = takeFacilityStock(src.ammoFacility, 'ammo', wantStock);
+            u.supplyAmmoCount = Math.min(t.supplyAmmoMax, ownCnt + gotStock);
             if(u.supplyAmmoCount < t.supplyAmmoMax) stillNeedSomething = true;
           }
         }
@@ -5107,6 +5240,8 @@ function aiProduceAndTakeOut(aiFaction, phase){
       rOut.hp = rcg.hp;
       rOut.acted = false;
       rOut.moved = false;
+      // 段階2: 取り出し時の燃料・弾薬の補給は施設の備蓄から払う
+      payTakeOutSupply(rOut, rcg, rfx, rfy);
       if(rcg.cargo && rcg.cargo.length > 0) rOut.cargo = rcg.cargo.slice();
       units.push(rOut);
       rcap.cargo.splice(rci, 1);
@@ -6994,6 +7129,9 @@ function aiStoreInFacilityForService(u, aiFaction){
   cap.cargo.push({
     type: u.type, hp: u.hp, owner: u.owner,
     cargo: u.cargo ? u.cargo.slice() : [],
+    // 段階2: 取り出し時の補給を施設の備蓄から払うため、収容時の燃料・弾薬を記録する
+    fuel: u.fuel,
+    ammo: u.ammo ? u.ammo.slice() : null,
     storedRound: roundNumber // 同ラウンド中は取り出せない (翌ラウンドから)
   });
   units = units.filter(function(uu){ return uu.id !== u.id; });
@@ -10291,6 +10429,9 @@ function doRepair(){
     hp: u.hp,
     owner: u.owner,
     cargo: u.cargo ? u.cargo.slice() : [],
+    // 段階2: 取り出し時の補給を施設の備蓄から払うため、収容時の燃料・弾薬を記録する
+    fuel: u.fuel,
+    ammo: u.ammo ? u.ammo.slice() : null,
     storedRound: roundNumber // 格納したラウンドを記録 (このラウンドの間は取り出せない)
   });
   // unitsから削除
@@ -13067,6 +13208,17 @@ function openProductionMenu(x, y){
   var body = document.getElementById('prod-body');
   var html = '';
   html += '<div style="font-size:12px; color:#666; margin-bottom:8px;">資金: <b style="color:#185FA5;">' + funds.P.toLocaleString() + 'G</b></div>';
+  // 備蓄 (段階2)
+  if(capObj){
+    var pmSt = facilityStock(capObj, M[y][x]);
+    if(pmSt.spec){
+      html += '<div style="font-size:12px; color:#666; margin-bottom:8px;">📦 備蓄: 燃料 <b>' + pmSt.fuel + '/' + pmSt.spec.fuelMax + '</b> ・ 弾薬 <b>' + pmSt.ammo + '/' + pmSt.spec.ammoMax + '</b>'
+        + ((pmSt.spec.fuelGain > 0 || pmSt.spec.ammoGain > 0)
+            ? ' <span style="color:#0F6E56;">(毎ターン +' + pmSt.spec.fuelGain + '/+' + pmSt.spec.ammoGain + ')</span>'
+            : ' <span style="color:#888;">(この施設では生産しません)</span>')
+        + '</div>';
+    }
+  }
 
   // 生産中・完成済みのリスト
   if(ongoing > 0){
@@ -13436,6 +13588,8 @@ function takeOutFromFacility(idx){
   newU.hp = cg.hp;
   newU.acted = false;
   newU.moved = false;
+  // 段階2: 取り出し時の燃料・弾薬の補給は施設の備蓄から払う
+  payTakeOutSupply(newU, cg, prodFacilityX, prodFacilityY);
   if(cg.cargo && cg.cargo.length > 0) newU.cargo = cg.cargo.slice();
   units.push(newU);
   capObj.cargo.splice(idx, 1);
