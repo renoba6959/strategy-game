@@ -1801,6 +1801,155 @@ function supplyRouteTransfer(u, owner){
   }
 }
 
+// この補給ユニットが運べる種類 ('fuel' / 'ammo')
+function supplyKindsOf(u){
+  var t = TYPE[u.type], ks = [];
+  if(typeof t.supplyFuelMax === 'number') ks.push('fuel');
+  if(typeof t.supplyAmmoMax === 'number') ks.push('ammo');
+  return ks;
+}
+
+// 拠点の備蓄率 (運べる種類のうち最も少ないもの)。0=空、1=満タン
+function facilityStockRatio(f, kinds){
+  var worst = 1;
+  for(var i=0; i<kinds.length; i++){
+    var r = (kinds[i] === 'fuel')
+      ? (f.st.spec.fuelMax > 0 ? f.st.fuel / f.st.spec.fuelMax : 1)
+      : (f.st.spec.ammoMax > 0 ? f.st.ammo / f.st.spec.ammoMax : 1);
+    if(r < worst) worst = r;
+  }
+  return worst;
+}
+
+// 補給ユニットから見た拠点への到達距離 (拠点マス or その隣接マス)。届かなければ undefined
+function facilityReachDist(reach, f){
+  var dirs = [[0,0],[1,0],[-1,0],[0,1],[0,-1]];
+  var best;
+  for(var i=0; i<dirs.length; i++){
+    var d = reach[(f.x+dirs[i][0])+','+(f.y+dirs[i][1])];
+    if(d === undefined) continue;
+    if(best === undefined || d < best) best = d;
+  }
+  return best;
+}
+
+// AI: 補給ユニットに補給ルートを割り当てる (段階3)
+// 積み元 = 備蓄を生産できる自軍施設で在庫の多いもの
+// 降ろし先 = 備蓄が乏しく、前線 (敵) に近い自軍拠点
+// 既存のルートがまだ妥当ならそのまま維持する
+function aiAssignSupplyRoutes(aiFaction){
+  // 自軍拠点の一覧 (備蓄を持てる拠点)
+  var facs = [];
+  for(var k in captures){
+    var cap = captures[k];
+    if(cap.owner !== aiFaction) continue;
+    var xy = k.split(',');
+    var fx = parseInt(xy[0]), fy = parseInt(xy[1]);
+    var st = facilityStock(cap, M[fy][fx]);
+    if(!st.spec) continue;
+    facs.push({ x: fx, y: fy, st: st });
+  }
+  if(facs.length < 2) return;
+  // 前線の判定用: 見えている敵
+  var enemies = [];
+  for(var i=0; i<units.length; i++){
+    var ev = units[i];
+    if(isAlly(ev.owner, aiFaction) || ev.owner === 'N' || ev.hp <= 0) continue;
+    if(!isUnitVisibleTo(ev, aiFaction)) continue;
+    enemies.push(ev);
+  }
+  function enemyDist(f){
+    var best = 99;
+    for(var i=0; i<enemies.length; i++){
+      var d = manhattan(f.x, f.y, enemies[i].x, enemies[i].y);
+      if(d < best) best = d;
+    }
+    return best;
+  }
+  // すでに他の補給ユニットが担当している降ろし先は重複させない
+  var taken = {};
+  for(var i=0; i<units.length; i++){
+    var su = units[i];
+    if(su.owner !== aiFaction || su.hp <= 0 || !su.route) continue;
+    taken[su.route.to.x+','+su.route.to.y] = true;
+  }
+
+  for(var ui=0; ui<units.length; ui++){
+    var u = units[ui];
+    if(u.owner !== aiFaction || u.hp <= 0) continue;
+    if(!canCarrySupplyStock(u)) continue;
+    var kinds = supplyKindsOf(u);
+    if(kinds.length === 0) continue;
+    var reach = bfsPathDistances(u.x, u.y, u);
+    // 既存ルートが有効ならそのまま
+    // (積み元・降ろし先が自軍で、降ろし先がまだ満杯でなく、いまの目的地に到達できる)
+    if(u.route){
+      var okFrom = isSupplyRouteFacility(u.route.from.x, u.route.from.y, aiFaction);
+      var okTo = (u.route.toKind === 'point')
+        || isSupplyRouteFacility(u.route.to.x, u.route.to.y, aiFaction);
+      var stillNeeded = true;
+      if(okTo && u.route.toKind !== 'point'){
+        for(var fi=0; fi<facs.length; fi++){
+          if(facs[fi].x === u.route.to.x && facs[fi].y === u.route.to.y){
+            stillNeeded = (facilityStockRatio(facs[fi], kinds) < 0.9);
+            break;
+          }
+        }
+      }
+      // いま向かっている先に到達できるか (敵や味方に塞がれて永久に届かないルートを捨てる)
+      var goalNow = (u.routeTarget === 'from') ? u.route.from : u.route.to;
+      var canReachGoal = (facilityReachDist(reach, goalNow) !== undefined)
+        || (manhattan(u.x, u.y, goalNow.x, goalNow.y) <= 1);
+      // 3ターン続けて目的地に近づけないなら、塞がれていると見て組み直す
+      var stuck = ((u.routeStuck || 0) >= 3);
+      if(okFrom && okTo && stillNeeded && canReachGoal && !stuck) continue;
+      delete u.route; delete u.routeTarget; u.routeStuck = 0;
+    }
+    // 降ろし先: 備蓄が乏しく (6割未満)、前線に近く、補給ユニットから遠すぎない拠点
+    var bestTo = null, bestToScore = -Infinity;
+    for(var ti=0; ti<facs.length; ti++){
+      var f = facs[ti];
+      if(taken[f.x+','+f.y]) continue;
+      var ratio = facilityStockRatio(f, kinds);
+      if(ratio >= 0.6) continue;              // 足りているので運ぶ必要がない
+      var d = facilityReachDist(reach, f);
+      if(d === undefined) continue;           // 届かない
+      var score = (1 - ratio) * 100 - enemyDist(f) * 2 - d;
+      if(score > bestToScore){ bestToScore = score; bestTo = f; }
+    }
+    if(!bestTo) continue;
+    // 積み元: 備蓄を生産できる施設で、在庫が多く、降ろし先に近いもの
+    var bestFrom = null, bestFromScore = -Infinity;
+    for(var si=0; si<facs.length; si++){
+      var g = facs[si];
+      if(g.x === bestTo.x && g.y === bestTo.y) continue;
+      var gains = 0;
+      for(var ki=0; ki<kinds.length; ki++){
+        gains += (kinds[ki] === 'fuel') ? g.st.spec.fuelGain : g.st.spec.ammoGain;
+      }
+      if(gains <= 0) continue;                // 生産できない拠点は積み元にしない
+      var gd = facilityReachDist(reach, g);
+      if(gd === undefined) continue;
+      var haveRatio = 0;
+      for(var ki2=0; ki2<kinds.length; ki2++){
+        var rr = (kinds[ki2] === 'fuel')
+          ? (g.st.spec.fuelMax > 0 ? g.st.fuel / g.st.spec.fuelMax : 0)
+          : (g.st.spec.ammoMax > 0 ? g.st.ammo / g.st.spec.ammoMax : 0);
+        if(rr > haveRatio) haveRatio = rr;
+      }
+      var gscore = haveRatio * 100 - manhattan(g.x, g.y, bestTo.x, bestTo.y) * 2 - gd;
+      if(gscore > bestFromScore){ bestFromScore = gscore; bestFrom = g; }
+    }
+    if(!bestFrom) continue;
+    u.route = { from: { x: bestFrom.x, y: bestFrom.y }, to: { x: bestTo.x, y: bestTo.y }, toKind: 'facility' };
+    u.routeTarget = supplyStockFull(u) ? 'to' : 'from';
+    taken[bestTo.x+','+bestTo.y] = true;
+    if(window.AI_DEBUG) try{ console.log('[AI '+aiFaction+'] 補給ルート割当: '+TYPE[u.type].name+' '
+      +TER[M[bestFrom.y][bestFrom.x]].name+'('+bestFrom.x+','+bestFrom.y+') → '
+      +TER[M[bestTo.y][bestTo.x]].name+'('+bestTo.x+','+bestTo.y+')'); }catch(e){}
+  }
+}
+
 // 補給ルートの自動往復を1ターンぶん実行する (ターン開始時に呼ぶ)
 function runSupplyRoutes(owner){
   for(var i=0; i<units.length; i++){
@@ -1841,8 +1990,11 @@ function runSupplyRoutes(owner){
       }
     }
     var goal = (u.routeTarget === 'from') ? u.route.from : u.route.to;
-    supplyRouteMove(u, goal.x, goal.y);
+    var didMove = supplyRouteMove(u, goal.x, goal.y);
     supplyRouteTransfer(u, owner);
+    // 目的地に近づけないターンを数える (敵や味方に塞がれて詰まったルートを検出する)
+    if(didMove || manhattan(u.x, u.y, goal.x, goal.y) <= 1) u.routeStuck = 0;
+    else u.routeStuck = (u.routeStuck || 0) + 1;
     u.moved = true;
     u.acted = true;
   }
@@ -4320,7 +4472,8 @@ function endTurn(){
   if(roundEnded) advanceWeather();
   applyTurnStart(turn);
   for(var i=0; i<units.length; i++){ if(units[i].owner === turn){ units[i].moved = false; units[i].acted = false; } }
-  // 補給ルート (段階3): ルート指定済みの補給ユニットを自動で往復させる
+  // 補給ルート (段階3): AI 陣営はルートを自動で組み直してから往復させる
+  if(!isPlayerFaction(turn) || playerIsAI) aiAssignSupplyRoutes(turn);
   runSupplyRoutes(turn);
   // ステータスメッセージ
   var phaseMsg = '';
