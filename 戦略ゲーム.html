@@ -91,7 +91,7 @@ button:hover { background: #f0f0f0; }
 <div id="stage-info" style="font-size: 12px; color: var(--color-text-secondary); margin-bottom: 8px; min-height: 18px;"></div>
 <div style="display: flex; gap: 12px; margin-bottom: 12px; align-items: flex-start; flex-wrap: wrap;">
   <div id="board-wrap" style="overflow-x: auto;">
-    <div id="board" style="display: grid; gap: 1px; background: var(--color-border-tertiary); padding: 1px; border-radius: var(--border-radius-md);"></div>
+    <div id="board" style="position: relative; display: grid; gap: 1px; background: var(--color-border-tertiary); padding: 1px; border-radius: var(--border-radius-md);"></div>
   </div>
   <div id="side-panel" style="min-width: 240px; flex: 1; max-width: 320px;">
     <div style="background: var(--color-background-secondary); border-radius: var(--border-radius-md); padding: 10px 12px; margin-bottom: 8px; font-size: 12px; line-height: 1.5;">
@@ -1761,10 +1761,17 @@ function supplyStockFull(u){
 }
 
 // 目標へ最短で近づく (迂回はしない。ZOC=見える敵への隣接で止まるのは他ユニットと同じ)
-function supplyRouteMove(u, tx, ty){
+// stopAdjacent: 目標が拠点のときは true。拠点マスの上ではなく「隣」に着けたい。
+//   拠点マスに居座ると生産の取り出しや地上ユニットの回復を邪魔するため。
+//   積み降ろしは隣接でもできるので、隣に着ければ用は足りる。
+//   ただし隣が全部塞がっていれば拠点マスの上に入る (立ち往生させない)。
+function supplyRouteMove(u, tx, ty, stopAdjacent){
   var dist = bfsPathDistances(tx, ty, u);
-  var curD = dist[u.x+','+u.y];
-  if(curD === undefined) curD = Infinity;
+  function eff(d){
+    if(d === undefined) return Infinity;
+    return (stopAdjacent && d === 0) ? 1.5 : d; // 拠点マス自体は隣接マスより一段劣る扱い
+  }
+  var curD = eff(dist[u.x+','+u.y]);
   var movable = computeMovable(u);
   var best = null, bestD = curD;
   for(var k in movable){
@@ -1772,8 +1779,8 @@ function supplyRouteMove(u, tx, ty){
     var mx = parseInt(xy[0]), my = parseInt(xy[1]);
     if(mx === u.x && my === u.y) continue;
     if(unitAt(mx, my)) continue;
-    var d = dist[k];
-    if(d === undefined) continue;
+    var d = eff(dist[k]);
+    if(d === Infinity) continue;
     if(d < bestD){ bestD = d; best = { x: mx, y: my }; }
   }
   if(!best) return false;
@@ -1990,7 +1997,9 @@ function runSupplyRoutes(owner){
       }
     }
     var goal = (u.routeTarget === 'from') ? u.route.from : u.route.to;
-    var didMove = supplyRouteMove(u, goal.x, goal.y);
+    // 積み元は必ず拠点。降ろし先は拠点なら隣に着け、駐留地点ならその上に立つ
+    var goalIsFacility = (u.routeTarget === 'from') || (u.route.toKind !== 'point');
+    var didMove = supplyRouteMove(u, goal.x, goal.y, goalIsFacility);
     supplyRouteTransfer(u, owner);
     // 目的地に近づけないターンを数える (敵や味方に塞がれて詰まったルートを検出する)
     if(didMove || manhattan(u.x, u.y, goal.x, goal.y) <= 1) u.routeStuck = 0;
@@ -2064,8 +2073,12 @@ function getSupplySource(unit){
   //   ・生産施設 : 2マス以内 / 毎ターン50%  (工場=地上, 港=艦船, 空港=航空)
   //   ・都市系/首都: 2マス以内 / 毎ターン20% (地上ユニットのみ)
   // 複数の施設が範囲内にある場合は、補給量(rate)が最も大きいものを採用する。
+  //   ・ヘリは航空ユニットだが、地上の施設 (工場系・都市系・弾薬工廠) からも補給できる。
+  //     補給車 (supplyTarget: LAND+HELI) がヘリに補給できるのと揃えるため。
+  //     固定翼機は従来どおり空港系・空母のみ。
   var FAC_RANGE = 2;    // 生産施設・都市系の補給範囲
   var DEPOT_RANGE = 3;  // 弾薬工廠の補給範囲
+  var isHeli = isHelicopter(unit);
   // 備蓄(段階2)が残っている施設のみ候補にする。燃料と弾薬で別々に選ぶ
   var facFuelRate = 0, facFuelName = null, facFuelPos = null;
   var facAmmoRate = 0, facAmmoName = null, facAmmoPos = null;
@@ -2078,14 +2091,14 @@ function getSupplySource(unit){
     if(!fter) continue;
     var fd = manhattan(fx, fy, unit.x, unit.y);
     var r = 0;
-    if(fter.ammoDepot && cat !== 'AIR' && fd <= DEPOT_RANGE){
-      // 弾薬工廠 (航空ユニットは対象外: 街中で固定翼を補給できるのは強すぎるため)
+    if(fter.ammoDepot && (cat !== 'AIR' || isHeli) && fd <= DEPOT_RANGE){
+      // 弾薬工廠 (固定翼機は対象外: 街中で補給できるのは強すぎるため。ヘリは可)
       r = 1.0;
-    } else if(fter.healCat === cat && fd <= FAC_RANGE){
-      // 生産施設 (カテゴリが一致するもののみ)
+    } else if((fter.healCat === cat || (isHeli && fter.healCat === 'LAND')) && fd <= FAC_RANGE){
+      // 生産施設 (カテゴリが一致するもの。ヘリは工場系からも受けられる)
       r = 0.5;
-    } else if(cat === 'LAND' && (fter.group === 'city' || fter.group === 'capital') && fd <= FAC_RANGE){
-      // 都市・大都市・商業都市・首都 (地上ユニットのみ)
+    } else if((cat === 'LAND' || isHeli) && (fter.group === 'city' || fter.group === 'capital') && fd <= FAC_RANGE){
+      // 都市・大都市・商業都市・首都 (地上ユニットとヘリ)
       r = 0.2;
     }
     if(r <= 0) continue;
@@ -3219,6 +3232,39 @@ function computeAttackable(unit, fromX, fromY, justMoved){
   return set;
 }
 
+// 敵・中立拠点の備蓄が見えるか (段階2の情報公開)
+// 偵察機・観測機・索敵機が視界に収めている拠点だけ、備蓄の中身が分かる。
+// 「どの拠点を叩けば敵の補給が止まるか」を偵察の成果として得られるようにする。
+var RECON_STOCK_TYPES = { RECON_PLANE: true, OBSERVER_PLANE: true, SCOUT_PLANE: true };
+function facilityStockScouted(x, y, viewerOwner){
+  for(var i=0; i<units.length; i++){
+    var u = units[i];
+    if(u.owner !== viewerOwner || u.hp <= 0) continue;
+    if(!RECON_STOCK_TYPES[u.type]) continue;
+    if(manhattan(u.x, u.y, x, y) <= getEffectiveSight(u)) return true;
+  }
+  return false;
+}
+
+// 情報パネルの施設ボタン (生産・収容 / アップグレード)
+// マスをクリックしただけでモーダルが開かないよう、ここから明示的に開く
+function facilityPanelButtons(ter, cap, x, y){
+  if(!cap || cap.owner !== 'P') return '';
+  var style = 'font-size:11px;padding:4px 10px;border:none;border-radius:3px;cursor:pointer;color:white;';
+  var btns = [];
+  if(ter.slots){
+    btns.push('<button onclick="openProductionMenu('+x+','+y+',\'produce\')" style="'+style+'background:#0F6E56;">⚙ 生産・収容</button>');
+  }
+  if(ter.upgradeTo && ter.upgradeTo.length > 0 && !cap.upgrading){
+    btns.push('<button onclick="openProductionMenu('+x+','+y+',\'upgrade\')" style="'+style+'background:#BA7517;">⬆ アップグレード</button>');
+  }
+  if(cap.upgrading){
+    btns.push('<button onclick="openProductionMenu('+x+','+y+')" style="'+style+'background:#BA7517;">⚙ アップグレードの状況</button>');
+  }
+  if(btns.length === 0) return '';
+  return '<div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;">' + btns.join('') + '</div>';
+}
+
 // 敵ユニットの脅威範囲を計算
 // 戻り値: { threat: 攻撃されうるマスのset, move: 移動可能なマスのset }
 // threat = 現在位置からの間接武器射程 + 移動先からの直接武器射程の合体
@@ -3586,6 +3632,7 @@ function performCapture(unit, cap){
     plog((cap.captureHp === 0 ? '✓ 占領完了 ' : '占領中 ') + (ter0 ? ter0.name : '?') + '@('+unit.x+','+unit.y+') 残占領HP='+cap.captureHp);
   }
   if(cap.captureHp === 0){
+    var prevOwner = cap.owner;
     cap.owner = unit.owner;
     // 施設の最大占領HPを取得
     var xy = null;
@@ -3606,13 +3653,25 @@ function performCapture(unit, cap){
       var fx = parseInt(xy[0]), fy = parseInt(xy[1]);
       production = production.filter(function(p){ return !(p.x === fx && p.y === fy); });
     }
-    // 段階2: 備蓄は半分だけ残り、新しい所有者のものになる
+    // 段階2: 備蓄の引き継ぎ
+    //   敵陣営から奪った場合 → 半分だけ残って新しい所有者のものになる
+    //   中立から占領した場合 → 0 (誰も管理していなかった拠点に物資は無い)
     if(xy){
       var sfx = parseInt(xy[0]), sfy = parseInt(xy[1]);
       var capSt = facilityStock(cap, M[sfy][sfx]);
       if(capSt.spec){
-        cap.stockFuel = Math.floor(capSt.fuel / 2);
-        cap.stockAmmo = Math.floor(capSt.ammo / 2);
+        var fromNeutral = (prevOwner === 'N' || !prevOwner);
+        cap.stockFuel = fromNeutral ? 0 : Math.floor(capSt.fuel / 2);
+        cap.stockAmmo = fromNeutral ? 0 : Math.floor(capSt.ammo / 2);
+        // 何を手に入れたのかが分かるように知らせる (プレイヤーの占領時のみ)
+        if(unit.owner === 'P'){
+          var terName = (TER[M[sfy][sfx]] ? TER[M[sfy][sfx]].name : '拠点');
+          var msg = fromNeutral
+            ? ('📦 ' + terName + 'を占領しました (中立のため備蓄は0です)')
+            : ('📦 ' + terName + 'を占領し、備蓄を鹵獲しました: 燃料' + cap.stockFuel + ' ・ 弾薬' + cap.stockAmmo);
+          try{ setStatus(msg); }catch(e){}
+          if(window.plog) try{ plog(msg); }catch(e){}
+        }
       }
     }
     // 収容中ユニットも破棄
@@ -3658,7 +3717,9 @@ function updateInfoPanel(){
   }
   var ter = TER[M[infoY][infoX]];
   var cap = captures[infoX+','+infoY];
-  var html = '<div style="font-weight:600;margin-bottom:4px;">' + ter.name + (ter.level?' <span style="font-size:10px;color:#888;">Lv'+ter.level+'</span>':'') + '</div>';
+  var html = '<div style="font-weight:600;margin-bottom:4px;">' + ter.name
+    + (ter.level?' <span style="font-size:10px;color:#888;">Lv'+ter.level+'</span>':'')
+    + ' <span style="font-size:11px;color:#888;font-weight:400;">(' + infoX + ',' + infoY + ')</span></div>';
   html += '<div>防御補正: +' + ter.def + '</div>';
   // 天候情報の追加表示
   var weatherKey = getWeatherAt(infoX, infoY);
@@ -3692,8 +3753,11 @@ function updateInfoPanel(){
       var installed = (cap.defenseInstalls || []).length;
       html += '<div>🛡 防御スロット: ' + installed + '/' + ter.defenseSlots + '</div>';
     }
-    // 備蓄表示 (段階2、自軍拠点のみ)
-    if(cap.owner === 'P'){
+    // 備蓄表示 (段階2)
+    // 自軍拠点は常に、敵・中立拠点は偵察機・観測機・索敵機の視界内にあるときだけ見える
+    var isOwnCap = (cap.owner === 'P');
+    var scouted = !isOwnCap && facilityStockScouted(infoX, infoY, 'P');
+    if(isOwnCap || scouted){
       var stInfo = facilityStock(cap, M[infoY][infoX]);
       if(stInfo.spec){
         var gainText = (stInfo.spec.fuelGain > 0 || stInfo.spec.ammoGain > 0)
@@ -3704,7 +3768,12 @@ function updateInfoPanel(){
           + '<span style="color:' + (lowF ? '#A32D2D' : '#222') + ';">燃料 ' + stInfo.fuel + '/' + stInfo.spec.fuelMax + '</span>'
           + ' ・ <span style="color:' + (lowA ? '#A32D2D' : '#222') + ';">弾薬 ' + stInfo.ammo + '/' + stInfo.spec.ammoMax + '</span>'
           + gainText + '</div>';
+        if(scouted){
+          html += '<div style="font-size:10px;color:#185FA5;padding-left:6px;">🔭 偵察情報（占領すると半分が手に入ります）</div>';
+        }
       }
+    } else if(cap.owner !== 'N' && facilityStockSpec(M[infoY][infoX])){
+      html += '<div style="margin-top:3px;font-size:11px;color:#888;">📦 備蓄: 不明（偵察機・観測機・索敵機で視界に収めると分かります）</div>';
     }
     // アップグレード中表示
     if(cap.upgrading){
@@ -3733,16 +3802,10 @@ function updateInfoPanel(){
           html += '<div style="font-size:11px;padding-left:6px;">' + TYPE[cg.type].name + ' (HP'+displayHP(cg.hp)+')</div>';
         }
       }
-      // ユニットが施設マス上にいる場合、直接施設メニューを開けるボタンを表示
-      var occupierForBtn = unitAt(infoX, infoY);
-      if(occupierForBtn){
-        html += '<div style="margin-top:4px;"><button onclick="openProductionMenu('+infoX+','+infoY+')" style="font-size:11px;padding:3px 8px;background:#0F6E56;color:white;border:none;border-radius:3px;cursor:pointer;">⚙ 施設メニューを開く</button></div>';
-      } else {
-        html += '<div style="margin-top:4px;font-size:11px;color:#0F6E56;">マスをクリックで施設メニュー</div>';
-      }
+      html += facilityPanelButtons(ter, cap, infoX, infoY);
     } else if(ter.upgradeTo && cap.owner === 'P'){
       // 都市はスロット無いがアップグレードあり
-      html += '<div style="margin-top:4px;font-size:11px;color:#0F6E56;">マスをクリックでアップグレード</div>';
+      html += facilityPanelButtons(ter, cap, infoX, infoY);
     }
   }
   tc.innerHTML = html;
@@ -3854,6 +3917,10 @@ function updateInfoPanel(){
     uhtml += '<div style="margin-top:3px;color:#0F6E56;font-size:11px;">🚚 補給ルート: '
       + rFrom.name + '('+u.route.from.x+','+u.route.from.y+') → ' + rToLabel + '</div>';
     uhtml += '<div style="font-size:11px;color:#666;padding-left:8px;">' + goingTo + '</div>';
+    if(u.owner === 'P'){
+      uhtml += '<div style="margin-top:5px;"><button onclick="clearSupplyRouteAt('+u.x+','+u.y+')" '
+        + 'style="font-size:11px;padding:4px 10px;border:none;border-radius:3px;cursor:pointer;color:white;background:#A32D2D;">🚚 ルート解除</button></div>';
+    }
   }
   // 空母系の弾薬庫表示 (isSupplyではないが、艦載航空機への補給用に弾薬庫を持つ)
   if(!t.isSupply && t.canCarry === 'AIR'){
@@ -10813,9 +10880,11 @@ function showCommandPanel(unit, justMoved){
   if(canRepairFacility) addBtn('施設修復', doRepairFacility, true);
   if(canBuildBridge) addBtn('橋建設', enterBridgeMode, true);
   // 補給ルート (段階3): 補給ユニットのみ
+  // 解除はここには置かない。ルート設定済みのユニットはターン開始時に自動で動いて
+  // 行動済みになり、そもそも選択できない = このパネルが出ないため。
+  // 解除は右のユニット詳細パネルのボタンで行う。
   if(canCarrySupplyStock(unit)){
-    if(unit.route) addBtn('🚚 ルート解除', doClearSupplyRoute);
-    else addBtn('🚚 補給ルート設定', enterRouteSetMode, true);
+    addBtn(unit.route ? '🚚 補給ルートを設定し直す' : '🚚 補給ルート設定', enterRouteSetMode, true);
     // 自軍施設の上または隣接なら、手動で積み降ろしできる
     var rf = nearestRouteFacility(unit);
     if(rf){
@@ -10848,19 +10917,48 @@ function nearestRouteFacility(unit){
   return null;
 }
 
+// 指定モード中のパネル (中止ボタンだけを出す)
+// ※ 補給車が施設の上に立っていることが多いため、「ユニット自身をクリックで中止」は
+//   積み元の選択と衝突する。中止は必ずこのボタンで行う。
+function renderRouteSetPanel(msg){
+  var panel = document.getElementById('command-panel');
+  document.getElementById('command-label').textContent = msg;
+  var wrap = document.getElementById('command-buttons');
+  wrap.innerHTML = '';
+  var b = document.createElement('button');
+  b.textContent = '中止';
+  b.onclick = function(e){ e.stopPropagation(); cancelRouteSetMode(); };
+  wrap.appendChild(b);
+  panel.style.display = 'block';
+}
+
 function enterRouteSetMode(){
   if(!pendingUnit) return;
-  routeSetMode = { unitId: pendingUnit.id, stage: 'from', from: null };
-  hideCommandPanel();
+  // 中止したときにコマンド選択へ戻せるよう、対象と「移動済みか」を覚えておく
+  routeSetMode = { unitId: pendingUnit.id, justMoved: pendingJustMoved, stage: 'from', from: null };
   setClear(movableSet); setClear(attackableSet);
-  setStatus('🚚 積み元にする自軍拠点をクリックしてください (もう一度このユニットをクリックで中止)');
+  renderRouteSetPanel('🚚 補給ルート設定: 積み元にする自軍拠点をクリック');
+  setStatus('🚚 積み元にする自軍拠点をクリックしてください（補給車が乗っている拠点でもかまいません）');
+  render();
+}
+
+// 指定モードを抜ける。中止のときはコマンド選択に戻す (ユニットが宙ぶらりんにならないように)
+function exitRouteSetMode(backToCommands){
+  var mode = routeSetMode;
+  routeSetMode = null;
+  if(!mode) return;
+  var u = null;
+  for(var i=0; i<units.length; i++){ if(units[i].id === mode.unitId){ u = units[i]; break; } }
+  if(backToCommands && u && u.hp > 0){
+    showCommandPanel(u, mode.justMoved);
+    return;
+  }
   render();
 }
 
 function cancelRouteSetMode(){
-  routeSetMode = null;
   setStatus('補給ルートの設定を中止しました');
-  render();
+  exitRouteSetMode(true);
 }
 
 // 補給ルートの指定モード中のクリック処理。処理したら true
@@ -10877,6 +10975,7 @@ function handleRouteSetClick(x, y){
     }
     routeSetMode.from = { x: x, y: y };
     routeSetMode.stage = 'to';
+    renderRouteSetPanel('🚚 補給ルート設定: 降ろし先をクリック（拠点=備蓄を降ろす / それ以外=そこに駐留）');
     setStatus('🚚 積み元: ' + TER[M[y][x]].name + '('+x+','+y+') → 次に降ろし先をクリック（自軍拠点なら備蓄を降ろし、それ以外のマスならそこに駐留して周りへ補給します）');
     render();
     return true;
@@ -10903,22 +11002,25 @@ function handleRouteSetClick(x, y){
   u.routeTarget = supplyStockFull(u) ? 'to' : 'from';
   var fTer = TER[M[u.route.from.y][u.route.from.x]];
   var toLabel = isFac ? (TER[M[y][x]].name + '('+x+','+y+')') : ('駐留地点('+x+','+y+')');
-  setStatus('🚚 補給ルートを設定しました: ' + fTer.name + '('+u.route.from.x+','+u.route.from.y+') → ' + toLabel);
+  setStatus('🚚 補給ルートを設定しました: ' + fTer.name + '('+u.route.from.x+','+u.route.from.y+') → ' + toLabel + ' (次のターンから自動で往復します)');
   routeSetMode = null;
-  render();
-  updateInfoPanel();
+  // 設定でこのターンの行動を終える (待機と同じ扱い)。宙ぶらりんの状態を残さない
+  u.acted = true;
+  if(pendingUnit && pendingUnit.id === u.id) pendingUnit = null;
+  setClear(attackableSet); setClear(movableSet);
+  hideCommandPanel();
+  afterAction();
   return true;
 }
 
-function doClearSupplyRoute(){
-  if(!pendingUnit) return;
-  delete pendingUnit.route;
-  delete pendingUnit.routeTarget;
-  setStatus('🚚 補給ルートを解除しました');
-  hideCommandPanel();
-  pendingUnit = null;
-  setClear(attackableSet);
-  afterAction();
+// 情報パネルからの解除 (コマンド選択に入らずその場で解除できる)
+function clearSupplyRouteAt(x, y){
+  var u = unitAt(x, y);
+  if(!u || u.owner !== 'P' || !u.route) return;
+  delete u.route; delete u.routeTarget; delete u.routeStuck;
+  setStatus('🚚 ' + TYPE[u.type].name + 'の補給ルートを解除しました');
+  render();
+  updateInfoPanel();
 }
 
 function doManualLoad(pos){
@@ -11500,10 +11602,8 @@ function onCellClick(x, y){
   var k = x+','+y;
   var clicked = unitAt(x, y);
   infoX = x; infoY = y; updateInfoPanel();
-  // 補給ルートの指定モード (段階3)
+  // 補給ルートの指定モード (段階3)。中止はコマンドパネルの「中止」ボタンで行う
   if(routeSetMode){
-    // 対象の補給ユニット自身をクリックしたら中止
-    if(clicked && clicked.id === routeSetMode.unitId){ cancelRouteSetMode(); return; }
     if(handleRouteSetClick(x, y)) return;
   }
   if(attackMode && pendingUnit && setHas(attackableSet, k)){
@@ -11725,22 +11825,9 @@ function onCellClick(x, y){
     return;
   }
   if(!pendingUnit){
-    // 自軍占領の生産施設(ユニット未配置 or 行動済みユニット)をクリック → 生産メニューを開く
-    if(!selected){
-      var capObj = captures[k];
-      var ter = TER[M[y][x]];
-      // 生産可能 or アップグレード可能な施設で、自軍占領済み
-      // ・ユニットがいない、または
-      // ・自軍の行動済みユニットがいる場合
-      var canOpenProduction = capObj && capObj.owner === 'P' && (ter.slots || ter.upgradeTo);
-      var unitBlocking = clicked && (clicked.owner !== 'P' || !clicked.acted);
-      if(canOpenProduction && !unitBlocking){
-        // 情報パネルもクリックマスを表示しておく
-        infoX = x; infoY = y; updateInfoPanel();
-        openProductionMenu(x, y);
-        return;
-      }
-    }
+    // 自軍施設をクリックしただけでは生産メニューを開かない。
+    // 備蓄などの状態を見たいだけでモーダルが出てしまうため、右の情報パネルに
+    // 「生産・収容」「アップグレード」ボタンを出し、そこから開く形にしている。
     // 敵ユニットクリック: 脅威範囲を表示 (移動可能マス + 攻撃可能マス)
     if(clicked && clicked.owner !== 'P' && clicked.owner !== 'N' && isUnitVisibleTo(clicked, 'P')){
       var threatRes = computeEnemyThreat(clicked);
@@ -12045,10 +12132,88 @@ function render(){
       board.appendChild(cell);
     }
   }
+  renderRouteOverlay();
   renderCaptureCount();
 }
 
+// ===== 補給ルートの矢印 (段階3) =====
+// ・ルート指定中: 積み元 → いまカーソルがあるマス
+// ・ルートを持つ補給ユニットをクリック/選択中: 積み元 → 降ろし先 (現在位置も点で示す)
+// 盤面は 42px のマス + 1px の隙間 + 1px の余白なので、マスの中心は 22 + 43*座標
+var routeHoverX = null, routeHoverY = null;
+function routeCellCenter(x, y){ return { cx: 22 + 43 * x, cy: 22 + 43 * y }; }
+
+function renderRouteOverlay(){
+  var board = document.getElementById('board');
+  if(!board) return;
+  var old = document.getElementById('route-overlay');
+  if(old && old.parentNode) old.parentNode.removeChild(old);
+
+  var lines = [];
+  if(routeSetMode && routeSetMode.from && routeHoverX !== null){
+    // 指定中: 積み元からカーソルまで
+    lines.push({ from: routeSetMode.from, to: { x: routeHoverX, y: routeHoverY }, pending: true });
+  } else {
+    var seen = {};
+    var cands = [];
+    if(infoX !== null && infoY !== null) cands.push(unitAt(infoX, infoY));
+    cands.push(selected);
+    cands.push(pendingUnit);
+    for(var i=0; i<cands.length; i++){
+      var u = cands[i];
+      if(!u || u.owner !== 'P' || !u.route || seen[u.id]) continue;
+      seen[u.id] = true;
+      lines.push({ from: u.route.from, to: u.route.to, unit: u, point: (u.route.toKind === 'point') });
+    }
+  }
+  if(lines.length === 0) return;
+
+  var w = 43 * W + 1, h = 43 * H + 1;
+  var svg = '<svg id="route-overlay" width="'+w+'" height="'+h+'" viewBox="0 0 '+w+' '+h+'" '
+    + 'style="position:absolute;left:0;top:0;pointer-events:none;z-index:5;">'
+    + '<defs><marker id="route-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto">'
+    + '<path d="M0,0 L10,5 L0,10 z" fill="#BA7517"/></marker></defs>';
+  for(var li=0; li<lines.length; li++){
+    var l = lines[li];
+    var a = routeCellCenter(l.from.x, l.from.y);
+    var b = routeCellCenter(l.to.x, l.to.y);
+    var dx = b.cx - a.cx, dy = b.cy - a.cy;
+    var len = Math.sqrt(dx*dx + dy*dy) || 1;
+    // 端の印と重ならないよう、線を少し内側で止める
+    var sx = a.cx + dx/len * 12, sy = a.cy + dy/len * 12;
+    var ex = b.cx - dx/len * 15, ey = b.cy - dy/len * 15;
+    var col = l.pending ? '#BA7517' : '#0F6E56';
+    svg += '<line x1="'+sx+'" y1="'+sy+'" x2="'+ex+'" y2="'+ey+'" stroke="#ffffff" stroke-width="6" stroke-linecap="round" opacity="0.65"/>';
+    svg += '<line x1="'+sx+'" y1="'+sy+'" x2="'+ex+'" y2="'+ey+'" stroke="'+col+'" stroke-width="3" '
+      + 'stroke-dasharray="8 5" stroke-linecap="round" marker-end="url(#route-arrow)"/>';
+    // 積み元 (緑の輪)
+    svg += '<circle cx="'+a.cx+'" cy="'+a.cy+'" r="14" fill="none" stroke="#ffffff" stroke-width="5" opacity="0.65"/>';
+    svg += '<circle cx="'+a.cx+'" cy="'+a.cy+'" r="14" fill="none" stroke="#0F6E56" stroke-width="2.5"/>';
+    // 降ろし先 (拠点=橙の輪 / 駐留地点=破線の四角)
+    svg += '<circle cx="'+b.cx+'" cy="'+b.cy+'" r="14" fill="none" stroke="#ffffff" stroke-width="5" opacity="0.65"/>';
+    if(l.point){
+      svg += '<rect x="'+(b.cx-13)+'" y="'+(b.cy-13)+'" width="26" height="26" fill="none" stroke="#BA7517" stroke-width="2.5" stroke-dasharray="5 4"/>';
+    } else {
+      svg += '<circle cx="'+b.cx+'" cy="'+b.cy+'" r="14" fill="none" stroke="#BA7517" stroke-width="2.5"/>';
+    }
+    // いまの位置
+    if(l.unit){
+      var c = routeCellCenter(l.unit.x, l.unit.y);
+      svg += '<circle cx="'+c.cx+'" cy="'+c.cy+'" r="5" fill="#BA7517" stroke="#ffffff" stroke-width="2"/>';
+    }
+  }
+  svg += '</svg>';
+  var wrap = document.createElement('div');
+  wrap.innerHTML = svg;
+  board.appendChild(wrap.firstChild);
+}
+
 function onCellHover(x, y){
+  // ルート指定中は、積み元からカーソルまでの線を追従させる
+  if(routeSetMode && routeSetMode.from){
+    routeHoverX = x; routeHoverY = y;
+    renderRouteOverlay();
+  }
   if(!attackMode || !pendingUnit) return;
   var k = x+','+y;
   if(!setHas(attackableSet, k)) return;
@@ -13747,7 +13912,7 @@ function openSpec(){ document.getElementById('modal-overlay').style.display = 'f
 // 生産メニュー
 var prodFacilityX = -1, prodFacilityY = -1;
 
-function openProductionMenu(x, y){
+function openProductionMenu(x, y, focus){
   prodFacilityX = x;
   prodFacilityY = y;
   var ter = TER[M[y][x]];
@@ -13876,7 +14041,7 @@ function openProductionMenu(x, y){
   }
   // アップグレード可能な選択肢
   else if(ter.upgradeTo && ter.upgradeTo.length > 0){
-    html += '<div style="font-size:12px; font-weight:600; margin:14px 0 4px;">アップグレード</div>';
+    html += '<div id="prod-upgrade-anchor" style="font-size:12px; font-weight:600; margin:14px 0 4px;">アップグレード</div>';
     var upCost = UPGRADE_COST[M[prodFacilityY][prodFacilityX]] || 0;
     var upTurns = UPGRADE_TURNS[M[prodFacilityY][prodFacilityX]] || 3;
     html += '<div style="font-size:10px; color:#888; margin-bottom:4px;">コスト: '+upCost.toLocaleString()+'G / 期間: '+upTurns+'ターン (期間中は生産・収容停止)</div>';
@@ -14011,6 +14176,13 @@ function showProduceConfirm(unitType){
 
   body.innerHTML = html;
   document.getElementById('prod-overlay').style.display = 'flex';
+  // 情報パネルの「⬆ アップグレード」から開いたときは、その位置まで送る
+  if(focus === 'upgrade'){
+    var anchor = document.getElementById('prod-upgrade-anchor');
+    if(anchor && anchor.scrollIntoView) anchor.scrollIntoView({ block: 'start' });
+  } else {
+    body.scrollTop = 0;
+  }
 }
 
 function closeProductionMenu(){
