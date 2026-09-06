@@ -1706,9 +1706,19 @@ function getEffectiveSight(u){
   return s;
 }
 
-// 伏兵判定用: 森・山・雨雲・雲にいる敵が viewerOwner から見えていないか判定
+// 伏兵判定用: 隠匿状態の敵が viewerOwner から「見えていない」か判定
 // FoW の有無に関係なく動作する (奇襲システム専用)。
-// 「viewer 側の他のユニット/拠点が隣接で発見済みならもう伏兵ではない」という挙動を維持する。
+//
+// 判定ルールは画面表示 (isUnitVisibleToExcl / submarineVisibility / stealthBomberVisibility)
+// と完全に一致させている。「画面で見えている敵からは奇襲を受けない」ため。
+//   ・潜航中の潜水艦 : 隣接、または「移動していない探知ユニット」の探知範囲内なら発見
+//                      (探知範囲: 潜水艦3 / 駆逐艦・フリゲート2 / 対潜哨戒機3)
+//   ・ステルス爆撃機 : 隣接のみ
+//   ・森・山・雲・雨雲: 隣接のみ (味方ユニット、または sight を持つ自軍拠点)
+//
+// excluderId = これから奇襲される当人。当人は「移動する前の位置・未移動状態」で評価する。
+// (動く前から把握していた敵は伏兵ではない。移動後の位置で見ると隣接=常に発見になり、
+//  奇襲が一切発動しなくなるため)
 function isAmbushHidden(u, viewerOwner, excluderId){
   if(isAlly(u.owner, viewerOwner)) return false; // 自軍・同盟は隠れていない
   // 隠匿地形/天候/特殊状態のいずれかで隠れているか?
@@ -1724,46 +1734,27 @@ function isAmbushHidden(u, viewerOwner, excluderId){
   var hiddenBySubmerge = !!(TYPE[u.type].canSubmerge && u.submerged);
   var hiddenByStealth = !!(TYPE[u.type].canStealth && u.stealth);
   if(!hiddenByTerrain && !hiddenByWeather && !hiddenBySubmerge && !hiddenByStealth) return false;
-  // 潜航中は対潜兵器が隣接していれば発見、ステルス中は対空兵器が隣接していれば発見
-  // それ以外の通常隠匿 (森・山・天候) は通常の発見ロジックを使う
-  // viewerOwner および同盟陣営のユニットで、excluderId を除いて隣接 (距離1) で発見しているか?
-  // ※ 視界範囲内に viewer がいれば発見済み扱い (既に見えている敵は奇襲してこない)
+  // 潜航・ステルスは表示側と同じく地形/天候より優先 (発見手段が広いほうを採用)
   for(var i=0; i<units.length; i++){
     var v = units[i];
     if(!isAlly(v.owner, viewerOwner) || v.hp <= 0) continue;
-    if(excluderId !== undefined && v.id === excluderId) continue;
-    var d = manhattan(v.x, v.y, u.x, u.y);
-    // 通常隠匿 (森・山・天候): viewer の視界範囲内なら発見済み扱い
-    // ※ 潜航・ステルス中は隣接判定のみ (視界では発見できない)
-    var maxRange = 1; // デフォルト隣接判定
-    if(!hiddenBySubmerge && !hiddenByStealth){
-      // 視界範囲内なら奇襲対象外 (既に見えている)
-      var vSight = TYPE[v.type].sight || 2;
-      var vTer = TER[M[v.y][v.x]];
-      if(vTer && vTer.sightBoost) vSight += vTer.sightBoost;
-      maxRange = Math.max(1, vSight);
+    var vx = v.x, vy = v.y, vMoved = v.moved;
+    if(excluderId !== undefined && v.id === excluderId){
+      // 奇襲される当人: 移動前の位置・未移動状態で評価する
+      if(typeof v.preMoveX !== 'number' || typeof v.preMoveY !== 'number') continue;
+      vx = v.preMoveX; vy = v.preMoveY; vMoved = false;
     }
-    if(d > maxRange) continue;
-    // 潜航中潜水艦: 隣接ユニットが対潜攻撃可能でないと発見できない
-    if(hiddenBySubmerge && !hiddenByTerrain && !hiddenByWeather){
-      // 隣接の v が SUB に攻撃できる武器を持っているか
-      var vWeapons = TYPE[v.type].weapons || [];
-      var canDetectSub = false;
-      for(var wi=0; wi<vWeapons.length; wi++){
-        if((vWeapons[wi].atk && vWeapons[wi].atk.SUB) > 0){ canDetectSub = true; break; }
-      }
-      if(!canDetectSub) continue; // 対潜不可なら見えていないことに
+    var d = manhattan(vx, vy, u.x, u.y);
+    if(d <= 1) return false; // 隣接は無条件で発見 (すべての隠匿に共通)
+    // 潜航中の潜水艦のみ、探知範囲による発見がある (移動していない探知ユニットに限る)
+    if(hiddenBySubmerge && !hiddenByStealth){
+      if(vMoved) continue;
+      var dr = getDetectRange(v);
+      if(dr > 0 && d <= dr) return false; // 探知済み → 伏兵ではない
     }
-    // ステルス中爆撃機: 隣接ユニットが戦闘機・対空戦車でないと発見できない
-    if(hiddenByStealth && !hiddenByTerrain && !hiddenByWeather){
-      var vt = TYPE[v.type];
-      var canDetectStealth = (vt.cat === 'AIR' && vt.armorClass === 'AC') || vt.isAA;
-      if(!canDetectStealth) continue;
-    }
-    return false; // 仲間・同盟が既に隣接で発見済み → 伏兵ではない
   }
-  // viewerOwner および同盟陣営の拠点 (sight保有) で隣接で発見しているか?
-  // (拠点は地形隠匿のみ発見、潜水艦・ステルスは対象外)
+  // viewerOwner および同盟陣営の拠点 (sight保有) が隣接していれば発見
+  // (潜航・ステルスは拠点では発見できない = 表示側と同じ)
   if(!hiddenBySubmerge && !hiddenByStealth){
     for(var k in captures){
       var cap = captures[k];
