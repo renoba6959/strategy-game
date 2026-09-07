@@ -302,19 +302,19 @@ var TER = {
   // 弾薬工廠 (大都市のアップグレード先): 隣接マスの自軍ユニットの燃料・弾薬を毎ターン全回復
   AMMO_DEPOT: { name:'弾薬工廠', def:3, color:'#8A6E4F', heal:2, capturable:true, income:1500, capHpMax:30, level:3, group:'city', ammoDepot:true, defenseSlots:3, lightSource:true, sight:2 },
   // 工場系 (2段階分岐)
-  FACTORY: { name:'工場', def:2, color:'#9F8E80', heal:3, capturable:true, healCat:'LAND', income:500, capHpMax:20, level:1, group:'factory', slots:1, produces:['INFANTRY','AT_INFANTRY','ENGINEER','SCOUT','APC','SUPPLY_TRUCK','LIGHT_TANK'], upgradeTo:['WHEEL_FACTORY','TRACK_FACTORY'], defenseSlots:1, lightSource:true, sight:2 },
+  FACTORY: { name:'工場', def:2, color:'#9F8E80', heal:3, capturable:true, healCat:'LAND', income:500, capHpMax:20, level:1, group:'factory', slots:1, produces:['INFANTRY','AT_INFANTRY','ENGINEER','SCOUT','APC','SUPPLY_TRUCK','LIGHT_TANK','LOCOMOTIVE','SUPPLY_CAR'], upgradeTo:['WHEEL_FACTORY','TRACK_FACTORY'], defenseSlots:1, lightSource:true, sight:2 },
   // 装輪工場 (レベル2): 装輪系 (機動戦闘車・水陸両用・空挺・MLRS) を追加
-  WHEEL_FACTORY: { name:'装輪工場', def:3, color:'#9A8A6E', heal:3, capturable:true, healCat:'LAND', income:750, capHpMax:30, level:2, group:'factory', slots:2, produces:['INFANTRY','AT_INFANTRY','ENGINEER','OBSERVER','ARTILLERY','MOUNTAIN_TROOP','SCOUT','APC','SUPPLY_TRUCK','LIGHT_TANK','AMPHIB_TANK','AIRBORNE_TANK'], upgradeTo:['WHEEL_ARSENAL'], defenseSlots:2, lightSource:true, sight:2 },
+  WHEEL_FACTORY: { name:'装輪工場', def:3, color:'#9A8A6E', heal:3, capturable:true, healCat:'LAND', income:750, capHpMax:30, level:2, group:'factory', slots:2, produces:['INFANTRY','AT_INFANTRY','ENGINEER','OBSERVER','ARTILLERY','MOUNTAIN_TROOP','SCOUT','APC','SUPPLY_TRUCK','LIGHT_TANK','AMPHIB_TANK','AIRBORNE_TANK','LOCOMOTIVE','SUPPLY_CAR'], upgradeTo:['WHEEL_ARSENAL'], defenseSlots:2, lightSource:true, sight:2 },
   // 戦車工場 (レベル2): 装軌系 (重戦車・駆逐戦車・対空・自走砲) を追加
-  TRACK_FACTORY: { name:'戦車工場', def:3, color:'#7E6F5C', heal:3, capturable:true, healCat:'LAND', income:750, capHpMax:30, level:2, group:'factory', slots:2, produces:['INFANTRY','AT_INFANTRY','ENGINEER','OBSERVER','ARTILLERY','MOUNTAIN_TROOP','SCOUT','APC','SUPPLY_TRUCK','LIGHT_TANK','MEDIUM_TANK','TANK_DESTROYER','AA_TANK','AA_MISSILE','SPG'], upgradeTo:['TRACK_ARSENAL'], defenseSlots:2, lightSource:true, sight:2 },
+  TRACK_FACTORY: { name:'戦車工場', def:3, color:'#7E6F5C', heal:3, capturable:true, healCat:'LAND', income:750, capHpMax:30, level:2, group:'factory', slots:2, produces:['INFANTRY','AT_INFANTRY','ENGINEER','OBSERVER','ARTILLERY','MOUNTAIN_TROOP','SCOUT','APC','SUPPLY_TRUCK','LIGHT_TANK','MEDIUM_TANK','TANK_DESTROYER','AA_TANK','AA_MISSILE','SPG','LOCOMOTIVE','SUPPLY_CAR','ARMORED_TRAIN'], upgradeTo:['TRACK_ARSENAL'], defenseSlots:2, lightSource:true, sight:2 },
   // 装輪工廠 (レベル3): 装輪工場の上位、スロット3、生産品目同じ
-  WHEEL_ARSENAL: { name:'装輪工廠', def:4, color:'#7C6E50', heal:3, capturable:true, healCat:'LAND', income:1000, capHpMax:40, level:3, group:'factory', slots:3, produces:['INFANTRY','AT_INFANTRY','ENGINEER','OBSERVER','ARTILLERY','HEAVY_ARTILLERY','MOUNTAIN_TROOP','PARATROOPER','SCOUT','APC','SUPPLY_TRUCK','LIGHT_TANK','MOBILE_COMBAT','AMPHIB_TANK','AIRBORNE_TANK','MLRS'], upgradeTo:['WHEEL_WORKS'], defenseSlots:3, lightSource:true, sight:2 },
+  WHEEL_ARSENAL: { name:'装輪工廠', def:4, color:'#7C6E50', heal:3, capturable:true, healCat:'LAND', income:1000, capHpMax:40, level:3, group:'factory', slots:3, produces:['INFANTRY','AT_INFANTRY','ENGINEER','OBSERVER','ARTILLERY','HEAVY_ARTILLERY','MOUNTAIN_TROOP','PARATROOPER','SCOUT','APC','SUPPLY_TRUCK','LIGHT_TANK','MOBILE_COMBAT','AMPHIB_TANK','AIRBORNE_TANK','MLRS','LOCOMOTIVE','SUPPLY_CAR'], upgradeTo:['WHEEL_WORKS'], defenseSlots:3, lightSource:true, sight:2 },
   // 戦車工廠 (レベル3): 戦車工場の上位、スロット3、生産品目同じ
-  TRACK_ARSENAL: { name:'戦車工廠', def:4, color:'#5F5240', heal:3, capturable:true, healCat:'LAND', income:1000, capHpMax:40, level:3, group:'factory', slots:3, produces:['INFANTRY','AT_INFANTRY','ENGINEER','OBSERVER','ARTILLERY','HEAVY_ARTILLERY','MOUNTAIN_TROOP','PARATROOPER','SCOUT','APC','SUPPLY_TRUCK','LIGHT_TANK','MEDIUM_TANK','HEAVY_TANK','TANK_DESTROYER','HEAVY_TD','AA_TANK','AA_MISSILE','SPG'], upgradeTo:['TRACK_WORKS'], defenseSlots:3, lightSource:true, sight:2 },
+  TRACK_ARSENAL: { name:'戦車工廠', def:4, color:'#5F5240', heal:3, capturable:true, healCat:'LAND', income:1000, capHpMax:40, level:3, group:'factory', slots:3, produces:['INFANTRY','AT_INFANTRY','ENGINEER','OBSERVER','ARTILLERY','HEAVY_ARTILLERY','MOUNTAIN_TROOP','PARATROOPER','SCOUT','APC','SUPPLY_TRUCK','LIGHT_TANK','MEDIUM_TANK','HEAVY_TANK','TANK_DESTROYER','HEAVY_TD','AA_TANK','AA_MISSILE','SPG','LOCOMOTIVE','SUPPLY_CAR','ARMORED_TRAIN','RAIL_GUN'], upgradeTo:['TRACK_WORKS'], defenseSlots:3, lightSource:true, sight:2 },
   // 装輪兵器廠 (レベル4): 装輪工廠の上位、スロット4、製造ターン-1
-  WHEEL_WORKS: { name:'装輪兵器廠', def:5, color:'#5F5240', heal:3, capturable:true, healCat:'LAND', income:1500, capHpMax:50, level:4, group:'factory', slots:4, prodTurnBonus:-1, produces:['INFANTRY','AT_INFANTRY','ENGINEER','OBSERVER','ARTILLERY','HEAVY_ARTILLERY','MOUNTAIN_TROOP','PARATROOPER','SCOUT','APC','SUPPLY_TRUCK','LIGHT_TANK','MOBILE_COMBAT','AMPHIB_TANK','AIRBORNE_TANK','MLRS'], defenseSlots:4, lightSource:true, sight:2 },
+  WHEEL_WORKS: { name:'装輪兵器廠', def:5, color:'#5F5240', heal:3, capturable:true, healCat:'LAND', income:1500, capHpMax:50, level:4, group:'factory', slots:4, prodTurnBonus:-1, produces:['INFANTRY','AT_INFANTRY','ENGINEER','OBSERVER','ARTILLERY','HEAVY_ARTILLERY','MOUNTAIN_TROOP','PARATROOPER','SCOUT','APC','SUPPLY_TRUCK','LIGHT_TANK','MOBILE_COMBAT','AMPHIB_TANK','AIRBORNE_TANK','MLRS','LOCOMOTIVE','SUPPLY_CAR'], defenseSlots:4, lightSource:true, sight:2 },
   // 戦車兵器廠 (レベル4): 戦車工廠の上位、スロット4、製造ターン-1
-  TRACK_WORKS: { name:'戦車兵器廠', def:5, color:'#403628', heal:3, capturable:true, healCat:'LAND', income:1500, capHpMax:50, level:4, group:'factory', slots:4, prodTurnBonus:-1, produces:['INFANTRY','AT_INFANTRY','ENGINEER','OBSERVER','ARTILLERY','HEAVY_ARTILLERY','MOUNTAIN_TROOP','PARATROOPER','SCOUT','APC','SUPPLY_TRUCK','LIGHT_TANK','MEDIUM_TANK','HEAVY_TANK','TANK_DESTROYER','HEAVY_TD','AA_TANK','AA_MISSILE','SPG'], defenseSlots:4, lightSource:true, sight:2 },
+  TRACK_WORKS: { name:'戦車兵器廠', def:5, color:'#403628', heal:3, capturable:true, healCat:'LAND', income:1500, capHpMax:50, level:4, group:'factory', slots:4, prodTurnBonus:-1, produces:['INFANTRY','AT_INFANTRY','ENGINEER','OBSERVER','ARTILLERY','HEAVY_ARTILLERY','MOUNTAIN_TROOP','PARATROOPER','SCOUT','APC','SUPPLY_TRUCK','LIGHT_TANK','MEDIUM_TANK','HEAVY_TANK','TANK_DESTROYER','HEAVY_TD','AA_TANK','AA_MISSILE','SPG','LOCOMOTIVE','SUPPLY_CAR','ARMORED_TRAIN','RAIL_GUN'], defenseSlots:4, lightSource:true, sight:2 },
   // 空港系 (3段階直列)
   AIRPORT: { name:'空港', def:2, color:'#C9C7C2', heal:3, capturable:true, healCat:'AIR', income:500, capHpMax:20, level:1, group:'airport', slots:1, produces:['TRANSPORT_HELI','LIGHT_HELI','ATK_HELI','SCOUT_PLANE'], upgradeTo:['AIR_BASE'], defenseSlots:1, lightSource:true, sight:2 },
   AIR_BASE: { name:'空軍基地', def:3, color:'#B5B3AE', heal:3, capturable:true, healCat:'AIR', income:750, capHpMax:30, level:2, group:'airport', slots:2, produces:['TRANSPORT_HELI','LIGHT_HELI','ATK_HELI','AT_HELI','SCOUT_PLANE','OBSERVER_PLANE','RECON_PLANE','TRANSPORT_PLANE','CARRIER_FIGHTER','CARRIER_BOMBER','CARRIER_TORPEDO'], upgradeTo:['AIR_ARSENAL'], defenseSlots:2, lightSource:true, sight:2 },
@@ -517,6 +517,15 @@ var ICONS = {
   // 給油艦(タンカー風・タンク3区画)
   OILER: '<svg viewBox="0 0 32 32" fill="currentColor"><path d="M2,18 L4,15 L28,15 L30,18 L28,21 L4,21 Z"/><rect x="22" y="11" width="5" height="4"/><rect x="23" y="12" width="3" height="2" fill="white"/><rect x="20" y="13" width="1.5" height="2"/><rect x="5" y="16" width="4" height="3" rx="0.5" fill="none" stroke="white" stroke-width="0.6"/><rect x="10" y="16" width="4" height="3" rx="0.5" fill="none" stroke="white" stroke-width="0.6"/><rect x="15" y="16" width="4" height="3" rx="0.5" fill="none" stroke="white" stroke-width="0.6"/><circle cx="7" cy="17.5" r="0.3" fill="white"/><circle cx="12" cy="17.5" r="0.3" fill="white"/><circle cx="17" cy="17.5" r="0.3" fill="white"/><rect x="11.5" y="13" width="1" height="3"/></svg>',
   AMMO_SHIP: '<svg viewBox="0 0 32 32" fill="currentColor"><path d="M2,18 L4,15 L28,15 L30,18 L28,21 L4,21 Z"/><rect x="22" y="11" width="5" height="4"/><rect x="23" y="12" width="3" height="2" fill="white"/><rect x="20" y="13" width="1.5" height="2"/><rect x="11.5" y="13" width="1" height="3"/><rect x="5" y="15.5" width="4" height="4" fill="none" stroke="white" stroke-width="0.7"/><line x1="5" y1="17.5" x2="9" y2="17.5" stroke="white" stroke-width="0.5"/><line x1="7" y1="15.5" x2="7" y2="19.5" stroke="white" stroke-width="0.5"/><rect x="10" y="15.5" width="4" height="4" fill="none" stroke="white" stroke-width="0.7"/><line x1="10" y1="17.5" x2="14" y2="17.5" stroke="white" stroke-width="0.5"/><line x1="12" y1="15.5" x2="12" y2="19.5" stroke="white" stroke-width="0.5"/><rect x="15" y="15.5" width="4" height="4" fill="none" stroke="white" stroke-width="0.7"/><line x1="15" y1="17.5" x2="19" y2="17.5" stroke="white" stroke-width="0.5"/><line x1="17" y1="15.5" x2="17" y2="19.5" stroke="white" stroke-width="0.5"/></svg>',
+  // ===== 列車系 =====
+  // 装甲列車(砲塔つきの装甲車両・側面ビュー)
+  ARMORED_TRAIN: '<svg viewBox="0 0 32 32" fill="currentColor"><rect x="2" y="13" width="28" height="9"/><rect x="4" y="15" width="4" height="3" fill="white"/><rect x="24" y="15" width="4" height="3" fill="white"/><rect x="11" y="7" width="10" height="6"/><rect x="20" y="8.5" width="11" height="2.5"/><circle cx="7" cy="25" r="2" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="16" cy="25" r="2" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="25" cy="25" r="2" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="1" y="28" width="30" height="1.6"/></svg>',
+  // 機関車(左に運転台・右にボイラーと煙突)
+  LOCOMOTIVE: '<svg viewBox="0 0 32 32" fill="currentColor"><rect x="2" y="8" width="11" height="14"/><rect x="4.5" y="10.5" width="6" height="4.5" fill="white"/><rect x="13" y="13" width="17" height="9"/><rect x="23" y="5" width="4.5" height="8"/><rect x="21.5" y="3.5" width="7" height="2"/><circle cx="7" cy="25" r="2" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="16" cy="25" r="2" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="25" cy="25" r="2" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="1" y="28" width="30" height="1.6"/></svg>',
+  // 列車砲(長大な砲身を斜め上に向けた貨車)
+  RAIL_GUN: '<svg viewBox="0 0 32 32" fill="currentColor"><rect x="1" y="17" width="30" height="5"/><rect x="6" y="12" width="11" height="5"/><polygon points="14,14 30,5 31.5,8 15.5,17"/><rect x="9.5" y="8.5" width="4.5" height="4.5"/><circle cx="7" cy="25" r="2" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="16" cy="25" r="2" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="25" cy="25" r="2" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="1" y="28" width="30" height="1.6"/></svg>',
+  // 補給貨車(有蓋車・扉2枚)
+  SUPPLY_CAR: '<svg viewBox="0 0 32 32" fill="currentColor"><polygon points="1.5,9.5 30.5,9.5 30.5,11.5 1.5,11.5"/><rect x="2" y="11" width="28" height="11"/><rect x="6" y="14" width="7" height="6" fill="white"/><rect x="19" y="14" width="7" height="6" fill="white"/><circle cx="7" cy="25" r="2" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="16" cy="25" r="2" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="25" cy="25" r="2" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="1" y="28" width="30" height="1.6"/></svg>',
   // 空中給油機(KC-46側面ビュー・機首右・尾部から斜め後方下にブーム)
   AERIAL_TANKER: '<svg viewBox="0 0 32 32" fill="currentColor"><ellipse cx="17" cy="14" rx="14" ry="2"/><rect x="27" y="13.5" width="2" height="1" fill="white"/><rect x="11" y="13.7" width="0.5" height="0.6" fill="white"/><rect x="13" y="13.7" width="0.5" height="0.6" fill="white"/><rect x="15" y="13.7" width="0.5" height="0.6" fill="white"/><rect x="17" y="13.7" width="0.5" height="0.6" fill="white"/><rect x="19" y="13.7" width="0.5" height="0.6" fill="white"/><rect x="21" y="13.7" width="0.5" height="0.6" fill="white"/><path d="M14,15.5 L24,15.5 L19,19 L13,19 Z"/><rect x="17" y="18.8" width="1.2" height="1.2"/><ellipse cx="17.6" cy="20.8" rx="2.5" ry="1.1"/><ellipse cx="15.3" cy="20.8" rx="0.5" ry="0.7" fill="white"/><path d="M3.5,13 L7,13 L6,7 L4.5,8 Z"/><path d="M2,13.3 L7,13.3 L7,14.7 L2,14.7 Z"/><polygon points="3,14 4,14 1.5,18 0.5,18"/><circle cx="1" cy="18" r="0.7"/></svg>'
 };
@@ -674,7 +683,15 @@ var TYPE = {
   TRANSPORT_PLANE: { name:'輸送機', cat:'AIR', armorClass:'AC', cost:'AIR', move:6, sight:2, armor:3, fuelMax:80, capacity:2, canCarry:['INFANTRY','AT_INFANTRY','ENGINEER','OBSERVER','MOUNTAIN_TROOP','PARATROOPER','ARTILLERY','HEAVY_ARTILLERY','SCOUT','APC','SUPPLY_TRUCK','MOBILE_COMBAT','AIRBORNE_TANK'], note:'歩兵系・重歩兵・装輪車両・空挺戦車を空輸', price:12000, prodTurns:3, weapons:[ W('機銃', [1,1], false, {INF:4, UV:2, AV:0, US:0, AS:0, HE:4, AC:0}, {infiniteAmmo:true}) ] },
   STEALTH_BOMBER: { name:'ステルス爆撃機', cat:'AIR', armorClass:'AC', cost:'AIR', move:6, sight:3, armor:2, fuelMax:50, canStealth:true, note:'ステルスモード可。ステルス中は戦闘機・対空戦車のみ撃墜可', price:20000, prodTurns:4, weapons:[ W('精密誘導爆弾', [1,1], false, {INF:12, UV:10, AV:8, US:8, AS:6, HE:0, AC:0}, {ammo:2, vsFacility:10}) ] },
   AC_130: { name:'ガンシップ', cat:'AIR', armorClass:'AC', cost:'AIR', move:6, sight:3, armor:2, fuelMax:60, note:'機関砲(直接1)+榴弾砲(間接2-4)のハイブリッド砲台', price:30000, prodTurns:4, weapons:[ W('25mm機関砲', [1,1], false, {INF:10, UV:6, AV:4, US:4, AS:0, HE:6, AC:4}, {infiniteAmmo:true}), W('105mm榴弾砲', [2,4], true, {INF:14, UV:12, AV:10, US:10, AS:8, HE:8, AC:0}, {ammo:3, vsFacility:10}) ] },
-  AERIAL_TANKER: { name:'空中給油機', cat:'AIR', armorClass:'AC', cost:'AIR', move:6, sight:2, armor:1, fuelMax:99, isSupply:true, supplyTarget:['AIR','HELI'], supplyFuel:true, supplyFuelMax:200, supplyAmmo:false, note:'隣接航空ユニット(固定翼+ヘリ)に燃料のみ補給。燃料庫200', price:6000, prodTurns:3, weapons:[] }
+  AERIAL_TANKER: { name:'空中給油機', cat:'AIR', armorClass:'AC', cost:'AIR', move:6, sight:2, armor:1, fuelMax:99, isSupply:true, supplyTarget:['AIR','HELI'], supplyFuel:true, supplyFuelMax:200, supplyAmmo:false, note:'隣接航空ユニット(固定翼+ヘリ)に燃料のみ補給。燃料庫200', price:6000, prodTurns:3, weapons:[] },
+
+  // ===== 列車系 (移動クラス TRAIN: 線路・鉄橋0.5 / 施設は駅として1 / それ以外は進入不可) =====
+  // 線路は地形防御0なので、停車中を叩かれると装甲が高くても脆い。
+  // 列車砲・補給貨車は自走できず、機関車の「連結」で牽引してもらう。
+  ARMORED_TRAIN: { name:'装甲列車', cat:'LAND', armorClass:'AV', cost:'TRAIN', move:6, sight:3, armor:4, fuelMax:70, isTrain:true, note:'線路の上だけを走る自走の装甲車両。線路は地形防御0なので停車中は狙われやすい', price:6000, prodTurns:3, weapons:[ W('列車砲塔', [1,1], false, {INF:8, UV:10, AV:9, US:8, AS:6, HE:5, AC:0}, {ammo:3, vsFacility:6}), W('機銃', [1,1], false, {INF:6, UV:4, AV:0, US:4, AS:0, HE:6, AC:0}, {infiniteAmmo:true}) ] },
+  LOCOMOTIVE: { name:'機関車', cat:'LAND', armorClass:'UV', cost:'TRAIN', move:7, sight:2, armor:2, fuelMax:99, isTrain:true, isCoupler:true, capacity:2, canCarry:['RAIL_GUN','SUPPLY_CAR'], note:'非武装。隣接する列車砲・補給貨車を「連結」して牽引する(2両まで)', price:2500, prodTurns:2, weapons:[] },
+  RAIL_GUN: { name:'列車砲', cat:'LAND', armorClass:'UV', cost:'TRAIN', move:0, sight:1, armor:1, fuelMax:30, isTrain:true, isTowed:true, note:'自走できない。機関車に連結してもらって移動する超長射程の間接砲', price:8000, prodTurns:4, weapons:[ W('列車砲', [3,6], true, {INF:14, UV:14, AV:12, US:12, AS:10, HE:0, AC:0}, {ammo:2, vsFacility:14}) ] },
+  SUPPLY_CAR: { name:'補給貨車', cat:'LAND', armorClass:'UV', cost:'TRAIN', move:0, sight:1, armor:1, fuelMax:30, isTrain:true, isTowed:true, isSupply:true, supplyTarget:['LAND','HELI'], supplyFuel:true, supplyFuelMax:800, supplyAmmo:true, supplyAmmoMax:60, note:'自走できない。機関車に連結して線路で前線へ物資を運ぶ。燃料庫800/弾薬庫60', price:2000, prodTurns:2, weapons:[] }
 };
 
 var ARMOR_LABELS = { INF:'歩兵', UV:'非装甲車両', AV:'装甲車両', US:'非装甲艦船', AS:'装甲艦船', HE:'ヘリ', AC:'航空機', SUB:'潜水艦' };
@@ -1036,7 +1053,7 @@ var production = [];
 
 var currentStage = null, W = 0, H = 0, M = [];
 var units = [], captures = {}, nextId = 1;
-var turn = 'P', selected = null, pendingUnit = null, pendingJustMoved = false, attackMode = false, unloadMode = false, unloadCargoIdx = -1, unloadValidSet = {}, unloadStarted = false, facilityAttackMode = false, facilityAttackableSet = {}, bridgeMode = false, bridgeValidSet = {}, railRepairMode = false, railRepairSet = {};
+var turn = 'P', selected = null, pendingUnit = null, pendingJustMoved = false, attackMode = false, unloadMode = false, unloadCargoIdx = -1, unloadValidSet = {}, unloadStarted = false, facilityAttackMode = false, facilityAttackableSet = {}, bridgeMode = false, bridgeValidSet = {}, railRepairMode = false, railRepairSet = {}, coupleMode = false, coupleValidSet = {};
 // 線路を敷く前の地形を覚えておく (破壊されたら元に戻す)。キーは "x,y"
 var railBase = {};
 // 線路の耐久 (施設HPに相当)。線路・鉄橋は20、廃線・損傷鉄橋は10
@@ -1945,6 +1962,7 @@ function aiAssignSupplyRoutes(aiFaction){
     var u = units[ui];
     if(u.owner !== aiFaction || u.hp <= 0) continue;
     if(!canCarrySupplyStock(u)) continue;
+    if(!TYPE[u.type].move) continue;   // 自走できない補給貨車は機関車が運ぶ
     var kinds = supplyKindsOf(u);
     if(kinds.length === 0) continue;
     var reach = bfsPathDistances(u.x, u.y, u);
@@ -2282,6 +2300,9 @@ function canCarryUnit(carrier, target){
   if(carrier.cargo && carrier.cargo.length >= ct.capacity) return false;
   // canCarry が配列なら type の包含チェック (重歩兵も明示的に含まれていればOK)
   if(Array.isArray(ct.canCarry)) return ct.canCarry.indexOf(target.type) >= 0;
+  // 列車系は線路を走る車両なので、輸送船・輸送機には積めない
+  //  (機関車の canCarry は明示リストなので、上の分岐で許可される)
+  if(tt.isTrain) return false;
   // canCarry が 'LAND'/'SEA'/'AIR' ならカテゴリチェック
   // ただし重歩兵は LAND カテゴリ指定の輸送のみ可 (=輸送船のみ。AIR/SEA直接指定の輸送は他にない)
   if(ct.canCarry === 'LAND' || ct.canCarry === 'SEA' || ct.canCarry === 'AIR'){
@@ -4657,7 +4678,7 @@ function endTurn(){
   if(window.PLAYER_LOG || window.AI_DEBUG){
     try{ console.log('%c=== Round ' + roundNumber + ' Turn: ' + turn + ' ===', 'color:#5a4a30; font-weight:bold; background:#f5e8c4; padding:2px 8px;'); }catch(e){}
   }
-  selected = null; pendingUnit = null; attackMode = false; unloadMode = false; setClear(unloadValidSet); unloadStarted = false;
+  selected = null; pendingUnit = null; attackMode = false; unloadMode = false; setClear(unloadValidSet); unloadStarted = false; coupleMode = false; setClear(coupleValidSet);
   setClear(movableSet); setClear(attackableSet);
   hideCommandPanel();
   // 天候の進行 (1ラウンドごとに各雲が1マス流れる)
@@ -8012,6 +8033,9 @@ function aiUnload(carrier, idx, x, y){
   // 乗艦中に保存していた fuel/ammo を引き継ぐ
   if(typeof cargo.fuel === 'number') newU.fuel = cargo.fuel;
   if(cargo.ammo) newU.ammo = cargo.ammo.slice();
+  // 補給ユニット(補給貨車など)の在庫も引き継ぐ
+  if(typeof cargo.supplyFuelCount === 'number') newU.supplyFuelCount = cargo.supplyFuelCount;
+  if(typeof cargo.supplyAmmoCount === 'number') newU.supplyAmmoCount = cargo.supplyAmmoCount;
   // quickDeploy対応: 同ラウンド乗船は除く
   var loadedThisRound = (cargo.loadedRound === roundNumber);
   if(carrierT.quickDeploy && !loadedThisRound){
@@ -8056,6 +8080,7 @@ function _aiLandTransportCat(unitType){
   var t = TYPE[unitType];
   if(!t || t.cat !== 'LAND') return null;
   if(isLandTransport(unitType)) return null; // 輸送ユニット自身は除外
+  if(t.isTrain) return null;                 // 列車系は船・輸送機で運べない
   var cost = t.cost;
   if(cost === 'TRACK_L' || cost === 'TRACK_H') return 'track';
   if(cost === 'WHEEL') return 'wheel';
@@ -11066,7 +11091,8 @@ function showCommandPanel(unit, justMoved){
   if(hasAtk) addBtn('攻撃', enterAttackMode, true);
   if(canAttackFacility) addBtn('施設攻撃', enterFacilityAttackMode, true);
   if(canCap) addBtn('占領', doCapture, true);
-  if(canUnload) addBtn('降下', enterUnloadMode, true);
+  if(canUnload) addBtn(TYPE[unit.type].isCoupler ? '🔗 切り離し' : '降下', enterUnloadMode, true);
+  if(coupleCandidatesAround(unit).length > 0) addBtn('🔗 連結', enterCoupleMode, true);
   if(canRepair) addBtn('修理', doRepair);
   if(canRebuild) addBtn('再建', doRebuild, true);
   if(canRepairFacility) addBtn('施設修復', doRepairFacility, true);
@@ -11077,7 +11103,8 @@ function showCommandPanel(unit, justMoved){
   // 行動済みになり、そもそも選択できない = このパネルが出ないため。
   // 解除は右のユニット詳細パネルのボタンで行う。
   if(canCarrySupplyStock(unit)){
-    addBtn(unit.route ? '🚚 補給ルートを設定し直す' : '🚚 補給ルート設定', enterRouteSetMode, true);
+    // 自走できないもの (補給貨車) は機関車が運ぶのでルートを持てない
+    if(TYPE[unit.type].move > 0) addBtn(unit.route ? '🚚 補給ルートを設定し直す' : '🚚 補給ルート設定', enterRouteSetMode, true);
     // 自軍拠点の上または隣接なら、手動で積み降ろしできる
     // 隣接する拠点が複数あるときは、どこに積み降ろしするかを選ばせる
     var rfs = routeFacilitiesAround(unit);
@@ -11678,6 +11705,83 @@ function executeRailAttack(x, y){
 
 // ===== 線路の修復 (工兵) =====
 // 隣接する傷んだ線路を、工兵の表示HP分だけ回復する
+
+// ===== 連結 (機関車 ⇔ 列車砲・補給貨車) =====
+// 列車砲・補給貨車は移動0で自分から乗り込めないので、機関車の側から拾い上げる。
+// 切り離しは通常の「降下」の仕組みをそのまま使う (ボタン名だけ変えている)。
+function coupleCandidatesAround(unit){
+  var t = TYPE[unit.type];
+  var list = [];
+  if(!t.isCoupler) return list;
+  if(unit.cargo && unit.cargo.length >= t.capacity) return list;
+  var dirs = [[1,0],[-1,0],[0,1],[0,-1]];
+  for(var i=0; i<dirs.length; i++){
+    var nx = unit.x + dirs[i][0], ny = unit.y + dirs[i][1];
+    if(!inBounds(nx, ny)) continue;
+    var o = unitAt(nx, ny);
+    if(!o || o.owner !== unit.owner) continue;
+    if(!TYPE[o.type].isTowed) continue;
+    if(!canCarryUnit(unit, o)) continue;
+    list.push(o);
+  }
+  return list;
+}
+
+function enterCoupleMode(){
+  if(!pendingUnit) return;
+  var cands = coupleCandidatesAround(pendingUnit);
+  if(cands.length === 0) return;
+  if(cands.length === 1){ executeCouple(cands[0].x, cands[0].y); return; }
+  coupleMode = true;
+  coupleValidSet = {};
+  for(var i=0; i<cands.length; i++) setAdd(coupleValidSet, cands[i].x+','+cands[i].y);
+  setStatus('🔗 連結する車両を選んでください');
+  var btnWrap = document.getElementById('command-buttons');
+  btnWrap.innerHTML = '';
+  var b = document.createElement('button');
+  b.textContent = 'キャンセル';
+  b.onclick = function(e){ e.stopPropagation(); exitCoupleMode(); };
+  btnWrap.appendChild(b);
+  render();
+}
+
+function exitCoupleMode(){
+  coupleMode = false;
+  coupleValidSet = {};
+  if(pendingUnit) showCommandPanel(pendingUnit, pendingJustMoved);
+  else render();
+}
+
+function executeCouple(x, y){
+  if(!pendingUnit) return;
+  var loco = pendingUnit;
+  var car = unitAt(x, y);
+  if(!car || !canCarryUnit(loco, car)) return;
+  loco.cargo = loco.cargo || [];
+  loco.cargo.push({
+    type: car.type,
+    hp: car.hp,
+    owner: car.owner,
+    originalId: car.id,
+    fuel: car.fuel,
+    ammo: car.ammo ? car.ammo.slice() : null,
+    cargo: car.cargo ? car.cargo.slice() : [],
+    // 補給ユニット(補給貨車)の在庫は連結中も持ち越す
+    supplyFuelCount: car.supplyFuelCount,
+    supplyAmmoCount: car.supplyAmmoCount,
+    loadedRound: roundNumber
+  });
+  units = units.filter(function(u){ return u.id !== car.id; });
+  setStatus('🔗 ' + TYPE[car.type].name + 'を連結しました');
+  if(loco.owner === 'P' && window.plog) plog('🔗 ' + TYPE[loco.type].name + '@('+loco.x+','+loco.y+') が ' + TYPE[car.type].name + 'を連結');
+  loco.acted = true;
+  pendingUnit = null;
+  coupleMode = false;
+  coupleValidSet = {};
+  hideCommandPanel();
+  afterAction();
+}
+
 function enterRailRepairMode(){
   if(!pendingUnit) return;
   railRepairMode = true;
@@ -11849,10 +11953,10 @@ function selectCargoForUnload(idx){
     setAdd(unloadValidSet, nx+','+ny);
   }
   if(setSize(unloadValidSet) === 0){
-    setStatus(TYPE[cargo.type].name + 'を降ろせる場所がありません');
+    setStatus(TYPE[cargo.type].name + 'を' + (carrierT.isCoupler ? '切り離せる' : '降ろせる') + '場所がありません');
     return;
   }
-  setStatus(TYPE[cargo.type].name + 'の降下先(緑マス)を選んでください');
+  setStatus(TYPE[cargo.type].name + (carrierT.isCoupler ? 'を切り離す場所' : 'の降下先') + '(緑マス)を選んでください');
   // ボタン: キャンセルだけ残す
   var btnWrap = document.getElementById('command-buttons');
   btnWrap.innerHTML = '';
@@ -11881,6 +11985,9 @@ function executeUnload(x, y){
   // 乗艦中に保存していた fuel/ammo を引き継ぐ (空母乗艦時は満タン補給済みのはず)
   if(typeof cargo.fuel === 'number') newU.fuel = cargo.fuel;
   if(cargo.ammo) newU.ammo = cargo.ammo.slice();
+  // 補給ユニット(補給貨車など)の在庫も引き継ぐ
+  if(typeof cargo.supplyFuelCount === 'number') newU.supplyFuelCount = cargo.supplyFuelCount;
+  if(typeof cargo.supplyAmmoCount === 'number') newU.supplyAmmoCount = cargo.supplyAmmoCount;
   // quickDeploy: APC/輸送ヘリ/空母系は降車後即行動可能
   // ただし「同ラウンド内で乗船→降車」は禁止 (収容→発艦のループ防止)
   var loadedThisRound = (cargo.loadedRound === roundNumber);
@@ -11902,7 +12009,7 @@ function executeUnload(x, y){
   if(pendingUnit.owner === 'P' && window.plog){
     plog(TYPE[pendingUnit.type].name + '@('+pendingUnit.x+','+pendingUnit.y+') から ' + TYPE[cargo.type].name + 'を('+x+','+y+')に降車');
   }
-  setStatus(TYPE[cargo.type].name + 'を降下させました');
+  setStatus(TYPE[cargo.type].name + (carrierT.isCoupler ? 'を切り離しました' : 'を降下させました'));
   unloadMode = false;
   unloadCargoIdx = -1;
   unloadValidSet = {};
@@ -12131,6 +12238,12 @@ function onCellClick(x, y){
   }
   if(railRepairMode) return;
   // 降下モード: 緑マス(unloadValidSet)をクリックすると降下実行
+  // 連結モード
+  if(coupleMode && pendingUnit && setHas(coupleValidSet, k)){
+    executeCouple(x, y);
+    return;
+  }
+  if(coupleMode) return;
   if(unloadMode && pendingUnit && setHas(unloadValidSet, k)){
     executeUnload(x, y);
     return;
@@ -12581,6 +12694,7 @@ function render(){
       if(setHas(bridgeValidSet, k)){ bg = '#A8D8F0'; border = '2px dashed #185FA5'; }
       if(setHas(railRepairSet, k)){ bg = '#BFE3CC'; border = '2px dashed #0F6E56'; }
       if(setHas(unloadValidSet, k)){ bg = '#A8E6C8'; border = '2px dashed #0F6E56'; }
+      if(setHas(coupleValidSet, k)){ bg = '#E8D48A'; border = '2px dashed #7A5A10'; }
       if(setHas(movableSet, k)){ bg = '#A8E6C8'; border = '1.5px solid #0F6E56'; }
       // 敵脅威範囲表示 (敵ユニットクリック時)。重なったら赤(脅威)優先
       if(setHas(enemyMoveSet, k)){ bg = '#B8D8F0'; border = '1.5px solid #185FA5'; }
@@ -12932,7 +13046,12 @@ var STATUS_MAP = {
   AMMO_SHIP: { armor:'CONF', move:'CONF', weapons:[] },
   LIGHT_CARRIER: { armor:'CONF', move:'CONF', weapons:[{atk:{INF:'CONF', UV:'CONF', AV:'CONF', US:'CONF', AS:'CONF', HE:'CONF', AC:'CONF', SUB:'CONF'}},{atk:{INF:'CONF', UV:'CONF', AV:'CONF', US:'CONF', AS:'CONF', HE:'CONF', AC:'CONF', SUB:'CONF'}}] },
   CARRIER: { armor:'CONF', move:'CONF', weapons:[{atk:{INF:'CONF', UV:'CONF', AV:'CONF', US:'CONF', AS:'CONF', HE:'CONF', AC:'CONF', SUB:'CONF'}},{atk:{INF:'CONF', UV:'CONF', AV:'CONF', US:'CONF', AS:'CONF', HE:'CONF', AC:'CONF', SUB:'CONF'}}] },
-  ARMORED_CARRIER: { armor:'CONF', move:'CONF', weapons:[{atk:{INF:'CONF', UV:'CONF', AV:'CONF', US:'CONF', AS:'CONF', HE:'CONF', AC:'CONF', SUB:'CONF'}},{atk:{INF:'CONF', UV:'CONF', AV:'CONF', US:'CONF', AS:'CONF', HE:'CONF', AC:'CONF', SUB:'CONF'}}] }
+  ARMORED_CARRIER: { armor:'CONF', move:'CONF', weapons:[{atk:{INF:'CONF', UV:'CONF', AV:'CONF', US:'CONF', AS:'CONF', HE:'CONF', AC:'CONF', SUB:'CONF'}},{atk:{INF:'CONF', UV:'CONF', AV:'CONF', US:'CONF', AS:'CONF', HE:'CONF', AC:'CONF', SUB:'CONF'}}] },
+  // 列車系
+  ARMORED_TRAIN: { armor:'CONF', move:'CONF', weapons:[{atk:{INF:'CONF', UV:'CONF', AV:'CONF', US:'CONF', AS:'CONF', HE:'CONF', AC:'CONF', SUB:'CONF'}},{atk:{INF:'CONF', UV:'CONF', AV:'CONF', US:'CONF', AS:'CONF', HE:'CONF', AC:'CONF', SUB:'CONF'}}] },
+  LOCOMOTIVE: { armor:'CONF', move:'CONF', weapons:[] },
+  RAIL_GUN: { armor:'CONF', move:'CONF', weapons:[{atk:{INF:'CONF', UV:'CONF', AV:'CONF', US:'CONF', AS:'CONF', HE:'CONF', AC:'CONF', SUB:'CONF'}}] },
+  SUPPLY_CAR: { armor:'CONF', move:'CONF', weapons:[] }
 };
 
 function getStatusColor(unitKey, field, weaponIdx, atkKey){
@@ -12958,7 +13077,7 @@ function getStatusColor(unitKey, field, weaponIdx, atkKey){
 
 function renderUnitsTab(){
   var groups = {
-    '陸': ['INFANTRY','AT_INFANTRY','ENGINEER','OBSERVER','ARTILLERY','HEAVY_ARTILLERY','MOUNTAIN_TROOP','PARATROOPER','SCOUT','LIGHT_TANK','MEDIUM_TANK','HEAVY_TANK','TANK_DESTROYER','AA_TANK','AA_MISSILE','SPG','MLRS','APC','SUPPLY_TRUCK','MOBILE_COMBAT','AIRBORNE_TANK','AMPHIB_TANK','HEAVY_TD'],
+    '陸': ['INFANTRY','AT_INFANTRY','ENGINEER','OBSERVER','ARTILLERY','HEAVY_ARTILLERY','MOUNTAIN_TROOP','PARATROOPER','SCOUT','LIGHT_TANK','MEDIUM_TANK','HEAVY_TANK','TANK_DESTROYER','AA_TANK','AA_MISSILE','SPG','MLRS','APC','SUPPLY_TRUCK','MOBILE_COMBAT','AIRBORNE_TANK','AMPHIB_TANK','HEAVY_TD','ARMORED_TRAIN','LOCOMOTIVE','RAIL_GUN','SUPPLY_CAR'],
     '海': ['CHASER','FRIGATE','DESTROYER','AA_DESTROYER','LIGHT_CRUISER','HEAVY_CRUISER','BATTLE_CRUISER','BATTLESHIP','SUBMARINE','ATTACK_SUBMARINE','TRANSPORT_SHIP','OILER','AMMO_SHIP','LIGHT_CARRIER','CARRIER','ARMORED_CARRIER'],
     '空': ['FIGHTER','BOMBER','STEALTH_BOMBER','ATTACKER','AC_130','CARRIER_FIGHTER','CARRIER_BOMBER','CARRIER_TORPEDO','TRANSPORT_HELI','LIGHT_HELI','ATK_HELI','AT_HELI','TRANSPORT_PLANE','AERIAL_TANKER','RECON_PLANE','ASW_PLANE']
   };
@@ -12968,7 +13087,8 @@ function renderUnitsTab(){
     { label: '重歩兵', filter: function(t){ return (t.cost === 'INF' || t.cost === 'INF_HEAVY') && t.isHeavyInfantry; } },
     { label: '装輪車両', filter: function(t){ return t.cost === 'WHEEL' || t.cost === 'AMPHIB_W'; } },
     { label: '軽キャタピラ', filter: function(t){ return t.cost === 'TRACK_L'; } },
-    { label: '重キャタピラ', filter: function(t){ return t.cost === 'TRACK_H'; } }
+    { label: '重キャタピラ', filter: function(t){ return t.cost === 'TRACK_H'; } },
+    { label: '列車', filter: function(t){ return t.cost === 'TRAIN'; } }
   ];
   // 海ユニットの分類: 4分類 (戦闘艦 / 潜水艦 / 輸送・補給艦 / 空母)
   var seaSubGroups = [
@@ -14865,7 +14985,7 @@ document.getElementById('stage-change-btn').onclick = function(){
 document.getElementById('end-turn-btn').onclick = function(){
   if(turn === 'P' && !gameOver){
     for(var i=0; i<units.length; i++){ if(units[i].owner === 'P') units[i].acted = true; }
-    selected = null; pendingUnit = null; attackMode = false; unloadMode = false; setClear(unloadValidSet); unloadStarted = false;
+    selected = null; pendingUnit = null; attackMode = false; unloadMode = false; setClear(unloadValidSet); unloadStarted = false; coupleMode = false; setClear(coupleValidSet);
     setClear(movableSet); setClear(attackableSet);
     hideCommandPanel();
     endTurn();
@@ -15545,7 +15665,7 @@ function edRenderPalette(){
     // ユニット一覧
     html += '<div style="max-height:400px; overflow-y:auto;">';
     var groups = {
-      '陸': ['INFANTRY','AT_INFANTRY','ENGINEER','OBSERVER','ARTILLERY','HEAVY_ARTILLERY','MOUNTAIN_TROOP','PARATROOPER','SCOUT','APC','SUPPLY_TRUCK','LIGHT_TANK','MEDIUM_TANK','HEAVY_TANK','TANK_DESTROYER','HEAVY_TD','AA_TANK','AA_MISSILE','SPG','MLRS','MOBILE_COMBAT','AIRBORNE_TANK','AMPHIB_TANK'],
+      '陸': ['INFANTRY','AT_INFANTRY','ENGINEER','OBSERVER','ARTILLERY','HEAVY_ARTILLERY','MOUNTAIN_TROOP','PARATROOPER','SCOUT','APC','SUPPLY_TRUCK','LIGHT_TANK','MEDIUM_TANK','HEAVY_TANK','TANK_DESTROYER','HEAVY_TD','AA_TANK','AA_MISSILE','SPG','MLRS','MOBILE_COMBAT','AIRBORNE_TANK','AMPHIB_TANK','ARMORED_TRAIN','LOCOMOTIVE','RAIL_GUN','SUPPLY_CAR'],
       '海': ['CHASER','FRIGATE','DESTROYER','AA_DESTROYER','LIGHT_CRUISER','HEAVY_CRUISER','BATTLE_CRUISER','BATTLESHIP','SUBMARINE','ATTACK_SUBMARINE','TRANSPORT_SHIP','OILER','AMMO_SHIP','LIGHT_CARRIER','CARRIER','ARMORED_CARRIER'],
       '空': ['FIGHTER','BOMBER','STEALTH_BOMBER','ATTACKER','AC_130','CARRIER_FIGHTER','CARRIER_BOMBER','CARRIER_TORPEDO','TRANSPORT_HELI','LIGHT_HELI','ATK_HELI','AT_HELI','TRANSPORT_PLANE','AERIAL_TANKER','RECON_PLANE','ASW_PLANE']
     };
