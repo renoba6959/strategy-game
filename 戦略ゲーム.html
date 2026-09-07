@@ -1036,7 +1036,7 @@ var production = [];
 
 var currentStage = null, W = 0, H = 0, M = [];
 var units = [], captures = {}, nextId = 1;
-var turn = 'P', selected = null, pendingUnit = null, pendingJustMoved = false, attackMode = false, unloadMode = false, unloadCargoIdx = -1, unloadValidSet = {}, unloadStarted = false, facilityAttackMode = false, facilityAttackableSet = {}, bridgeMode = false, bridgeValidSet = {}, railMode = false, railValidSet = {}, railRepairMode = false, railRepairSet = {};
+var turn = 'P', selected = null, pendingUnit = null, pendingJustMoved = false, attackMode = false, unloadMode = false, unloadCargoIdx = -1, unloadValidSet = {}, unloadStarted = false, facilityAttackMode = false, facilityAttackableSet = {}, bridgeMode = false, bridgeValidSet = {}, railRepairMode = false, railRepairSet = {};
 // 線路を敷く前の地形を覚えておく (破壊されたら元に戻す)。キーは "x,y"
 var railBase = {};
 // 線路の耐久 (施設HPに相当)。線路・鉄橋は20、廃線・損傷鉄橋は10
@@ -7003,6 +7003,7 @@ function _aiEngineerHomeObjectivesRemain(u, aiFaction){
 // AI: 工事中の橋・線路を仕上げる (着手しただけで放置しないため)
 // 隣接していれば工事し、離れていれば一番近い工事現場へ向かう。
 // 対象は「開通していないもの」だけ (耐久10以上の補強はAIには任せない)
+var AI_CONSTRUCTION_RANGE = 6;   // これより遠い工事現場はAIの工兵が向かわない
 function aiContinueConstruction(unit){
   if(!TYPE[unit.type].isEngineer) return null;
   var best = null, bestD = Infinity;
@@ -7011,6 +7012,7 @@ function aiContinueConstruction(unit){
       var t = TER[M[y][x]];
       if(!t || !t.buildHpMax || !t.isIncomplete) continue;
       var d = manhattan(unit.x, unit.y, x, y);
+      if(d > AI_CONSTRUCTION_RANGE) continue;   // 遠方の路盤に釣られて占領をやめないように
       if(d < bestD){ bestD = d; best = { x: x, y: y }; }
     }
   }
@@ -11039,14 +11041,9 @@ function showCommandPanel(unit, justMoved){
       }
     }
   }
-  // 工兵の線路敷設 (平地・道路に線路 / 川・橋に鉄橋) と、傷んだ線路の修復
-  var canBuildRail = false, canRepairRail = false;
+  // 傷んだ線路・橋の修復 (新規敷設はできない。線路はマップに元からある資産)
+  var canRepairRail = false;
   if(TYPE[unit.type].isEngineer){
-    var rdirs = [[1,0],[-1,0],[0,1],[0,-1]];
-    for(var ri=0; ri<rdirs.length; ri++){
-      var rx = unit.x + rdirs[ri][0], ry = unit.y + rdirs[ri][1];
-      if(inBounds(rx, ry) && railBuildTargetFor(M[ry][rx])){ canBuildRail = true; break; }
-    }
     var pdirs = [[0,0],[1,0],[-1,0],[0,1],[0,-1]];
     for(var pi2=0; pi2<pdirs.length; pi2++){
       var px = unit.x + pdirs[pi2][0], py = unit.y + pdirs[pi2][1];
@@ -11074,7 +11071,6 @@ function showCommandPanel(unit, justMoved){
   if(canRebuild) addBtn('再建', doRebuild, true);
   if(canRepairFacility) addBtn('施設修復', doRepairFacility, true);
   if(canBuildBridge) addBtn('橋建設', enterBridgeMode, true);
-  if(canBuildRail) addBtn('🛤 線路敷設', enterRailMode, true);
   if(canRepairRail) addBtn('🛠 工事', enterRailRepairMode, true);
   // 補給ルート (段階3): 補給ユニットのみ
   // 解除はここには置かない。ルート設定済みのユニットはターン開始時に自動で動いて
@@ -11548,13 +11544,13 @@ function doRepairFacility(){
 // 耐久は 0〜30 のひとつの数値で管理する
 //   10以上 → 線路・鉄橋 (列車が走れる)
 //   1〜9   → 路盤・橋脚 (レールが載っていない状態。列車は走れない)
-//   0      → 敷設前の地形に戻る
+//   0      → 建設前の地形に戻る (橋のみ。線路は路盤で止まる)
 // 工兵の工事は「工兵の表示HP分」だけ耐久を上げるので、HP9以上の工兵なら
 // 路盤(1)を一度で線路(10)にできる。
-// 敷設は着手するだけで耐久1。1ターンで線路が完成するのは不自然なので、
-// 工兵が工事を重ねて 10 (列車が通れる) → 30 (頑丈) と育てていく。
+// 橋の建設は着手するだけで耐久1。1ターンで完成するのは不自然なので、
+// 工兵が工事を重ねて 10 (通行できる) → 30 (頑丈) と育てていく。
 var RAIL_HP_MAX = 30;      // 耐久の上限 (工兵が工事を重ねて積み上げる)
-var RAIL_BUILD_HP = 1;     // 敷設に着手した直後の耐久 (まだ列車は通れない)
+var RAIL_BUILD_HP = 1;     // 建設に着手した直後の耐久 (まだ通行できない)
 var RAIL_OK_HP = 10;       // これ以上なら線路として使える
 var RAIL_RUINED_HP = 1;    // 線路が壊れて廃線になったときの耐久
 
@@ -11604,8 +11600,14 @@ function damageRailAt(x, y, dmg){
     syncRailTerrain(x, y);
     return { hp: RAIL_RUINED_HP, stage: 'ruined' };
   }
+  if(hp <= 0 && t.isRail){
+    // 線路系は路盤・橋脚で止まる。線路は新規敷設できないので、消してしまうと
+    // その路線が二度と戻らなくなるため、叩き続けても更地にはしない
+    railHp[k] = RAIL_RUINED_HP;
+    return { hp: RAIL_RUINED_HP, stage: 'ruined' };
+  }
   if(hp <= 0){
-    // 未完成の状態をさらに叩くと、敷設前の地形に戻る
+    // 未完成の橋をさらに叩くと、架橋前の地形 (川) に戻る
     var back = railBase[k];
     if(!back){
       var mk = M[y][x];
@@ -11630,69 +11632,9 @@ function repairRailAt(x, y, amount){
   return { hp: railHp[k], promoted: promoted };
 }
 
-// ===== 線路の敷設 (工兵) =====
-// 平地・道路には線路、川・橋には鉄橋を架ける。敷設前の地形は railBase に控える
-var RAIL_BUILD_COST = { PLAIN: 600, ROAD: 400, RIVER: 1200, BRIDGE: 800 };
-function railBuildTargetFor(terKey){
-  if(terKey === 'PLAIN' || terKey === 'ROAD') return 'RAIL';
-  if(terKey === 'RIVER' || terKey === 'BRIDGE') return 'RAIL_BRIDGE';
-  return null;
-}
-
-function enterRailMode(){
-  if(!pendingUnit) return;
-  railMode = true;
-  railValidSet = {};
-  var dirs = [[1,0],[-1,0],[0,1],[0,-1]];
-  for(var di=0; di<dirs.length; di++){
-    var nx = pendingUnit.x + dirs[di][0], ny = pendingUnit.y + dirs[di][1];
-    if(!inBounds(nx, ny)) continue;
-    if(railBuildTargetFor(M[ny][nx])) setAdd(railValidSet, nx+','+ny);
-  }
-  setStatus('🛤 線路を敷くマスを選んでください（平地600G / 道路400G / 川に鉄橋1200G / 橋に鉄橋800G）');
-  var btnWrap = document.getElementById('command-buttons');
-  btnWrap.innerHTML = '';
-  var b = document.createElement('button');
-  b.textContent = 'キャンセル';
-  b.onclick = function(e){ e.stopPropagation(); exitRailMode(); };
-  btnWrap.appendChild(b);
-  render();
-}
-
-function exitRailMode(){
-  railMode = false;
-  railValidSet = {};
-  if(pendingUnit) showCommandPanel(pendingUnit, pendingJustMoved);
-  else render();
-}
-
-function executeRailBuild(x, y){
-  if(!pendingUnit) return;
-  var fromTer = M[y][x];
-  var target = railBuildTargetFor(fromTer);
-  if(!target) return;
-  var cost = RAIL_BUILD_COST[fromTer] || 600;
-  if(funds.P < cost){
-    setStatus('🛤 敷設コスト ' + cost + 'Gが足りません');
-    return;
-  }
-  funds.P -= cost;
-  railBase[x+','+y] = fromTer;   // 撤去されたら元の地形に戻す
-  M[y][x] = target;
-  railHp[x+','+y] = RAIL_BUILD_HP;
-  syncRailTerrain(x, y);   // 耐久1なので「路盤・橋脚」から始まる
-  setStatus('🛤 ' + TER[M[y][x]].name + 'の敷設に着手しました（' + cost + 'G・耐久'
-    + RAIL_BUILD_HP + '/' + RAIL_HP_MAX + '。工兵の工事で耐久' + RAIL_OK_HP + '以上にすると列車が通れます）');
-  if(window.plog) try{ plog('🛤 ' + TER[M[y][x]].name + '敷設着手 ('+x+','+y+') ' + cost + 'G'); }catch(e){}
-  pendingUnit.acted = true;
-  pendingUnit = null;
-  railMode = false;
-  railValidSet = {};
-  hideCommandPanel();
-  afterAction();
-}
-
-
+// ===== 線路について =====
+// 線路・鉄橋は新規に敷設できない。マップに最初から置かれたインフラを、
+// 工兵が直し (路盤→線路)、対施設攻撃を持つユニットが切る (線路→路盤) 形で奪い合う。
 
 
 function executeRailAttack(x, y){
@@ -12182,12 +12124,6 @@ function onCellClick(x, y){
     return;
   }
   if(bridgeMode) return;
-  // 線路の敷設モード
-  if(railMode && pendingUnit && setHas(railValidSet, k)){
-    executeRailBuild(x, y);
-    return;
-  }
-  if(railMode) return;
   // 線路の修復モード
   if(railRepairMode && pendingUnit && setHas(railRepairSet, k)){
     executeRailRepair(x, y);
@@ -12643,7 +12579,6 @@ function render(){
       if(setHas(attackableSet, k)){ bg = '#F5A0A0'; border = '1.5px solid #A32D2D'; }
       if(setHas(facilityAttackableSet, k)){ bg = '#FFD08A'; border = '1.5px solid #BA7517'; }
       if(setHas(bridgeValidSet, k)){ bg = '#A8D8F0'; border = '2px dashed #185FA5'; }
-      if(setHas(railValidSet, k)){ bg = '#D8CBB0'; border = '2px dashed #6E5B3A'; }
       if(setHas(railRepairSet, k)){ bg = '#BFE3CC'; border = '2px dashed #0F6E56'; }
       if(setHas(unloadValidSet, k)){ bg = '#A8E6C8'; border = '2px dashed #0F6E56'; }
       if(setHas(movableSet, k)){ bg = '#A8E6C8'; border = '1.5px solid #0F6E56'; }
