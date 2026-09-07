@@ -286,6 +286,9 @@ var TER = {
   MOUNTAIN:{ name:'山',   def:4, color:'#A9A29A', sightBlock:true, sightBoost:1 },
   ROAD:    { name:'道路', def:0, color:'#D6BB8E' },
   BRIDGE:  { name:'橋',   def:0, color:'#A88860' },
+  // 線路・鉄橋 (工兵が敷設)。一般の地上ユニットは道路と同じコスト、列車系のみ 0.5
+  RAIL:    { name:'線路', def:0, color:'#9A8A72', isRail:true },
+  RAIL_BRIDGE: { name:'鉄橋', def:0, color:'#877559', isRail:true },
   // 都市系 (3段階直列)
   CITY:    { name:'都市', def:2, color:'#B8B5B0', heal:2, capturable:true, income:1000, capHpMax:20, level:1, group:'city', upgradeTo:['BIG_CITY'], defenseSlots:1, lightSource:true, sight:2 },
   BIG_CITY: { name:'大都市', def:3, color:'#A8A5A0', heal:2, capturable:true, income:1500, capHpMax:30, level:2, group:'city', upgradeTo:['COMMERCE_CITY','AMMO_DEPOT'], defenseSlots:2, lightSource:true, sight:2 },
@@ -376,26 +379,32 @@ var UPGRADE_TURNS = {
 
 var COST = {
   // 歩兵: 山も登れる、川も渡れる(コスト3)
-  INF:    { PLAIN:1, FOREST:2, MOUNTAIN:3, ROAD:1, BRIDGE:1, CITY:1, FACTORY:1, AIRPORT:1, PORT:1, CAPITAL:1, BIG_CITY:1, COMMERCE_CITY:1, AMMO_DEPOT:1, WHEEL_FACTORY:1, WHEEL_ARSENAL:1, WHEEL_WORKS:1, TRACK_FACTORY:1, TRACK_ARSENAL:1, TRACK_WORKS:1, AIR_BASE:1, AIR_ARSENAL:1, AIR_WORKS:1, NAVY_BASE:1, NAVY_ARSENAL:1, NAVY_WORKS:1, RUINS_CITY:1, RUINS_FACTORY:1, RUINS_AIRPORT:1, RUINS_PORT:1, SHOAL:1, REEF:Infinity, RIVER:3, SEA:Infinity, DEEP_SEA:Infinity },
+  INF:    { PLAIN:1, FOREST:2, MOUNTAIN:3, ROAD:1, RAIL:1, RAIL_BRIDGE:1, BRIDGE:1, CITY:1, FACTORY:1, AIRPORT:1, PORT:1, CAPITAL:1, BIG_CITY:1, COMMERCE_CITY:1, AMMO_DEPOT:1, WHEEL_FACTORY:1, WHEEL_ARSENAL:1, WHEEL_WORKS:1, TRACK_FACTORY:1, TRACK_ARSENAL:1, TRACK_WORKS:1, AIR_BASE:1, AIR_ARSENAL:1, AIR_WORKS:1, NAVY_BASE:1, NAVY_ARSENAL:1, NAVY_WORKS:1, RUINS_CITY:1, RUINS_FACTORY:1, RUINS_AIRPORT:1, RUINS_PORT:1, SHOAL:1, REEF:Infinity, RIVER:3, SEA:Infinity, DEEP_SEA:Infinity },
   // 重歩兵 (重砲兵など重装備): 森はコスト2 (歩兵と同じ)、山・川は不可
-  INF_HEAVY:{ PLAIN:1, FOREST:2, MOUNTAIN:Infinity, ROAD:1, BRIDGE:1, CITY:1, FACTORY:1, AIRPORT:1, PORT:1, CAPITAL:1, BIG_CITY:1, COMMERCE_CITY:1, AMMO_DEPOT:1, WHEEL_FACTORY:1, WHEEL_ARSENAL:1, WHEEL_WORKS:1, TRACK_FACTORY:1, TRACK_ARSENAL:1, TRACK_WORKS:1, AIR_BASE:1, AIR_ARSENAL:1, AIR_WORKS:1, NAVY_BASE:1, NAVY_ARSENAL:1, NAVY_WORKS:1, RUINS_CITY:1, RUINS_FACTORY:1, RUINS_AIRPORT:1, RUINS_PORT:1, SHOAL:1, REEF:Infinity, RIVER:Infinity, SEA:Infinity, DEEP_SEA:Infinity },
+  INF_HEAVY:{ PLAIN:1, FOREST:2, MOUNTAIN:Infinity, ROAD:1, RAIL:1, RAIL_BRIDGE:1, BRIDGE:1, CITY:1, FACTORY:1, AIRPORT:1, PORT:1, CAPITAL:1, BIG_CITY:1, COMMERCE_CITY:1, AMMO_DEPOT:1, WHEEL_FACTORY:1, WHEEL_ARSENAL:1, WHEEL_WORKS:1, TRACK_FACTORY:1, TRACK_ARSENAL:1, TRACK_WORKS:1, AIR_BASE:1, AIR_ARSENAL:1, AIR_WORKS:1, NAVY_BASE:1, NAVY_ARSENAL:1, NAVY_WORKS:1, RUINS_CITY:1, RUINS_FACTORY:1, RUINS_AIRPORT:1, RUINS_PORT:1, SHOAL:1, REEF:Infinity, RIVER:Infinity, SEA:Infinity, DEEP_SEA:Infinity },
   // 山岳猟兵: 森コスト2→1、山コスト3→2 (歩兵より高速で山岳地帯を移動)
-  INF_MNT:{ PLAIN:1, FOREST:1, MOUNTAIN:2, ROAD:1, BRIDGE:1, CITY:1, FACTORY:1, AIRPORT:1, PORT:1, CAPITAL:1, BIG_CITY:1, COMMERCE_CITY:1, AMMO_DEPOT:1, WHEEL_FACTORY:1, WHEEL_ARSENAL:1, WHEEL_WORKS:1, TRACK_FACTORY:1, TRACK_ARSENAL:1, TRACK_WORKS:1, AIR_BASE:1, AIR_ARSENAL:1, AIR_WORKS:1, NAVY_BASE:1, NAVY_ARSENAL:1, NAVY_WORKS:1, RUINS_CITY:1, RUINS_FACTORY:1, RUINS_AIRPORT:1, RUINS_PORT:1, SHOAL:1, REEF:Infinity, RIVER:3, SEA:Infinity, DEEP_SEA:Infinity },
+  INF_MNT:{ PLAIN:1, FOREST:1, MOUNTAIN:2, ROAD:1, RAIL:1, RAIL_BRIDGE:1, BRIDGE:1, CITY:1, FACTORY:1, AIRPORT:1, PORT:1, CAPITAL:1, BIG_CITY:1, COMMERCE_CITY:1, AMMO_DEPOT:1, WHEEL_FACTORY:1, WHEEL_ARSENAL:1, WHEEL_WORKS:1, TRACK_FACTORY:1, TRACK_ARSENAL:1, TRACK_WORKS:1, AIR_BASE:1, AIR_ARSENAL:1, AIR_WORKS:1, NAVY_BASE:1, NAVY_ARSENAL:1, NAVY_WORKS:1, RUINS_CITY:1, RUINS_FACTORY:1, RUINS_AIRPORT:1, RUINS_PORT:1, SHOAL:1, REEF:Infinity, RIVER:3, SEA:Infinity, DEEP_SEA:Infinity },
   // 装輪車: 装輪は森OK(コスト2)、山・川・海・浅瀬は不可
-  WHEEL:  { PLAIN:1, FOREST:2, MOUNTAIN:Infinity, ROAD:1, BRIDGE:1, CITY:1, FACTORY:1, AIRPORT:1, PORT:1, CAPITAL:1, BIG_CITY:1, COMMERCE_CITY:1, AMMO_DEPOT:1, WHEEL_FACTORY:1, WHEEL_ARSENAL:1, WHEEL_WORKS:1, TRACK_FACTORY:1, TRACK_ARSENAL:1, TRACK_WORKS:1, AIR_BASE:1, AIR_ARSENAL:1, AIR_WORKS:1, NAVY_BASE:1, NAVY_ARSENAL:1, NAVY_WORKS:1, RUINS_CITY:1, RUINS_FACTORY:1, RUINS_AIRPORT:1, RUINS_PORT:1, SHOAL:1, REEF:Infinity, RIVER:Infinity, SEA:Infinity, DEEP_SEA:Infinity },
+  WHEEL:  { PLAIN:1, FOREST:2, MOUNTAIN:Infinity, ROAD:1, RAIL:1, RAIL_BRIDGE:1, BRIDGE:1, CITY:1, FACTORY:1, AIRPORT:1, PORT:1, CAPITAL:1, BIG_CITY:1, COMMERCE_CITY:1, AMMO_DEPOT:1, WHEEL_FACTORY:1, WHEEL_ARSENAL:1, WHEEL_WORKS:1, TRACK_FACTORY:1, TRACK_ARSENAL:1, TRACK_WORKS:1, AIR_BASE:1, AIR_ARSENAL:1, AIR_WORKS:1, NAVY_BASE:1, NAVY_ARSENAL:1, NAVY_WORKS:1, RUINS_CITY:1, RUINS_FACTORY:1, RUINS_AIRPORT:1, RUINS_PORT:1, SHOAL:1, REEF:Infinity, RIVER:Infinity, SEA:Infinity, DEEP_SEA:Infinity },
   // 水陸両用: 装輪扱いだが川と浅瀬を渡れる
-  AMPHIB_W: { PLAIN:1, FOREST:2, MOUNTAIN:Infinity, ROAD:1, BRIDGE:1, CITY:1, FACTORY:1, AIRPORT:1, PORT:1, CAPITAL:1, BIG_CITY:1, COMMERCE_CITY:1, AMMO_DEPOT:1, WHEEL_FACTORY:1, WHEEL_ARSENAL:1, WHEEL_WORKS:1, TRACK_FACTORY:1, TRACK_ARSENAL:1, TRACK_WORKS:1, AIR_BASE:1, AIR_ARSENAL:1, AIR_WORKS:1, NAVY_BASE:1, NAVY_ARSENAL:1, NAVY_WORKS:1, RUINS_CITY:1, RUINS_FACTORY:1, RUINS_AIRPORT:1, RUINS_PORT:1, SHOAL:1, REEF:Infinity, RIVER:3, SEA:Infinity, DEEP_SEA:Infinity },
+  AMPHIB_W: { PLAIN:1, FOREST:2, MOUNTAIN:Infinity, ROAD:1, RAIL:1, RAIL_BRIDGE:1, BRIDGE:1, CITY:1, FACTORY:1, AIRPORT:1, PORT:1, CAPITAL:1, BIG_CITY:1, COMMERCE_CITY:1, AMMO_DEPOT:1, WHEEL_FACTORY:1, WHEEL_ARSENAL:1, WHEEL_WORKS:1, TRACK_FACTORY:1, TRACK_ARSENAL:1, TRACK_WORKS:1, AIR_BASE:1, AIR_ARSENAL:1, AIR_WORKS:1, NAVY_BASE:1, NAVY_ARSENAL:1, NAVY_WORKS:1, RUINS_CITY:1, RUINS_FACTORY:1, RUINS_AIRPORT:1, RUINS_PORT:1, SHOAL:1, REEF:Infinity, RIVER:3, SEA:Infinity, DEEP_SEA:Infinity },
   // 軽キャタピラ: 軽戦車・駆逐戦車・対空戦車。森OK(コスト3)
-  TRACK_L:{ PLAIN:2, FOREST:3, MOUNTAIN:Infinity, ROAD:1, BRIDGE:1, CITY:1, FACTORY:1, AIRPORT:1, PORT:1, CAPITAL:1, BIG_CITY:1, COMMERCE_CITY:1, AMMO_DEPOT:1, WHEEL_FACTORY:1, WHEEL_ARSENAL:1, WHEEL_WORKS:1, TRACK_FACTORY:1, TRACK_ARSENAL:1, TRACK_WORKS:1, AIR_BASE:1, AIR_ARSENAL:1, AIR_WORKS:1, NAVY_BASE:1, NAVY_ARSENAL:1, NAVY_WORKS:1, RUINS_CITY:1, RUINS_FACTORY:1, RUINS_AIRPORT:1, RUINS_PORT:1, SHOAL:2, REEF:Infinity, RIVER:Infinity, SEA:Infinity, DEEP_SEA:Infinity },
+  TRACK_L:{ PLAIN:2, FOREST:3, MOUNTAIN:Infinity, ROAD:1, RAIL:1, RAIL_BRIDGE:1, BRIDGE:1, CITY:1, FACTORY:1, AIRPORT:1, PORT:1, CAPITAL:1, BIG_CITY:1, COMMERCE_CITY:1, AMMO_DEPOT:1, WHEEL_FACTORY:1, WHEEL_ARSENAL:1, WHEEL_WORKS:1, TRACK_FACTORY:1, TRACK_ARSENAL:1, TRACK_WORKS:1, AIR_BASE:1, AIR_ARSENAL:1, AIR_WORKS:1, NAVY_BASE:1, NAVY_ARSENAL:1, NAVY_WORKS:1, RUINS_CITY:1, RUINS_FACTORY:1, RUINS_AIRPORT:1, RUINS_PORT:1, SHOAL:2, REEF:Infinity, RIVER:Infinity, SEA:Infinity, DEEP_SEA:Infinity },
   // 重キャタピラ: 中戦車・重戦車・重駆逐戦車。森不可
-  TRACK_H:{ PLAIN:2, FOREST:Infinity, MOUNTAIN:Infinity, ROAD:1, BRIDGE:1, CITY:1, FACTORY:1, AIRPORT:1, PORT:1, CAPITAL:1, BIG_CITY:1, COMMERCE_CITY:1, AMMO_DEPOT:1, WHEEL_FACTORY:1, WHEEL_ARSENAL:1, WHEEL_WORKS:1, TRACK_FACTORY:1, TRACK_ARSENAL:1, TRACK_WORKS:1, AIR_BASE:1, AIR_ARSENAL:1, AIR_WORKS:1, NAVY_BASE:1, NAVY_ARSENAL:1, NAVY_WORKS:1, RUINS_CITY:1, RUINS_FACTORY:1, RUINS_AIRPORT:1, RUINS_PORT:1, SHOAL:3, REEF:Infinity, RIVER:Infinity, SEA:Infinity, DEEP_SEA:Infinity },
+  TRACK_H:{ PLAIN:2, FOREST:Infinity, MOUNTAIN:Infinity, ROAD:1, RAIL:1, RAIL_BRIDGE:1, BRIDGE:1, CITY:1, FACTORY:1, AIRPORT:1, PORT:1, CAPITAL:1, BIG_CITY:1, COMMERCE_CITY:1, AMMO_DEPOT:1, WHEEL_FACTORY:1, WHEEL_ARSENAL:1, WHEEL_WORKS:1, TRACK_FACTORY:1, TRACK_ARSENAL:1, TRACK_WORKS:1, AIR_BASE:1, AIR_ARSENAL:1, AIR_WORKS:1, NAVY_BASE:1, NAVY_ARSENAL:1, NAVY_WORKS:1, RUINS_CITY:1, RUINS_FACTORY:1, RUINS_AIRPORT:1, RUINS_PORT:1, SHOAL:3, REEF:Infinity, RIVER:Infinity, SEA:Infinity, DEEP_SEA:Infinity },
   // 海上ユニット
-  SHIP_S: { PLAIN:Infinity, FOREST:Infinity, MOUNTAIN:Infinity, ROAD:Infinity, BRIDGE:Infinity, CITY:Infinity, FACTORY:Infinity, AIRPORT:Infinity, PORT:1, CAPITAL:Infinity, BIG_CITY:Infinity, COMMERCE_CITY:Infinity, AMMO_DEPOT:Infinity, WHEEL_FACTORY:Infinity, WHEEL_ARSENAL:Infinity, WHEEL_WORKS:Infinity, TRACK_FACTORY:Infinity, TRACK_ARSENAL:Infinity, TRACK_WORKS:Infinity, AIR_BASE:Infinity, AIR_ARSENAL:Infinity, AIR_WORKS:Infinity, NAVY_BASE:1, NAVY_ARSENAL:1, NAVY_WORKS:1, RUINS_CITY:Infinity, RUINS_FACTORY:Infinity, RUINS_AIRPORT:Infinity, RUINS_PORT:Infinity, SHOAL:Infinity, REEF:2, RIVER:Infinity, SEA:1, DEEP_SEA:1 },
-  SHIP_L: { PLAIN:Infinity, FOREST:Infinity, MOUNTAIN:Infinity, ROAD:Infinity, BRIDGE:Infinity, CITY:Infinity, FACTORY:Infinity, AIRPORT:Infinity, PORT:1, CAPITAL:Infinity, BIG_CITY:Infinity, COMMERCE_CITY:Infinity, AMMO_DEPOT:Infinity, WHEEL_FACTORY:Infinity, WHEEL_ARSENAL:Infinity, WHEEL_WORKS:Infinity, TRACK_FACTORY:Infinity, TRACK_ARSENAL:Infinity, TRACK_WORKS:Infinity, AIR_BASE:Infinity, AIR_ARSENAL:Infinity, AIR_WORKS:Infinity, NAVY_BASE:1, NAVY_ARSENAL:1, NAVY_WORKS:1, RUINS_CITY:Infinity, RUINS_FACTORY:Infinity, RUINS_AIRPORT:Infinity, RUINS_PORT:Infinity, SHOAL:Infinity, REEF:Infinity, RIVER:Infinity, SEA:1, DEEP_SEA:1 },
+  SHIP_S: { PLAIN:Infinity, FOREST:Infinity, MOUNTAIN:Infinity, ROAD:Infinity, RAIL:Infinity, RAIL_BRIDGE:Infinity, BRIDGE:Infinity, CITY:Infinity, FACTORY:Infinity, AIRPORT:Infinity, PORT:1, CAPITAL:Infinity, BIG_CITY:Infinity, COMMERCE_CITY:Infinity, AMMO_DEPOT:Infinity, WHEEL_FACTORY:Infinity, WHEEL_ARSENAL:Infinity, WHEEL_WORKS:Infinity, TRACK_FACTORY:Infinity, TRACK_ARSENAL:Infinity, TRACK_WORKS:Infinity, AIR_BASE:Infinity, AIR_ARSENAL:Infinity, AIR_WORKS:Infinity, NAVY_BASE:1, NAVY_ARSENAL:1, NAVY_WORKS:1, RUINS_CITY:Infinity, RUINS_FACTORY:Infinity, RUINS_AIRPORT:Infinity, RUINS_PORT:Infinity, SHOAL:Infinity, REEF:2, RIVER:Infinity, SEA:1, DEEP_SEA:1 },
+  SHIP_L: { PLAIN:Infinity, FOREST:Infinity, MOUNTAIN:Infinity, ROAD:Infinity, RAIL:Infinity, RAIL_BRIDGE:Infinity, BRIDGE:Infinity, CITY:Infinity, FACTORY:Infinity, AIRPORT:Infinity, PORT:1, CAPITAL:Infinity, BIG_CITY:Infinity, COMMERCE_CITY:Infinity, AMMO_DEPOT:Infinity, WHEEL_FACTORY:Infinity, WHEEL_ARSENAL:Infinity, WHEEL_WORKS:Infinity, TRACK_FACTORY:Infinity, TRACK_ARSENAL:Infinity, TRACK_WORKS:Infinity, AIR_BASE:Infinity, AIR_ARSENAL:Infinity, AIR_WORKS:Infinity, NAVY_BASE:1, NAVY_ARSENAL:1, NAVY_WORKS:1, RUINS_CITY:Infinity, RUINS_FACTORY:Infinity, RUINS_AIRPORT:Infinity, RUINS_PORT:Infinity, SHOAL:Infinity, REEF:Infinity, RIVER:Infinity, SEA:1, DEEP_SEA:1 },
   // 輸送系艦船(輸送船・給油艦): 浅瀬OK
-  SHIP_T: { PLAIN:Infinity, FOREST:Infinity, MOUNTAIN:Infinity, ROAD:Infinity, BRIDGE:Infinity, CITY:Infinity, FACTORY:Infinity, AIRPORT:Infinity, PORT:1, CAPITAL:Infinity, BIG_CITY:Infinity, COMMERCE_CITY:Infinity, AMMO_DEPOT:Infinity, WHEEL_FACTORY:Infinity, WHEEL_ARSENAL:Infinity, WHEEL_WORKS:Infinity, TRACK_FACTORY:Infinity, TRACK_ARSENAL:Infinity, TRACK_WORKS:Infinity, AIR_BASE:Infinity, AIR_ARSENAL:Infinity, AIR_WORKS:Infinity, NAVY_BASE:1, NAVY_ARSENAL:1, NAVY_WORKS:1, RUINS_CITY:Infinity, RUINS_FACTORY:Infinity, RUINS_AIRPORT:Infinity, RUINS_PORT:Infinity, SHOAL:1, REEF:2, RIVER:Infinity, SEA:1, DEEP_SEA:1 },
+  SHIP_T: { PLAIN:Infinity, FOREST:Infinity, MOUNTAIN:Infinity, ROAD:Infinity, RAIL:Infinity, RAIL_BRIDGE:Infinity, BRIDGE:Infinity, CITY:Infinity, FACTORY:Infinity, AIRPORT:Infinity, PORT:1, CAPITAL:Infinity, BIG_CITY:Infinity, COMMERCE_CITY:Infinity, AMMO_DEPOT:Infinity, WHEEL_FACTORY:Infinity, WHEEL_ARSENAL:Infinity, WHEEL_WORKS:Infinity, TRACK_FACTORY:Infinity, TRACK_ARSENAL:Infinity, TRACK_WORKS:Infinity, AIR_BASE:Infinity, AIR_ARSENAL:Infinity, AIR_WORKS:Infinity, NAVY_BASE:1, NAVY_ARSENAL:1, NAVY_WORKS:1, RUINS_CITY:Infinity, RUINS_FACTORY:Infinity, RUINS_AIRPORT:Infinity, RUINS_PORT:Infinity, SHOAL:1, REEF:2, RIVER:Infinity, SEA:1, DEEP_SEA:1 },
   // 航空: どこでも1
-  AIR:    { PLAIN:1, FOREST:1, MOUNTAIN:1, ROAD:1, BRIDGE:1, CITY:1, FACTORY:1, AIRPORT:1, PORT:1, CAPITAL:1, BIG_CITY:1, COMMERCE_CITY:1, AMMO_DEPOT:1, WHEEL_FACTORY:1, WHEEL_ARSENAL:1, WHEEL_WORKS:1, TRACK_FACTORY:1, TRACK_ARSENAL:1, TRACK_WORKS:1, AIR_BASE:1, AIR_ARSENAL:1, AIR_WORKS:1, NAVY_BASE:1, NAVY_ARSENAL:1, NAVY_WORKS:1, RUINS_CITY:1, RUINS_FACTORY:1, RUINS_AIRPORT:1, RUINS_PORT:1, SHOAL:1, REEF:1, RIVER:1, SEA:1, DEEP_SEA:1 }
+  // 列車: 線路・鉄橋の上しか走れない (コスト0.5)。施設・都市マスは「駅」として通れる
+  TRAIN:  { RAIL:0.5, RAIL_BRIDGE:0.5,
+            CITY:1, BIG_CITY:1, COMMERCE_CITY:1, AMMO_DEPOT:1, CAPITAL:1,
+            FACTORY:1, WHEEL_FACTORY:1, TRACK_FACTORY:1, WHEEL_ARSENAL:1, TRACK_ARSENAL:1, WHEEL_WORKS:1, TRACK_WORKS:1,
+            AIRPORT:1, AIR_BASE:1, AIR_ARSENAL:1, AIR_WORKS:1,
+            PORT:1, NAVY_BASE:1, NAVY_ARSENAL:1, NAVY_WORKS:1 },
+  AIR:    { PLAIN:1, FOREST:1, MOUNTAIN:1, ROAD:1, RAIL:1, RAIL_BRIDGE:1, BRIDGE:1, CITY:1, FACTORY:1, AIRPORT:1, PORT:1, CAPITAL:1, BIG_CITY:1, COMMERCE_CITY:1, AMMO_DEPOT:1, WHEEL_FACTORY:1, WHEEL_ARSENAL:1, WHEEL_WORKS:1, TRACK_FACTORY:1, TRACK_ARSENAL:1, TRACK_WORKS:1, AIR_BASE:1, AIR_ARSENAL:1, AIR_WORKS:1, NAVY_BASE:1, NAVY_ARSENAL:1, NAVY_WORKS:1, RUINS_CITY:1, RUINS_FACTORY:1, RUINS_AIRPORT:1, RUINS_PORT:1, SHOAL:1, REEF:1, RIVER:1, SEA:1, DEEP_SEA:1 }
 };
 
 var ICONS = {
@@ -670,6 +679,7 @@ var CHARS = {
   'P':'PORT', 'p':'NAVY_BASE', '%':'NAVY_ARSENAL', '/':'NAVY_WORKS',
   '!':'RUINS_FACTORY', '?':'RUINS_AIRPORT', ';':'RUINS_CITY', ':':'RUINS_PORT',
   's':'SHOAL', 'r':'RIVER', 'b':'BRIDGE', '~':'SEA',
+  'L':'RAIL', 'l':'RAIL_BRIDGE',
   '#':'REEF', '_':'DEEP_SEA'
 };
 
@@ -1019,7 +1029,9 @@ var production = [];
 
 var currentStage = null, W = 0, H = 0, M = [];
 var units = [], captures = {}, nextId = 1;
-var turn = 'P', selected = null, pendingUnit = null, pendingJustMoved = false, attackMode = false, unloadMode = false, unloadCargoIdx = -1, unloadValidSet = {}, unloadStarted = false, facilityAttackMode = false, facilityAttackableSet = {}, bridgeMode = false, bridgeValidSet = {};
+var turn = 'P', selected = null, pendingUnit = null, pendingJustMoved = false, attackMode = false, unloadMode = false, unloadCargoIdx = -1, unloadValidSet = {}, unloadStarted = false, facilityAttackMode = false, facilityAttackableSet = {}, bridgeMode = false, bridgeValidSet = {}, railMode = false, railValidSet = {}, railBreakMode = false, railBreakSet = {};
+// 線路を敷く前の地形を覚えておく (破壊されたら元に戻す)。キーは "x,y"
+var railBase = {};
 // 攻撃モード時の射撃方法: 'normal'(通常) / 'observed'(観測射撃) / 'fire_for_effect'(効力射)
 var pendingAttackMode = 'normal';
 // ラウンド番号 (全陣営が1巡したら +1。修理待ちユニットの取り出し可否判定などに使う)
@@ -2551,6 +2563,7 @@ function setClear(set){ for(var k in set){ delete set[k]; } }
 function loadStage(key){
   var s = STAGES[key];
   currentStage = key; W = s.W; H = s.H;
+  railBase = {};   // 線路の敷設前地形の記録をリセット
   M = [];
   for(var y=0; y<H; y++){
     var row = [];
@@ -2738,6 +2751,8 @@ function computeMovable(unit){
       var c = moveCost(unit.type, M[ny][nx]);
       if(c === Infinity) continue;
       var blocker = unitAt(nx, ny);
+      // 列車は単線なので、味方の上をすり抜けるときは徐行する (0.5 → 1)
+      if(TYPE[unit.type].cost === 'TRAIN' && blocker && isAlly(blocker.owner, unit.owner) && c < 1) c = 1;
       // 見えない敵はブロック対象から外す (プレイヤー視点で空きマス扱い)
       // ただし AI (own) 視点では全部見えてる扱いになるので、ここは viewer の owner に依存
       // 同盟ユニットは通過可能 (ただし着地は別判定)
@@ -10958,6 +10973,30 @@ function showCommandPanel(unit, justMoved){
       }
     }
   }
+  // 工兵の線路敷設 (平地・道路に線路 / 川・橋に鉄橋)
+  var canBuildRail = false;
+  if(TYPE[unit.type].isEngineer){
+    var rdirs = [[1,0],[-1,0],[0,1],[0,-1]];
+    for(var ri=0; ri<rdirs.length; ri++){
+      var rx = unit.x + rdirs[ri][0], ry = unit.y + rdirs[ri][1];
+      if(inBounds(rx, ry) && railBuildTargetFor(M[ry][rx])){ canBuildRail = true; break; }
+    }
+  }
+  // 対施設攻撃力を持つユニットは線路を破壊できる
+  var canBreakRail = false;
+  var hasVsFacility = false;
+  for(var vi=0; vi<unitWeapons.length; vi++){
+    if(unitWeapons[vi].vsFacility && unitWeapons[vi].vsFacility > 0){ hasVsFacility = true; break; }
+  }
+  if(hasVsFacility){
+    var bdirs = [[1,0],[-1,0],[0,1],[0,-1]];
+    for(var bi=0; bi<bdirs.length; bi++){
+      var bx = unit.x + bdirs[bi][0], by = unit.y + bdirs[bi][1];
+      if(!inBounds(bx, by)) continue;
+      var bt = TER[M[by][bx]];
+      if(bt && bt.isRail){ canBreakRail = true; break; }
+    }
+  }
   var panel = document.getElementById('command-panel');
   document.getElementById('command-label').textContent = TYPE[unit.type].name + ': コマンドを選択';
   var btnWrap = document.getElementById('command-buttons');
@@ -10977,6 +11016,8 @@ function showCommandPanel(unit, justMoved){
   if(canRebuild) addBtn('再建', doRebuild, true);
   if(canRepairFacility) addBtn('施設修復', doRepairFacility, true);
   if(canBuildBridge) addBtn('橋建設', enterBridgeMode, true);
+  if(canBuildRail) addBtn('🛤 線路敷設', enterRailMode, true);
+  if(canBreakRail) addBtn('🛤 線路破壊', enterRailBreakMode, true);
   // 補給ルート (段階3): 補給ユニットのみ
   // 解除はここには置かない。ルート設定済みのユニットはターン開始時に自動で動いて
   // 行動済みになり、そもそも選択できない = このパネルが出ないため。
@@ -11436,6 +11477,120 @@ function doRepairFacility(){
 }
 
 // 工兵: 橋建設(隣接の川マスを道路に変換)
+// ===== 線路の敷設 (工兵) =====
+// 平地・道路には線路、川・橋には鉄橋を架ける。敷設前の地形は railBase に控える
+var RAIL_BUILD_COST = { PLAIN: 600, ROAD: 400, RIVER: 1200, BRIDGE: 800 };
+function railBuildTargetFor(terKey){
+  if(terKey === 'PLAIN' || terKey === 'ROAD') return 'RAIL';
+  if(terKey === 'RIVER' || terKey === 'BRIDGE') return 'RAIL_BRIDGE';
+  return null;
+}
+
+function enterRailMode(){
+  if(!pendingUnit) return;
+  railMode = true;
+  railValidSet = {};
+  var dirs = [[1,0],[-1,0],[0,1],[0,-1]];
+  for(var di=0; di<dirs.length; di++){
+    var nx = pendingUnit.x + dirs[di][0], ny = pendingUnit.y + dirs[di][1];
+    if(!inBounds(nx, ny)) continue;
+    if(railBuildTargetFor(M[ny][nx])) setAdd(railValidSet, nx+','+ny);
+  }
+  setStatus('🛤 線路を敷くマスを選んでください（平地600G / 道路400G / 川に鉄橋1200G / 橋に鉄橋800G）');
+  var btnWrap = document.getElementById('command-buttons');
+  btnWrap.innerHTML = '';
+  var b = document.createElement('button');
+  b.textContent = 'キャンセル';
+  b.onclick = function(e){ e.stopPropagation(); exitRailMode(); };
+  btnWrap.appendChild(b);
+  render();
+}
+
+function exitRailMode(){
+  railMode = false;
+  railValidSet = {};
+  if(pendingUnit) showCommandPanel(pendingUnit, pendingJustMoved);
+  else render();
+}
+
+function executeRailBuild(x, y){
+  if(!pendingUnit) return;
+  var fromTer = M[y][x];
+  var target = railBuildTargetFor(fromTer);
+  if(!target) return;
+  var cost = RAIL_BUILD_COST[fromTer] || 600;
+  if(funds.P < cost){
+    setStatus('🛤 敷設コスト ' + cost + 'Gが足りません');
+    return;
+  }
+  funds.P -= cost;
+  railBase[x+','+y] = fromTer;   // 破壊されたら元の地形に戻す
+  M[y][x] = target;
+  setStatus('🛤 ' + TER[target].name + 'を敷設しました（' + cost + 'G）');
+  if(window.plog) try{ plog('🛤 ' + TER[target].name + '敷設 ('+x+','+y+') ' + cost + 'G'); }catch(e){}
+  pendingUnit.acted = true;
+  pendingUnit = null;
+  railMode = false;
+  railValidSet = {};
+  hideCommandPanel();
+  afterAction();
+}
+
+// ===== 線路の破壊 (対施設攻撃力を持つユニット) =====
+function enterRailBreakMode(){
+  if(!pendingUnit) return;
+  railBreakMode = true;
+  railBreakSet = {};
+  var dirs = [[1,0],[-1,0],[0,1],[0,-1]];
+  for(var di=0; di<dirs.length; di++){
+    var nx = pendingUnit.x + dirs[di][0], ny = pendingUnit.y + dirs[di][1];
+    if(!inBounds(nx, ny)) continue;
+    var t = TER[M[ny][nx]];
+    if(t && t.isRail) setAdd(railBreakSet, nx+','+ny);
+  }
+  setStatus('🛤 破壊する線路マスを選んでください');
+  var btnWrap = document.getElementById('command-buttons');
+  btnWrap.innerHTML = '';
+  var b = document.createElement('button');
+  b.textContent = 'キャンセル';
+  b.onclick = function(e){ e.stopPropagation(); exitRailBreakMode(); };
+  btnWrap.appendChild(b);
+  render();
+}
+
+function exitRailBreakMode(){
+  railBreakMode = false;
+  railBreakSet = {};
+  if(pendingUnit) showCommandPanel(pendingUnit, pendingJustMoved);
+  else render();
+}
+
+// 線路を壊して敷設前の地形に戻す (記録が無ければ線路→平地 / 鉄橋→川)
+function destroyRailAt(x, y){
+  var terKey = M[y][x];
+  var t = TER[terKey];
+  if(!t || !t.isRail) return false;
+  var back = railBase[x+','+y];
+  if(!back) back = (terKey === 'RAIL_BRIDGE') ? 'RIVER' : 'PLAIN';
+  M[y][x] = back;
+  delete railBase[x+','+y];
+  return true;
+}
+
+function executeRailBreak(x, y){
+  if(!pendingUnit) return;
+  var terName = TER[M[y][x]] ? TER[M[y][x]].name : '線路';
+  if(!destroyRailAt(x, y)) return;
+  setStatus('🛤 ' + terName + 'を破壊しました（' + TER[M[y][x]].name + 'に戻りました）');
+  if(window.plog) try{ plog('🛤 ' + terName + '破壊 ('+x+','+y+')'); }catch(e){}
+  pendingUnit.acted = true;
+  pendingUnit = null;
+  railBreakMode = false;
+  railBreakSet = {};
+  hideCommandPanel();
+  afterAction();
+}
+
 function enterBridgeMode(){
   if(!pendingUnit) return;
   bridgeMode = true;
@@ -11831,6 +11986,18 @@ function onCellClick(x, y){
     return;
   }
   if(bridgeMode) return;
+  // 線路の敷設モード
+  if(railMode && pendingUnit && setHas(railValidSet, k)){
+    executeRailBuild(x, y);
+    return;
+  }
+  if(railMode) return;
+  // 線路の破壊モード
+  if(railBreakMode && pendingUnit && setHas(railBreakSet, k)){
+    executeRailBreak(x, y);
+    return;
+  }
+  if(railBreakMode) return;
   // 降下モード: 緑マス(unloadValidSet)をクリックすると降下実行
   if(unloadMode && pendingUnit && setHas(unloadValidSet, k)){
     executeUnload(x, y);
@@ -12069,6 +12236,40 @@ var ROAD_CONNECT_TILES = {
   RUINS_CITY: true, RUINS_FACTORY: true, RUINS_AIRPORT: true, RUINS_PORT: true
 };
 
+// 線路の描画 (枕木＋2本のレール)。隣接する線路・鉄橋・施設とつながる
+function railSVG(x, y){
+  function isRailish(tx, ty){
+    if(tx < 0 || tx >= W || ty < 0 || ty >= H) return false;
+    var t = TER[M[ty][tx]];
+    return !!(t && (t.isRail || t.slots || t.group === 'city' || t.group === 'capital'));
+  }
+  var n = isRailish(x, y-1), sN = isRailish(x, y+1);
+  var e = isRailish(x+1, y), w = isRailish(x-1, y);
+  if(!n && !sN && !e && !w){ n = true; sN = true; } // 孤立している線路は縦向きで描く
+  var tieCol = '#5A4B36', railCol = '#3A3129';
+  var parts = [];
+  function seg(horiz, from, to){
+    // 枕木
+    for(var i = from + 2; i <= to - 2; i += 5){
+      if(horiz) parts.push('<rect x="'+i+'" y="10" width="2" height="12" fill="'+tieCol+'"/>');
+      else      parts.push('<rect x="10" y="'+i+'" width="12" height="2" fill="'+tieCol+'"/>');
+    }
+    // レール2本
+    if(horiz){
+      parts.push('<rect x="'+from+'" y="12.5" width="'+(to-from)+'" height="1.6" fill="'+railCol+'"/>');
+      parts.push('<rect x="'+from+'" y="17.9" width="'+(to-from)+'" height="1.6" fill="'+railCol+'"/>');
+    } else {
+      parts.push('<rect x="12.5" y="'+from+'" width="1.6" height="'+(to-from)+'" fill="'+railCol+'"/>');
+      parts.push('<rect x="17.9" y="'+from+'" width="1.6" height="'+(to-from)+'" fill="'+railCol+'"/>');
+    }
+  }
+  if(w) seg(true, 0, 16);
+  if(e) seg(true, 16, 32);
+  if(n) seg(false, 0, 16);
+  if(sN) seg(false, 16, 32);
+  return '<svg viewBox="0 0 32 32" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;">' + parts.join('') + '</svg>';
+}
+
 function roadSVG(x, y){
   // 隣接マスが道路または都市・施設(道路網に接続している地点)かを判定
   function isRoadOrCity(tx, ty){
@@ -12202,6 +12403,8 @@ function render(){
       if(setHas(attackableSet, k)){ bg = '#F5A0A0'; border = '1.5px solid #A32D2D'; }
       if(setHas(facilityAttackableSet, k)){ bg = '#FFD08A'; border = '1.5px solid #BA7517'; }
       if(setHas(bridgeValidSet, k)){ bg = '#A8D8F0'; border = '2px dashed #185FA5'; }
+      if(setHas(railValidSet, k)){ bg = '#D8CBB0'; border = '2px dashed #6E5B3A'; }
+      if(setHas(railBreakSet, k)){ bg = '#F5C0A0'; border = '2px dashed #A32D2D'; }
       if(setHas(unloadValidSet, k)){ bg = '#A8E6C8'; border = '2px dashed #0F6E56'; }
       if(setHas(movableSet, k)){ bg = '#A8E6C8'; border = '1.5px solid #0F6E56'; }
       // 敵脅威範囲表示 (敵ユニットクリック時)。重なったら赤(脅威)優先
@@ -12227,6 +12430,7 @@ function render(){
         cell.onmouseleave = function(){ onCellLeave(); };
       })(x, y);
       if(terId === 'ROAD') cell.innerHTML += roadSVG(x, y);
+      else if(terId === 'RAIL' || terId === 'RAIL_BRIDGE') cell.innerHTML += railSVG(x, y);
       else if(TERRAIN_DECO[terId]) cell.innerHTML += TERRAIN_DECO[terId];
       // 天候オーバーレイ (地形の上、ユニットの下)
       var wkey = getWeatherAt(x, y);
@@ -15097,7 +15301,7 @@ function edRenderPalette(){
   var pal = document.getElementById('ed-palette');
   pal.innerHTML = '';
   if(ed.tool === 'terrain' || ed.tool === 'bucket' || ed.tool === 'rect'){
-    var terKeys = ['PLAIN','FOREST','MOUNTAIN','ROAD','BRIDGE','CITY','BIG_CITY','COMMERCE_CITY','AMMO_DEPOT','CAPITAL','FACTORY','WHEEL_FACTORY','TRACK_FACTORY','WHEEL_ARSENAL','TRACK_ARSENAL','WHEEL_WORKS','TRACK_WORKS','AIRPORT','AIR_BASE','AIR_ARSENAL','AIR_WORKS','PORT','NAVY_BASE','NAVY_ARSENAL','NAVY_WORKS','SHOAL','REEF','RIVER','SEA','DEEP_SEA','RUINS_CITY','RUINS_FACTORY','RUINS_AIRPORT','RUINS_PORT'];
+    var terKeys = ['PLAIN','FOREST','MOUNTAIN','ROAD','BRIDGE','RAIL','RAIL_BRIDGE','CITY','BIG_CITY','COMMERCE_CITY','AMMO_DEPOT','CAPITAL','FACTORY','WHEEL_FACTORY','TRACK_FACTORY','WHEEL_ARSENAL','TRACK_ARSENAL','WHEEL_WORKS','TRACK_WORKS','AIRPORT','AIR_BASE','AIR_ARSENAL','AIR_WORKS','PORT','NAVY_BASE','NAVY_ARSENAL','NAVY_WORKS','SHOAL','REEF','RIVER','SEA','DEEP_SEA','RUINS_CITY','RUINS_FACTORY','RUINS_AIRPORT','RUINS_PORT'];
     var html = '<div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:4px;">';
     for(var i=0; i<terKeys.length; i++){
       var k = terKeys[i];
@@ -15106,6 +15310,11 @@ function edRenderPalette(){
       html += '<div class="ed-ter" data-key="'+k+'" style="height:36px;background:'+t.color+';position:relative;cursor:pointer;border-radius:3px;'+sel+'" title="'+t.name+'">';
       if(k === 'ROAD') {
         html += '<svg viewBox="0 0 32 32" width="100%" height="100%" style="position:absolute;inset:0;"><rect x="11" y="11" width="10" height="10" fill="#6e6354" opacity="0.85"/><rect x="0" y="11" width="32" height="10" fill="#6e6354" opacity="0.85"/></svg>';
+      } else if(k === 'RAIL' || k === 'RAIL_BRIDGE'){
+        html += '<svg viewBox="0 0 32 32" width="100%" height="100%" style="position:absolute;inset:0;">'
+          + '<rect x="2" y="10" width="2" height="12" fill="#5A4B36"/><rect x="9" y="10" width="2" height="12" fill="#5A4B36"/>'
+          + '<rect x="16" y="10" width="2" height="12" fill="#5A4B36"/><rect x="23" y="10" width="2" height="12" fill="#5A4B36"/>'
+          + '<rect x="0" y="12.5" width="32" height="1.6" fill="#3A3129"/><rect x="0" y="17.9" width="32" height="1.6" fill="#3A3129"/></svg>';
       } else if(TERRAIN_DECO[k]){
         html += TERRAIN_DECO[k];
       }
