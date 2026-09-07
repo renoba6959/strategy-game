@@ -3890,7 +3890,32 @@ function updateInfoPanel(){
   uhtml += '<span style="display:inline-block;width:24px;height:24px;color:' + c + ';">' + infoIconSvg + '</span>';
   uhtml += '<b style="color:' + c + ';">' + t.name + '</b>';
   uhtml += '<span style="font-size:11px;color:#666;">(' + ownerName(u.owner) + ')</span></div>';
-  uhtml += '<div>HP: <b>' + dHP + '</b>/10 · 装甲: ' + t.armor + '</div>';
+  // 装甲の内訳: 素の装甲 + 地形/施設 + 天候
+  // getTerrainDefFor は攻撃側で変わる場合があるので (森・山のヘリは固定翼機に効かない)、
+  // ここでは攻撃側なしの値 = 地上/ヘリから撃たれたときの値を出し、必要なら注記する
+  var terDefNow = getTerrainDefFor(u);
+  var weaDefNow = weatherDefFor(u);
+  var terOnlyDef = terDefNow - weaDefNow;
+  var armorLine = 'HP: <b>' + dHP + '</b>/10 · 装甲: <b>' + t.armor + '</b>';
+  var defParts = [];
+  if(terOnlyDef > 0){
+    var terHereName = (TER[M[u.y][u.x]] ? TER[M[u.y][u.x]].name : '地形');
+    defParts.push('+' + terOnlyDef + ' ' + terHereName);
+  }
+  if(weaDefNow > 0){
+    var wKeyNow = getWeatherAt(u.x, u.y);
+    var wNameNow = (wKeyNow && WEATHER[wKeyNow]) ? WEATHER[wKeyNow].name : '天候';
+    defParts.push('+' + weaDefNow + ' ' + wNameNow);
+  }
+  if(defParts.length > 0){
+    armorLine += ' <span style="color:#0F6E56;">' + defParts.join(' ') + '</span>'
+      + ' <span style="font-size:11px;color:#666;">→ 合計 ' + (t.armor + terDefNow) + '</span>';
+  }
+  uhtml += '<div>' + armorLine + '</div>';
+  // ヘリが森・山を遮蔽に使っている場合、固定翼機の攻撃には地形防御が効かない
+  if(terOnlyDef > 0 && heliHidesInTerrain(u)){
+    uhtml += '<div style="font-size:11px;color:#666;padding-left:8px;">※ 固定翼機の攻撃には地形の分は効きません（装甲 ' + t.armor + (weaDefNow > 0 ? ' +' + weaDefNow : '') + '）</div>';
+  }
   uhtml += '<div>移動: ' + t.move + ' · 視界: ' + getEffectiveSight(u) + ((t.sight||2) !== getEffectiveSight(u) ? '<span style="font-size:10px;color:#888;">(基本'+(t.sight||2)+')</span>' : '') + ' · 分類: ' + ARMOR_LABELS[t.armorClass] + '</div>';
   // 燃料表示
   if(u.fuel !== undefined && t.fuelMax !== undefined){
