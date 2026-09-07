@@ -12267,7 +12267,7 @@ function railSVG(x, y){
   if(e) seg(true, 16, 32);
   if(n) seg(false, 0, 16);
   if(sN) seg(false, 16, 32);
-  return '<svg viewBox="0 0 32 32" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;">' + parts.join('') + '</svg>';
+  return '<svg viewBox="0 0 32 32" width="100%" height="100%" style="position:absolute;inset:0;pointer-events:none;">' + parts.join('') + '</svg>';
 }
 
 function roadSVG(x, y){
@@ -14961,6 +14961,7 @@ function edRenderBoard(){
       cell.style.cssText = 'width:36px;height:36px;background:'+ter.color+';position:relative;cursor:crosshair;box-sizing:border-box;border:0.5px solid #aaa;';
       // 地形デコ
       if(t === 'ROAD') cell.innerHTML += edRoadSVG(x, y);
+      else if(t === 'RAIL' || t === 'RAIL_BRIDGE') cell.innerHTML += edRailSVG(x, y);
       else if(TERRAIN_DECO[t]) cell.innerHTML += TERRAIN_DECO[t];
       // 天候オーバーレイ
       var wkey = ed.weather[y] && ed.weather[y][x];
@@ -15031,6 +15032,38 @@ document.addEventListener('mouseup', function(){
   }
   ed.isDrawing = false;
 });
+
+// エディタ盤面の線路描画 (ed.map を見る点だけ本編の railSVG と違う)
+function edRailSVG(x, y){
+  function isRailish(tx, ty){
+    if(tx < 0 || tx >= ed.W || ty < 0 || ty >= ed.H) return false;
+    var t = TER[ed.cells[ty][tx]];
+    return !!(t && (t.isRail || t.slots || t.group === 'city' || t.group === 'capital'));
+  }
+  var n = isRailish(x, y-1), sN = isRailish(x, y+1);
+  var e = isRailish(x+1, y), w = isRailish(x-1, y);
+  if(!n && !sN && !e && !w){ n = true; sN = true; }
+  var tieCol = '#5A4B36', railCol = '#3A3129';
+  var parts = [];
+  function seg(horiz, from, to){
+    for(var i = from + 2; i <= to - 2; i += 5){
+      if(horiz) parts.push('<rect x="'+i+'" y="10" width="2" height="12" fill="'+tieCol+'"/>');
+      else      parts.push('<rect x="10" y="'+i+'" width="12" height="2" fill="'+tieCol+'"/>');
+    }
+    if(horiz){
+      parts.push('<rect x="'+from+'" y="12.5" width="'+(to-from)+'" height="1.6" fill="'+railCol+'"/>');
+      parts.push('<rect x="'+from+'" y="17.9" width="'+(to-from)+'" height="1.6" fill="'+railCol+'"/>');
+    } else {
+      parts.push('<rect x="12.5" y="'+from+'" width="1.6" height="'+(to-from)+'" fill="'+railCol+'"/>');
+      parts.push('<rect x="17.9" y="'+from+'" width="1.6" height="'+(to-from)+'" fill="'+railCol+'"/>');
+    }
+  }
+  if(w) seg(true, 0, 16);
+  if(e) seg(true, 16, 32);
+  if(n) seg(false, 0, 16);
+  if(sN) seg(false, 16, 32);
+  return '<svg viewBox="0 0 32 32" width="100%" height="100%" style="position:absolute;inset:0;pointer-events:none;">' + parts.join('') + '</svg>';
+}
 
 function edRoadSVG(x, y){
   function ok(tx, ty){
