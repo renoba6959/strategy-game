@@ -1534,7 +1534,9 @@ function consumeFuelForMove(unit, fromX, fromY){
   var rate = (t.cat === 'AIR') ? 2 : 1;
   if(t.canSubmerge && unit.submerged) rate = 2;
   if(unit.fuel === undefined) return; // 旧データ互換
-  unit.fuel = Math.max(0, unit.fuel - moveDist * rate);
+  var used = moveDist * rate;
+  unit.fuel = Math.max(0, unit.fuel - used);
+  unit._lastMoveFuel = used;   // 移動キャンセルで戻すために覚えておく
 }
 
 // ターン開始時の航空機の燃料消費 (停止時消費 -1)
@@ -11253,7 +11255,7 @@ function showCommandPanel(unit, justMoved){
   if(canSubmergeNow) addBtn(unit.submerged ? '浮上' : '潜航', doSubmerge);
   if(canStealth) addBtn(unit.stealth ? 'ステルス解除' : 'ステルスON', doStealth);
   addBtn('待機', doWait);
-  addBtn('移動キャンセル', cancelMove);
+  if(justMoved) addBtn('移動キャンセル', cancelMove);   // 動いていなければ戻す先が無い
   panel.style.visibility = 'visible';
   setClear(attackableSet);
   setStatus(TYPE[unit.type].name + 'のコマンドを選択してください');
@@ -12585,8 +12587,27 @@ function doWait(){
 }
 function cancelMove(){
   if(!pendingUnit) return;
-  pendingUnit.x = preMoveX; pendingUnit.y = preMoveY;
-  pendingUnit.moved = false;
+  // 以前はグローバルの preMoveX/preMoveY (プレイヤーが最後に通常移動したときの座標) を
+  // 見ていたため、動いていないユニットでこのボタンを押すと
+  // 「別のユニットの移動前の位置」へワープしていた。
+  // ユニット自身が持つ移動前の位置 (preMoveX/preMoveY) に戻す。
+  // 編成の場合は、連結している車輌をまとめて元の位置に戻す。
+  var cancelChain = trainOf(pendingUnit);
+  var cancelList = cancelChain ? cancelChain : [pendingUnit];
+  for(var ci=0; ci<cancelList.length; ci++){
+    var cu = cancelList[ci];
+    if(!cu.moved) continue;   // 動いていない車輌はそのまま
+    if(typeof cu.preMoveX === 'number' && typeof cu.preMoveY === 'number'){
+      cu.x = cu.preMoveX; cu.y = cu.preMoveY;
+    }
+    if(typeof cu._lastMoveFuel === 'number'){
+      var cuMax = TYPE[cu.type].fuelMax || 99;
+      cu.fuel = Math.min(cuMax, (cu.fuel || 0) + cu._lastMoveFuel);
+      delete cu._lastMoveFuel;
+    }
+    cu.moved = false;
+    if(cu.id !== pendingUnit.id) cu.acted = false;   // 編成の他の車輌も行動前に戻す
+  }
   pendingUnit = null;
   setClear(attackableSet); setClear(unloadValidSet);
   unloadMode = false; unloadCargoIdx = -1; unloadStarted = false;
