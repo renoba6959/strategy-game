@@ -295,6 +295,10 @@ var TER = {
   // 工兵が工事を重ねて耐久10に達すると線路・鉄橋になる
   RAIL_RUINED: { name:'路盤', def:0, color:'#8E8878', isRail:true, isRailRuined:true, isIncomplete:true, buildHpMax:30 },
   RAIL_BRIDGE_RUINED: { name:'橋脚', def:0, color:'#7C7263', isRail:true, isRailRuined:true, isIncomplete:true, buildHpMax:30 },
+  // 海上鉄橋: 島と島を結ぶ高架橋。列車だけが渡り、船はその下をくぐる。
+  // 陸上ユニットは渡れない (工兵だけは保線通路を歩ける ← moveCost の特例)。
+  SEA_RAIL: { name:'海上鉄橋', def:0, color:'#5F7E96', isRail:true, isSeaRail:true, buildHpMax:30 },
+  SEA_RAIL_RUINED: { name:'海上橋脚', def:0, color:'#54708A', isRail:true, isSeaRail:true, isRailRuined:true, isIncomplete:true, buildHpMax:30 },
   // 都市系 (3段階直列)
   CITY:    { name:'都市', def:2, color:'#B8B5B0', heal:2, capturable:true, income:1000, capHpMax:20, level:1, group:'city', upgradeTo:['BIG_CITY'], defenseSlots:1, lightSource:true, sight:2 },
   BIG_CITY: { name:'大都市', def:3, color:'#A8A5A0', heal:2, capturable:true, income:1500, capHpMax:30, level:2, group:'city', upgradeTo:['COMMERCE_CITY','AMMO_DEPOT'], defenseSlots:2, lightSource:true, sight:2 },
@@ -399,18 +403,18 @@ var COST = {
   // 重キャタピラ: 中戦車・重戦車・重駆逐戦車。森不可
   TRACK_H:{ PLAIN:2, FOREST:Infinity, MOUNTAIN:Infinity, ROAD:1, RAIL:1, RAIL_BRIDGE:1, RAIL_RUINED:1, RAIL_BRIDGE_RUINED:Infinity, BRIDGE:1, BRIDGE_RUINED:Infinity, CITY:1, FACTORY:1, AIRPORT:1, PORT:1, CAPITAL:1, BIG_CITY:1, COMMERCE_CITY:1, AMMO_DEPOT:1, WHEEL_FACTORY:1, WHEEL_ARSENAL:1, WHEEL_WORKS:1, TRACK_FACTORY:1, TRACK_ARSENAL:1, TRACK_WORKS:1, AIR_BASE:1, AIR_ARSENAL:1, AIR_WORKS:1, NAVY_BASE:1, NAVY_ARSENAL:1, NAVY_WORKS:1, RUINS_CITY:1, RUINS_FACTORY:1, RUINS_AIRPORT:1, RUINS_PORT:1, SHOAL:3, REEF:Infinity, RIVER:Infinity, SEA:Infinity, DEEP_SEA:Infinity },
   // 海上ユニット
-  SHIP_S: { PLAIN:Infinity, FOREST:Infinity, MOUNTAIN:Infinity, ROAD:Infinity, RAIL:Infinity, RAIL_BRIDGE:Infinity, RAIL_RUINED:Infinity, RAIL_BRIDGE_RUINED:Infinity, BRIDGE:Infinity, BRIDGE_RUINED:Infinity, CITY:Infinity, FACTORY:Infinity, AIRPORT:Infinity, PORT:1, CAPITAL:Infinity, BIG_CITY:Infinity, COMMERCE_CITY:Infinity, AMMO_DEPOT:Infinity, WHEEL_FACTORY:Infinity, WHEEL_ARSENAL:Infinity, WHEEL_WORKS:Infinity, TRACK_FACTORY:Infinity, TRACK_ARSENAL:Infinity, TRACK_WORKS:Infinity, AIR_BASE:Infinity, AIR_ARSENAL:Infinity, AIR_WORKS:Infinity, NAVY_BASE:1, NAVY_ARSENAL:1, NAVY_WORKS:1, RUINS_CITY:Infinity, RUINS_FACTORY:Infinity, RUINS_AIRPORT:Infinity, RUINS_PORT:Infinity, SHOAL:Infinity, REEF:2, RIVER:Infinity, SEA:1, DEEP_SEA:1 },
-  SHIP_L: { PLAIN:Infinity, FOREST:Infinity, MOUNTAIN:Infinity, ROAD:Infinity, RAIL:Infinity, RAIL_BRIDGE:Infinity, RAIL_RUINED:Infinity, RAIL_BRIDGE_RUINED:Infinity, BRIDGE:Infinity, BRIDGE_RUINED:Infinity, CITY:Infinity, FACTORY:Infinity, AIRPORT:Infinity, PORT:1, CAPITAL:Infinity, BIG_CITY:Infinity, COMMERCE_CITY:Infinity, AMMO_DEPOT:Infinity, WHEEL_FACTORY:Infinity, WHEEL_ARSENAL:Infinity, WHEEL_WORKS:Infinity, TRACK_FACTORY:Infinity, TRACK_ARSENAL:Infinity, TRACK_WORKS:Infinity, AIR_BASE:Infinity, AIR_ARSENAL:Infinity, AIR_WORKS:Infinity, NAVY_BASE:1, NAVY_ARSENAL:1, NAVY_WORKS:1, RUINS_CITY:Infinity, RUINS_FACTORY:Infinity, RUINS_AIRPORT:Infinity, RUINS_PORT:Infinity, SHOAL:Infinity, REEF:Infinity, RIVER:Infinity, SEA:1, DEEP_SEA:1 },
+  SHIP_S: { PLAIN:Infinity, FOREST:Infinity, MOUNTAIN:Infinity, ROAD:Infinity, RAIL:Infinity, RAIL_BRIDGE:Infinity, RAIL_RUINED:Infinity, RAIL_BRIDGE_RUINED:Infinity, SEA_RAIL:1, SEA_RAIL_RUINED:1, BRIDGE:Infinity, BRIDGE_RUINED:Infinity, CITY:Infinity, FACTORY:Infinity, AIRPORT:Infinity, PORT:1, CAPITAL:Infinity, BIG_CITY:Infinity, COMMERCE_CITY:Infinity, AMMO_DEPOT:Infinity, WHEEL_FACTORY:Infinity, WHEEL_ARSENAL:Infinity, WHEEL_WORKS:Infinity, TRACK_FACTORY:Infinity, TRACK_ARSENAL:Infinity, TRACK_WORKS:Infinity, AIR_BASE:Infinity, AIR_ARSENAL:Infinity, AIR_WORKS:Infinity, NAVY_BASE:1, NAVY_ARSENAL:1, NAVY_WORKS:1, RUINS_CITY:Infinity, RUINS_FACTORY:Infinity, RUINS_AIRPORT:Infinity, RUINS_PORT:Infinity, SHOAL:Infinity, REEF:2, RIVER:Infinity, SEA:1, DEEP_SEA:1 },
+  SHIP_L: { PLAIN:Infinity, FOREST:Infinity, MOUNTAIN:Infinity, ROAD:Infinity, RAIL:Infinity, RAIL_BRIDGE:Infinity, RAIL_RUINED:Infinity, RAIL_BRIDGE_RUINED:Infinity, SEA_RAIL:1, SEA_RAIL_RUINED:1, BRIDGE:Infinity, BRIDGE_RUINED:Infinity, CITY:Infinity, FACTORY:Infinity, AIRPORT:Infinity, PORT:1, CAPITAL:Infinity, BIG_CITY:Infinity, COMMERCE_CITY:Infinity, AMMO_DEPOT:Infinity, WHEEL_FACTORY:Infinity, WHEEL_ARSENAL:Infinity, WHEEL_WORKS:Infinity, TRACK_FACTORY:Infinity, TRACK_ARSENAL:Infinity, TRACK_WORKS:Infinity, AIR_BASE:Infinity, AIR_ARSENAL:Infinity, AIR_WORKS:Infinity, NAVY_BASE:1, NAVY_ARSENAL:1, NAVY_WORKS:1, RUINS_CITY:Infinity, RUINS_FACTORY:Infinity, RUINS_AIRPORT:Infinity, RUINS_PORT:Infinity, SHOAL:Infinity, REEF:Infinity, RIVER:Infinity, SEA:1, DEEP_SEA:1 },
   // 輸送系艦船(輸送船・給油艦): 浅瀬OK
-  SHIP_T: { PLAIN:Infinity, FOREST:Infinity, MOUNTAIN:Infinity, ROAD:Infinity, RAIL:Infinity, RAIL_BRIDGE:Infinity, RAIL_RUINED:Infinity, RAIL_BRIDGE_RUINED:Infinity, BRIDGE:Infinity, BRIDGE_RUINED:Infinity, CITY:Infinity, FACTORY:Infinity, AIRPORT:Infinity, PORT:1, CAPITAL:Infinity, BIG_CITY:Infinity, COMMERCE_CITY:Infinity, AMMO_DEPOT:Infinity, WHEEL_FACTORY:Infinity, WHEEL_ARSENAL:Infinity, WHEEL_WORKS:Infinity, TRACK_FACTORY:Infinity, TRACK_ARSENAL:Infinity, TRACK_WORKS:Infinity, AIR_BASE:Infinity, AIR_ARSENAL:Infinity, AIR_WORKS:Infinity, NAVY_BASE:1, NAVY_ARSENAL:1, NAVY_WORKS:1, RUINS_CITY:Infinity, RUINS_FACTORY:Infinity, RUINS_AIRPORT:Infinity, RUINS_PORT:Infinity, SHOAL:1, REEF:2, RIVER:Infinity, SEA:1, DEEP_SEA:1 },
+  SHIP_T: { PLAIN:Infinity, FOREST:Infinity, MOUNTAIN:Infinity, ROAD:Infinity, RAIL:Infinity, RAIL_BRIDGE:Infinity, RAIL_RUINED:Infinity, RAIL_BRIDGE_RUINED:Infinity, SEA_RAIL:1, SEA_RAIL_RUINED:1, BRIDGE:Infinity, BRIDGE_RUINED:Infinity, CITY:Infinity, FACTORY:Infinity, AIRPORT:Infinity, PORT:1, CAPITAL:Infinity, BIG_CITY:Infinity, COMMERCE_CITY:Infinity, AMMO_DEPOT:Infinity, WHEEL_FACTORY:Infinity, WHEEL_ARSENAL:Infinity, WHEEL_WORKS:Infinity, TRACK_FACTORY:Infinity, TRACK_ARSENAL:Infinity, TRACK_WORKS:Infinity, AIR_BASE:Infinity, AIR_ARSENAL:Infinity, AIR_WORKS:Infinity, NAVY_BASE:1, NAVY_ARSENAL:1, NAVY_WORKS:1, RUINS_CITY:Infinity, RUINS_FACTORY:Infinity, RUINS_AIRPORT:Infinity, RUINS_PORT:Infinity, SHOAL:1, REEF:2, RIVER:Infinity, SEA:1, DEEP_SEA:1 },
   // 航空: どこでも1
   // 列車: 線路・鉄橋の上しか走れない (コスト0.5)。施設・都市マスは「駅」として通れる
-  TRAIN:  { RAIL:0.5, RAIL_BRIDGE:0.5,
+  TRAIN:  { RAIL:0.5, RAIL_BRIDGE:0.5, SEA_RAIL:0.5,
             CITY:1, BIG_CITY:1, COMMERCE_CITY:1, AMMO_DEPOT:1, CAPITAL:1,
             FACTORY:1, WHEEL_FACTORY:1, TRACK_FACTORY:1, WHEEL_ARSENAL:1, TRACK_ARSENAL:1, WHEEL_WORKS:1, TRACK_WORKS:1,
             AIRPORT:1, AIR_BASE:1, AIR_ARSENAL:1, AIR_WORKS:1,
             PORT:1, NAVY_BASE:1, NAVY_ARSENAL:1, NAVY_WORKS:1 },
-  AIR:    { PLAIN:1, FOREST:1, MOUNTAIN:1, ROAD:1, RAIL:1, RAIL_BRIDGE:1, RAIL_RUINED:1, RAIL_BRIDGE_RUINED:1, BRIDGE:1, BRIDGE_RUINED:1, CITY:1, FACTORY:1, AIRPORT:1, PORT:1, CAPITAL:1, BIG_CITY:1, COMMERCE_CITY:1, AMMO_DEPOT:1, WHEEL_FACTORY:1, WHEEL_ARSENAL:1, WHEEL_WORKS:1, TRACK_FACTORY:1, TRACK_ARSENAL:1, TRACK_WORKS:1, AIR_BASE:1, AIR_ARSENAL:1, AIR_WORKS:1, NAVY_BASE:1, NAVY_ARSENAL:1, NAVY_WORKS:1, RUINS_CITY:1, RUINS_FACTORY:1, RUINS_AIRPORT:1, RUINS_PORT:1, SHOAL:1, REEF:1, RIVER:1, SEA:1, DEEP_SEA:1 }
+  AIR:    { PLAIN:1, FOREST:1, MOUNTAIN:1, ROAD:1, RAIL:1, RAIL_BRIDGE:1, RAIL_RUINED:1, RAIL_BRIDGE_RUINED:1, SEA_RAIL:1, SEA_RAIL_RUINED:1, BRIDGE:1, BRIDGE_RUINED:1, CITY:1, FACTORY:1, AIRPORT:1, PORT:1, CAPITAL:1, BIG_CITY:1, COMMERCE_CITY:1, AMMO_DEPOT:1, WHEEL_FACTORY:1, WHEEL_ARSENAL:1, WHEEL_WORKS:1, TRACK_FACTORY:1, TRACK_ARSENAL:1, TRACK_WORKS:1, AIR_BASE:1, AIR_ARSENAL:1, AIR_WORKS:1, NAVY_BASE:1, NAVY_ARSENAL:1, NAVY_WORKS:1, RUINS_CITY:1, RUINS_FACTORY:1, RUINS_AIRPORT:1, RUINS_PORT:1, SHOAL:1, REEF:1, RIVER:1, SEA:1, DEEP_SEA:1 }
 };
 
 var ICONS = {
@@ -704,6 +708,7 @@ var CHARS = {
   '!':'RUINS_FACTORY', '?':'RUINS_AIRPORT', ';':'RUINS_CITY', ':':'RUINS_PORT',
   's':'SHOAL', 'r':'RIVER', 'b':'BRIDGE', '~':'SEA',
   'L':'RAIL', 'l':'RAIL_BRIDGE', 'q':'RAIL_RUINED', 'Q':'RAIL_BRIDGE_RUINED', 'j':'BRIDGE_RUINED',
+  'V':'SEA_RAIL', 'v':'SEA_RAIL_RUINED',
   '#':'REEF', '_':'DEEP_SEA'
 };
 
@@ -2576,6 +2581,9 @@ function unitAtVisible(x, y, viewerOwner){
 function inBounds(x,y){ return x>=0 && x<W && y>=0 && y<H; }
 function moveCost(type, terId){
   var c = COST[TYPE[type].cost][terId];
+  // 海上鉄橋・海上橋脚: 保線通路があるので工兵だけは歩いて渡れる。
+  // (壊れた海上橋脚を直しに行く手段がないと、真ん中で切られた鉄橋が永久に復旧できないため)
+  if(c === undefined && TYPE[type].isEngineer && TER[terId] && TER[terId].isSeaRail) return 3;
   return (c === undefined) ? Infinity : c;
 }
 function manhattan(x1,y1,x2,y2){ return Math.abs(x1-x2)+Math.abs(y1-y2); }
@@ -11587,6 +11595,8 @@ var BUILD_STAGE = {
   RAIL_RUINED:        { done: 'RAIL',        undone: 'RAIL_RUINED' },
   RAIL_BRIDGE:        { done: 'RAIL_BRIDGE', undone: 'RAIL_BRIDGE_RUINED' },
   RAIL_BRIDGE_RUINED: { done: 'RAIL_BRIDGE', undone: 'RAIL_BRIDGE_RUINED' },
+  SEA_RAIL:           { done: 'SEA_RAIL',    undone: 'SEA_RAIL_RUINED' },
+  SEA_RAIL_RUINED:    { done: 'SEA_RAIL',    undone: 'SEA_RAIL_RUINED' },
   BRIDGE:             { done: 'BRIDGE',      undone: 'BRIDGE_RUINED' },
   BRIDGE_RUINED:      { done: 'BRIDGE',      undone: 'BRIDGE_RUINED' }
 };
@@ -12484,17 +12494,23 @@ var ROAD_CONNECT_TILES = {
 // 線路の描画 (枕木＋2本のレール)。隣接する線路・鉄橋・施設とつながる
 // 線路・鉄橋の描画本体
 // n/sN/e/w = つながっている向き、isBridge = 鉄橋なら川面と鋼の桁を下に敷く
-function railTilesSVG(n, sN, e, w, isBridge, isRuined){
+function railTilesSVG(n, sN, e, w, isBridge, isRuined, isSea){
   if(!n && !sN && !e && !w){ n = true; sN = true; } // 孤立しているときは縦向きで描く
   var tieCol = '#5A4B36', railCol = '#3A3129';
   if(isRuined){ tieCol = '#6E6A5E'; railCol = '#77705F'; } // 廃線: 錆びて色が抜ける
   var parts = [];
   var horiz = (e || w) && !(n || sN);
   if(isBridge){
-    // 川面
-    parts.push('<rect x="0" y="0" width="32" height="32" fill="#5a8aaa" opacity="0.35"/>');
-    parts.push('<path d="M0,5 Q8,7 16,5 T32,7" fill="none" stroke="#3a6a8a" stroke-width="0.6" opacity="0.5"/>');
-    parts.push('<path d="M0,27 Q8,29 16,27 T32,29" fill="none" stroke="#3a6a8a" stroke-width="0.6" opacity="0.5"/>');
+    // 水面 (海上鉄橋は海なので濃く、波も強めに描く)
+    var waterFill = isSea ? '#3F79A6' : '#5a8aaa';
+    var waterOp   = isSea ? '0.55' : '0.35';
+    var waveCol   = isSea ? '#2A5A82' : '#3a6a8a';
+    parts.push('<rect x="0" y="0" width="32" height="32" fill="'+waterFill+'" opacity="'+waterOp+'"/>');
+    parts.push('<path d="M0,5 Q8,7 16,5 T32,7" fill="none" stroke="'+waveCol+'" stroke-width="0.6" opacity="0.5"/>');
+    parts.push('<path d="M0,27 Q8,29 16,27 T32,29" fill="none" stroke="'+waveCol+'" stroke-width="0.6" opacity="0.5"/>');
+    if(isSea){
+      parts.push('<path d="M0,16 Q8,18 16,16 T32,18" fill="none" stroke="'+waveCol+'" stroke-width="0.6" opacity="0.35"/>');
+    }
     // 鋼の桁 (通っている向きに敷く)
     if(horiz){
       parts.push('<rect x="0" y="9" width="32" height="14" fill="#7A828C" stroke="#4A525C" stroke-width="0.5"/>');
@@ -12508,6 +12524,16 @@ function railTilesSVG(n, sN, e, w, isBridge, isRuined){
       parts.push('<rect x="21.6" y="0" width="1.4" height="32" fill="#5A626C"/>');
       parts.push('<rect x="23" y="1" width="7" height="3" fill="#5A626C" opacity="0.8"/>');
       parts.push('<rect x="23" y="28" width="7" height="3" fill="#5A626C" opacity="0.8"/>');
+    }
+    if(isSea){
+      // 海中から立つコンクリートの橋脚 (高架橋であることを見せる)
+      if(horiz){
+        parts.push('<rect x="5" y="22.6" width="4" height="8" fill="#8C8A82" opacity="0.9"/>');
+        parts.push('<rect x="23" y="22.6" width="4" height="8" fill="#8C8A82" opacity="0.9"/>');
+      } else {
+        parts.push('<rect x="22.6" y="5" width="8" height="4" fill="#8C8A82" opacity="0.9"/>');
+        parts.push('<rect x="22.6" y="23" width="8" height="4" fill="#8C8A82" opacity="0.9"/>');
+      }
     }
     tieCol = '#4A525C'; // 桁の上なので枕木は暗めの鋼色
   }
@@ -12554,9 +12580,10 @@ function railSVG(x, y){
     var t = TER[M[ty][tx]];
     return !!(t && (t.isRail || t.slots || t.group === 'city' || t.group === 'capital'));
   }
+  var tk = TER[M[y][x]] || {};
   return railTilesSVG(isRailish(x, y-1), isRailish(x, y+1), isRailish(x+1, y), isRailish(x-1, y),
-                      (M[y][x] === 'RAIL_BRIDGE' || M[y][x] === 'RAIL_BRIDGE_RUINED'),
-                      !!(TER[M[y][x]] && TER[M[y][x]].isRailRuined));
+                      (M[y][x] === 'RAIL_BRIDGE' || M[y][x] === 'RAIL_BRIDGE_RUINED' || !!tk.isSeaRail),
+                      !!tk.isRailRuined, !!tk.isSeaRail);
 }
 
 function roadSVG(x, y){
@@ -13288,6 +13315,14 @@ function renderTerrainTab(){
     ['森',   3, '#7FAA5A', { INF:2, WHEEL:2, TRACK_L:3, TRACK_H:'×' }, '視界遮断・伏兵地形。重キャタ進入不可'],
     ['山',   4, '#A9A29A', { INF:3, WHEEL:'×', TRACK_L:'×', TRACK_H:'×' }, '視界遮断・伏兵地形。歩兵のみ進入可、視界+1'],
     ['道路', 0, '#D6BB8E', { INF:1, WHEEL:1, TRACK_L:1, TRACK_H:1 }, '全車両が高速移動。施設・道路間で接続グラフィック'],
+    ['橋',   0, '#A88860', { INF:1, WHEEL:1, TRACK_L:1, TRACK_H:1 }, '川に架かる橋。工兵が建設でき、耐久10以上で通行可'],
+    ['木組み', 0, '#9C8460', { INF:3, WHEEL:'×', TRACK_L:'×', TRACK_H:'×' }, '橋の未完成・破壊状態。工兵の工事で橋になる。壊しきると川に戻る'],
+    ['線路', 0, '#9A8A72', { INF:1, WHEEL:1, TRACK_L:1, TRACK_H:1 }, '列車系のみ移動コスト0.5。新規敷設はできず、マップに置かれたものを奪い合う'],
+    ['路盤', 0, '#8E8878', { INF:1, WHEEL:1, TRACK_L:1, TRACK_H:1 }, '線路が壊れた状態。列車は走れない。工兵の工事(HP分)で線路に戻る'],
+    ['鉄橋', 0, '#877559', { INF:1, WHEEL:1, TRACK_L:1, TRACK_H:1 }, '川に架かる線路。列車系のみ0.5'],
+    ['橋脚', 0, '#7C7263', { INF:3, WHEEL:'×', TRACK_L:'×', TRACK_H:'×' }, '鉄橋が壊れた状態。列車は走れない。工兵の工事で鉄橋に戻る'],
+    ['海上鉄橋', 0, '#5F7E96', { INF:'×', WHEEL:'×', TRACK_L:'×', TRACK_H:'×' }, '島と島を結ぶ高架橋。列車0.5、艦船は下をくぐれる。工兵のみ保線通路を通行可(3)'],
+    ['海上橋脚', 0, '#54708A', { INF:'×', WHEEL:'×', TRACK_L:'×', TRACK_H:'×' }, '海上鉄橋が壊れた状態。列車は走れず、海峡が艦船に開放される'],
     ['浅瀬', 0, '#B5DDE6', { INF:1, WHEEL:1, TRACK_L:2, TRACK_H:3 }, '輸送船・給油艦・補給艦・補給艦のみ進入可'],
     ['川',   0, '#A8C8DC', { INF:3, WHEEL:'×', TRACK_L:'×', TRACK_H:'×' }, '歩兵のみ通行可。水陸両用戦車は装輪扱いで通行可'],
     ['海',   0, '#7BB0DA', { INF:'×', WHEEL:'×', TRACK_L:'×', TRACK_H:'×' }, '艦船・航空のみ。水深無限']
@@ -15336,9 +15371,10 @@ function edRailSVG(x, y){
     var t = TER[ed.cells[ty][tx]];
     return !!(t && (t.isRail || t.slots || t.group === 'city' || t.group === 'capital'));
   }
+  var tk = TER[ed.cells[y][x]] || {};
   return railTilesSVG(isRailish(x, y-1), isRailish(x, y+1), isRailish(x+1, y), isRailish(x-1, y),
-                      (ed.cells[y][x] === 'RAIL_BRIDGE' || ed.cells[y][x] === 'RAIL_BRIDGE_RUINED'),
-                      !!(TER[ed.cells[y][x]] && TER[ed.cells[y][x]].isRailRuined));
+                      (ed.cells[y][x] === 'RAIL_BRIDGE' || ed.cells[y][x] === 'RAIL_BRIDGE_RUINED' || !!tk.isSeaRail),
+                      !!tk.isRailRuined, !!tk.isSeaRail);
 }
 
 function edRoadSVG(x, y){
@@ -15610,7 +15646,7 @@ function edRenderPalette(){
   var pal = document.getElementById('ed-palette');
   pal.innerHTML = '';
   if(ed.tool === 'terrain' || ed.tool === 'bucket' || ed.tool === 'rect'){
-    var terKeys = ['PLAIN','FOREST','MOUNTAIN','ROAD','BRIDGE','BRIDGE_RUINED','RAIL','RAIL_BRIDGE','RAIL_RUINED','RAIL_BRIDGE_RUINED','CITY','BIG_CITY','COMMERCE_CITY','AMMO_DEPOT','CAPITAL','FACTORY','WHEEL_FACTORY','TRACK_FACTORY','WHEEL_ARSENAL','TRACK_ARSENAL','WHEEL_WORKS','TRACK_WORKS','AIRPORT','AIR_BASE','AIR_ARSENAL','AIR_WORKS','PORT','NAVY_BASE','NAVY_ARSENAL','NAVY_WORKS','SHOAL','REEF','RIVER','SEA','DEEP_SEA','RUINS_CITY','RUINS_FACTORY','RUINS_AIRPORT','RUINS_PORT'];
+    var terKeys = ['PLAIN','FOREST','MOUNTAIN','ROAD','BRIDGE','BRIDGE_RUINED','RAIL','RAIL_BRIDGE','RAIL_RUINED','RAIL_BRIDGE_RUINED','SEA_RAIL','SEA_RAIL_RUINED','CITY','BIG_CITY','COMMERCE_CITY','AMMO_DEPOT','CAPITAL','FACTORY','WHEEL_FACTORY','TRACK_FACTORY','WHEEL_ARSENAL','TRACK_ARSENAL','WHEEL_WORKS','TRACK_WORKS','AIRPORT','AIR_BASE','AIR_ARSENAL','AIR_WORKS','PORT','NAVY_BASE','NAVY_ARSENAL','NAVY_WORKS','SHOAL','REEF','RIVER','SEA','DEEP_SEA','RUINS_CITY','RUINS_FACTORY','RUINS_AIRPORT','RUINS_PORT'];
     var html = '<div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:4px;">';
     for(var i=0; i<terKeys.length; i++){
       var k = terKeys[i];
@@ -15622,7 +15658,8 @@ function edRenderPalette(){
       } else if(TER[k] && TER[k].isRail){
         // 盤面と同じ描画を使う (横向きの一本として見せる)
         html += railTilesSVG(false, false, true, true,
-          (k === 'RAIL_BRIDGE' || k === 'RAIL_BRIDGE_RUINED'), !!TER[k].isRailRuined);
+          (k === 'RAIL_BRIDGE' || k === 'RAIL_BRIDGE_RUINED' || !!TER[k].isSeaRail),
+          !!TER[k].isRailRuined, !!TER[k].isSeaRail);
       } else if(TERRAIN_DECO[k]){
         html += TERRAIN_DECO[k];
       }
