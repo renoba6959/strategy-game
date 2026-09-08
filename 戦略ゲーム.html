@@ -697,9 +697,9 @@ var TYPE = {
   // 線路は地形防御0なので、停車中を叩かれると装甲が高くても脆い。
   // 列車砲・補給貨車は自走できず、機関車の「連結」で牽引してもらう。
   ARMORED_TRAIN: { name:'装甲列車', cat:'LAND', armorClass:'AV', cost:'TRAIN', move:6, sight:3, armor:4, fuelMax:70, isTrain:true, note:'線路の上だけを走る自走の装甲車両。線路は地形防御0なので停車中は狙われやすい', price:6000, prodTurns:3, weapons:[ W('列車砲塔', [1,1], false, {INF:8, UV:10, AV:9, US:8, AS:6, HE:5, AC:0}, {ammo:3, vsFacility:6}), W('機銃', [1,1], false, {INF:6, UV:4, AV:0, US:4, AS:0, HE:6, AC:0}, {infiniteAmmo:true}) ] },
-  LOCOMOTIVE: { name:'機関車', cat:'LAND', armorClass:'UV', cost:'TRAIN', move:7, sight:2, armor:2, fuelMax:99, isTrain:true, isCoupler:true, capacity:2, canCarry:['RAIL_GUN','SUPPLY_CAR'], note:'非武装。隣接する列車砲・補給貨車を「連結」して牽引する(2両まで)', price:2500, prodTurns:2, weapons:[] },
-  RAIL_GUN: { name:'列車砲', cat:'LAND', armorClass:'UV', cost:'TRAIN', move:0, sight:1, armor:1, fuelMax:30, isTrain:true, isTowed:true, note:'自走できない。機関車に連結してもらって移動する超長射程の間接砲', price:8000, prodTurns:4, weapons:[ W('列車砲', [3,6], true, {INF:14, UV:14, AV:12, US:12, AS:10, HE:0, AC:0}, {ammo:2, vsFacility:14}) ] },
-  SUPPLY_CAR: { name:'補給貨車', cat:'LAND', armorClass:'UV', cost:'TRAIN', move:0, sight:1, armor:1, fuelMax:30, isTrain:true, isTowed:true, isSupply:true, supplyTarget:['LAND','HELI'], supplyFuel:true, supplyFuelMax:800, supplyAmmo:true, supplyAmmoMax:60, note:'自走できない。機関車に連結して線路で前線へ物資を運ぶ。燃料庫800/弾薬庫60', price:2000, prodTurns:2, weapons:[] }
+  LOCOMOTIVE: { name:'機関車', cat:'LAND', armorClass:'UV', cost:'TRAIN', move:7, sight:2, armor:2, fuelMax:99, isTrain:true, isCoupler:true, note:'非武装。隣接する車輌を「連結」して牽引・推進する。編成は最大5両で、機関車が1両あれば前後どちらへも動ける', price:2500, prodTurns:2, weapons:[] },
+  RAIL_GUN: { name:'列車砲', cat:'LAND', armorClass:'UV', cost:'TRAIN', move:0, sight:1, armor:1, fuelMax:30, isTrain:true, isTowed:true, note:'自走できない。機関車に連結してもらって移動する超長射程の間接砲。停車していれば連結したまま撃てる', price:8000, prodTurns:4, weapons:[ W('列車砲', [3,6], true, {INF:14, UV:14, AV:12, US:12, AS:10, HE:0, AC:0}, {ammo:2, vsFacility:14}) ] },
+  SUPPLY_CAR: { name:'補給貨車', cat:'LAND', armorClass:'UV', cost:'TRAIN', move:0, sight:1, armor:1, fuelMax:30, isTrain:true, isTowed:true, isSupply:true, supplyTarget:['LAND','HELI'], supplyFuel:true, supplyFuelMax:800, supplyAmmo:true, supplyAmmoMax:60, note:'自走できない。機関車に連結して線路で前線へ物資を運ぶ。連結したままでも隣の味方に補給できる。燃料庫800/弾薬庫60', price:2000, prodTurns:2, weapons:[] }
 };
 
 var ARMOR_LABELS = { INF:'歩兵', UV:'非装甲車両', AV:'装甲車両', US:'非装甲艦船', AS:'装甲艦船', HE:'ヘリ', AC:'航空機', SUB:'潜水艦' };
@@ -1062,7 +1062,7 @@ var production = [];
 
 var currentStage = null, W = 0, H = 0, M = [];
 var units = [], captures = {}, nextId = 1;
-var turn = 'P', selected = null, pendingUnit = null, pendingJustMoved = false, attackMode = false, unloadMode = false, unloadCargoIdx = -1, unloadValidSet = {}, unloadStarted = false, facilityAttackMode = false, facilityAttackableSet = {}, bridgeMode = false, bridgeValidSet = {}, railRepairMode = false, railRepairSet = {}, coupleMode = false, coupleValidSet = {};
+var turn = 'P', selected = null, pendingUnit = null, pendingJustMoved = false, attackMode = false, unloadMode = false, unloadCargoIdx = -1, unloadValidSet = {}, unloadStarted = false, facilityAttackMode = false, facilityAttackableSet = {}, bridgeMode = false, bridgeValidSet = {}, railRepairMode = false, railRepairSet = {}, coupleMode = false, coupleValidSet = {}, uncoupleMode = false, uncoupleValidSet = {};
 // 線路を敷く前の地形を覚えておく (破壊されたら元に戻す)。キーは "x,y"
 var railBase = {};
 // 線路の耐久 (施設HPに相当)。線路・鉄橋は20、廃線・損傷鉄橋は10
@@ -2801,8 +2801,8 @@ function computeMovable(unit){
       var c = moveCost(unit.type, M[ny][nx]);
       if(c === Infinity) continue;
       var blocker = unitAt(nx, ny);
-      // 列車は単線なので、味方の上をすり抜けるときは徐行する (0.5 → 1)
-      if(TYPE[unit.type].cost === 'TRAIN' && blocker && isAlly(blocker.owner, unit.owner) && c < 1) c = 1;
+      // 列車は単線なので、味方の上もすり抜けられない (編成が並びを保って進むため)
+      if(TYPE[unit.type].cost === 'TRAIN' && blocker && isAlly(blocker.owner, unit.owner)) continue;
       // 見えない敵はブロック対象から外す (プレイヤー視点で空きマス扱い)
       // ただし AI (own) 視点では全部見えてる扱いになるので、ここは viewer の owner に依存
       // 同盟ユニットは通過可能 (ただし着地は別判定)
@@ -2887,6 +2887,8 @@ function findActualMoveEndpoint(unit, targetX, targetY){
       var c = moveCost(unit.type, M[ny][nx]);
       if(c === Infinity) continue;
       var blocker = unitAt(nx, ny);
+      // 列車は単線なので、味方の上もすり抜けられない
+      if(TYPE[unit.type].cost === 'TRAIN' && blocker && isAlly(blocker.owner, unit.owner)) continue;
       if(blocker && !isAlly(blocker.owner, unit.owner)){
         if(isUnitVisibleTo(blocker, unit.owner)) continue;
       }
@@ -4114,6 +4116,21 @@ function updateInfoPanel(){
       uhtml += '<div style="margin-top:3px;color:#0F6E56;font-size:11px;">⛽ 補給中: '+supplyType+' (' + src.name + ')</div>';
     }
   }
+  var infoChain = trainOf(u);
+  if(infoChain){
+    uhtml += '<div style="margin-top:6px;font-size:11px;color:#666;">🔗 ' + infoChain.length + '両編成' +
+             (trainHasLoco(infoChain) ? '' : '（機関車なし・動けません）') + '</div>';
+    for(var tci=0; tci<infoChain.length; tci++){
+      var tcu = infoChain[tci];
+      var tcIcon = ICONS[tcu.type] || '';
+      var tcMark = (tcu.id === u.id) ? '▶ ' : '　';
+      uhtml += '<div style="display:flex;align-items:center;gap:4px;font-size:11px;padding-left:8px;">';
+      uhtml += '<span>' + tcMark + '</span>';
+      uhtml += '<span style="display:inline-block;width:14px;height:14px;color:'+c+';">'+tcIcon+'</span>';
+      uhtml += '<span>' + TYPE[tcu.type].name + ' (HP'+displayHP(tcu.hp)+')</span>';
+      uhtml += '</div>';
+    }
+  }
   if(t.capacity){
     uhtml += '<div style="margin-top:6px;font-size:11px;color:#666;">搭載 ' + (u.cargo ? u.cargo.length : 0) + '/' + t.capacity + '</div>';
     if(u.cargo && u.cargo.length > 0){
@@ -4698,7 +4715,7 @@ function endTurn(){
   if(window.PLAYER_LOG || window.AI_DEBUG){
     try{ console.log('%c=== Round ' + roundNumber + ' Turn: ' + turn + ' ===', 'color:#5a4a30; font-weight:bold; background:#f5e8c4; padding:2px 8px;'); }catch(e){}
   }
-  selected = null; pendingUnit = null; attackMode = false; unloadMode = false; setClear(unloadValidSet); unloadStarted = false; coupleMode = false; setClear(coupleValidSet);
+  selected = null; pendingUnit = null; attackMode = false; unloadMode = false; setClear(unloadValidSet); unloadStarted = false; coupleMode = false; setClear(coupleValidSet); uncoupleMode = false; setClear(uncoupleValidSet);
   setClear(movableSet); setClear(attackableSet);
   hideCommandPanel();
   // 天候の進行 (1ラウンドごとに各雲が1マス流れる)
@@ -11107,8 +11124,10 @@ function showCommandPanel(unit, justMoved){
   if(hasAtk) addBtn('攻撃', enterAttackMode, true);
   if(canAttackFacility) addBtn('施設攻撃', enterFacilityAttackMode, true);
   if(canCap) addBtn('占領', doCapture, true);
-  if(canUnload) addBtn(TYPE[unit.type].isCoupler ? '🔗 切り離し' : '降下', enterUnloadMode, true);
+  if(canUnload) addBtn('降下', enterUnloadMode, true);
   if(coupleCandidatesAround(unit).length > 0) addBtn('🔗 連結', enterCoupleMode, true);
+  var _uncChain = trainOf(unit);
+  if(_uncChain && _uncChain.length >= 2) addBtn('🔗 切り離し', enterUncoupleMode, true);
   if(canRepair) addBtn('修理', doRepair);
   if(canRebuild) addBtn('再建', doRebuild, true);
   if(canRepairFacility) addBtn('施設修復', doRepairFacility, true);
@@ -11726,22 +11745,248 @@ function executeRailAttack(x, y){
 // ===== 線路の修復 (工兵) =====
 // 隣接する傷んだ線路を、工兵の表示HP分だけ回復する
 
-// ===== 連結 (機関車 ⇔ 列車砲・補給貨車) =====
-// 列車砲・補給貨車は移動0で自分から乗り込めないので、機関車の側から拾い上げる。
-// 切り離しは通常の「降下」の仕組みをそのまま使う (ボタン名だけ変えている)。
+// ===== 編成 (列車の連結) =====
+// 列車は「積荷」ではなく、線路の上に一列に並んだ実ユニットの集まりとして扱う。
+//   ・並び順は変わらない。編成は線路の上を並びのままスライドする
+//   ・機関車が編成に1両でもあれば、引く(機関車が先頭)ことも押す(反対の端が先頭)こともできる
+//   ・機関車が全滅した編成は二度と動けない (線路の上に取り残される)
+//   ・単線なので、味方の上もすり抜けられない
+// trains は「編成に属するユニットIDの配列」の配列。並び順は保持せず、隣接関係から
+// そのつど計算する (押し引きで順序が入れ替わらないことを構造的に保証するため)。
+var trains = [];
+var TRAIN_MAX_CARS = 5;   // 1編成の最大両数 (機関車を含む)
+
+function unitById(id){
+  for(var i=0; i<units.length; i++){ if(units[i].id === id && units[i].hp > 0) return units[i]; }
+  return null;
+}
+
+// ids のうち生存しているものを、隣接でつながった塊ごとに分ける
+function _trainComponents(ids){
+  var us = [];
+  for(var i=0; i<ids.length; i++){ var uu = unitById(ids[i]); if(uu) us.push(uu); }
+  var comps = [], used = {};
+  for(var i=0; i<us.length; i++){
+    if(used[us[i].id]) continue;
+    used[us[i].id] = true;
+    var stack = [us[i]], comp = [];
+    while(stack.length){
+      var c = stack.pop();
+      comp.push(c);
+      for(var j=0; j<us.length; j++){
+        var o = us[j];
+        if(used[o.id]) continue;
+        if(manhattan(c.x, c.y, o.x, o.y) === 1){ used[o.id] = true; stack.push(o); }
+      }
+    }
+    comps.push(comp);
+  }
+  return comps;
+}
+
+// 塊を線路沿いの順番に並べる (端から歩く)。一列につながっていなければ null
+function _orderTrain(comp){
+  if(!comp || comp.length === 0) return null;
+  if(comp.length === 1) return comp.slice();
+  function nbrs(u){
+    var r = [];
+    for(var i=0; i<comp.length; i++){
+      if(comp[i].id !== u.id && manhattan(u.x, u.y, comp[i].x, comp[i].y) === 1) r.push(comp[i]);
+    }
+    return r;
+  }
+  var endU = null;
+  for(var i=0; i<comp.length; i++){
+    var n = nbrs(comp[i]).length;
+    if(n > 2) return null;                 // 分岐している = 一列ではない
+    if(n === 1 && !endU) endU = comp[i];
+  }
+  if(!endU) return null;                   // 環状 = 端がない
+  var order = [endU], seen = {};
+  seen[endU.id] = true;
+  while(true){
+    var cur = order[order.length-1];
+    var list = nbrs(cur), nx = null;
+    for(var i=0; i<list.length; i++){ if(!seen[list[i].id]){ nx = list[i]; break; } }
+    if(!nx) break;
+    seen[nx.id] = true;
+    order.push(nx);
+  }
+  return (order.length === comp.length) ? order : null;
+}
+
+// 撃破などのあとに編成を整える (死んだ車輌を外し、切れた編成を分ける)
+function syncTrains(){
+  var out = [];
+  for(var i=0; i<trains.length; i++){
+    var comps = _trainComponents(trains[i]);
+    for(var c=0; c<comps.length; c++){
+      if(comps[c].length < 2) continue;    // 1両だけになったら編成ではない
+      var ids = [];
+      for(var k=0; k<comps[c].length; k++) ids.push(comps[c][k].id);
+      out.push(ids);
+    }
+  }
+  trains = out;
+}
+
+// unit が属する編成を、線路沿いの順番の配列で返す (属していなければ null)
+function trainOf(unit){
+  if(!unit || !TYPE[unit.type] || !TYPE[unit.type].isTrain) return null;
+  for(var i=0; i<trains.length; i++){
+    if(trains[i].indexOf(unit.id) < 0) continue;
+    var comps = _trainComponents(trains[i]);
+    for(var c=0; c<comps.length; c++){
+      var has = false;
+      for(var k=0; k<comps[c].length; k++){ if(comps[c][k].id === unit.id) has = true; }
+      if(!has) continue;
+      if(comps[c].length < 2) return null;
+      return _orderTrain(comps[c]);
+    }
+  }
+  return null;
+}
+
+function trainHasLoco(chain){
+  if(!chain) return false;
+  for(var i=0; i<chain.length; i++){ if(TYPE[chain[i].type].isCoupler) return true; }
+  return false;
+}
+function trainAllReady(chain){
+  if(!chain) return false;
+  for(var i=0; i<chain.length; i++){ if(chain[i].acted) return false; }
+  return true;
+}
+// 編成を引く/押す機関車 (選んだ車輌が機関車ならそれ、違えば編成内の機関車)
+function trainDriver(chain, prefer){
+  if(!chain) return null;
+  if(prefer && TYPE[prefer.type].isCoupler && !prefer.acted) return prefer;
+  for(var i=0; i<chain.length; i++){ if(TYPE[chain[i].type].isCoupler) return chain[i]; }
+  return null;
+}
+// 編成の並びを「機関車-補給貨車-…」の文字列で返す (情報パネル用)
+function trainLabel(chain){
+  var names = [];
+  for(var i=0; i<chain.length; i++) names.push(TYPE[chain[i].type].name);
+  return names.join('－');
+}
+
+// 編成の移動範囲。編成の両端それぞれを先頭として BFS する。
+// 戻り値: { 'x,y': { lead: 先頭になる車輌のindex, dist, prev, from } }  key = 先頭が止まるマス
+function trainMovableInfo(chain, driver){
+  var res = {};
+  if(!chain || !driver) return res;
+  var t = TYPE[driver.type];
+  var fuelLimit = (driver.fuel !== undefined) ? Math.floor(driver.fuel) : t.move;
+  var maxMove = Math.min(t.move, fuelLimit);
+  var ends = (chain.length >= 2) ? [0, chain.length-1] : [0];
+  var dirs = [[1,0],[-1,0],[0,1],[0,-1]];
+  for(var e=0; e<ends.length; e++){
+    var lead = chain[ends[e]];
+    var dist = {}, prev = {};
+    var sk = lead.x+','+lead.y;
+    dist[sk] = 0;
+    var open = [[lead.x, lead.y, 0]];
+    while(open.length){
+      open.sort(function(a,b){ return a[2]-b[2]; });
+      var cur = open.shift();
+      var x = cur[0], y = cur[1], d = cur[2];
+      var ck = x+','+y;
+      if(dist[ck] !== undefined && d > dist[ck]) continue;
+      var isStart = (x === lead.x && y === lead.y);
+      if(!isStart && _isAdjacentToVisibleEnemy(x, y, lead.owner)) continue;
+      for(var i=0; i<dirs.length; i++){
+        var nx = x + dirs[i][0], ny = y + dirs[i][1];
+        if(!inBounds(nx, ny)) continue;
+        var c = moveCost(lead.type, M[ny][nx]);
+        if(c === Infinity) continue;
+        // 単線: 味方も自分の編成も障害になる (見えない敵だけは素通り扱い = 伏兵)
+        var blocker = unitAt(nx, ny);
+        if(blocker && (isAlly(blocker.owner, lead.owner) || isUnitVisibleTo(blocker, lead.owner))) continue;
+        var nd = d + c;
+        if(nd > maxMove) continue;
+        var nk = nx+','+ny;
+        if(dist[nk] === undefined || nd < dist[nk]){
+          dist[nk] = nd; prev[nk] = ck;
+          open.push([nx, ny, nd]);
+        }
+      }
+    }
+    for(var k in dist){
+      if(k === sk) continue;
+      if(res[k] === undefined || dist[k] < res[k].dist){
+        res[k] = { lead: ends[e], dist: dist[k], prev: prev, from: sk };
+      }
+    }
+  }
+  return res;
+}
+
+// 編成を動かす。(destX,destY) は「先頭が止まるマス」
+// 並び順は変えず、各車輌は進行方向で1つ前の車輌がいたマスへ入る。
+function executeTrainMove(chain, driver, destX, destY, info){
+  var entry = info[destX+','+destY];
+  if(!entry) return null;
+  // 先頭の出発マス → 目的地 の経路を再構築
+  var path = [];
+  var k = destX+','+destY;
+  while(k){
+    var xy = k.split(',');
+    path.unshift({ x: parseInt(xy[0]), y: parseInt(xy[1]) });
+    k = entry.prev[k];
+  }
+  // 先頭から見た並び (押すときは逆順に見るだけで、編成の順番自体は変わらない)
+  var seq = (entry.lead === 0) ? chain.slice() : chain.slice().reverse();
+  var lead = seq[0];
+  // 伏兵: 先頭が進みながら、未発見の敵に隣接したらそこで停止
+  var stopAt = path.length - 1, ambushAt = null;
+  for(var pi=1; pi<path.length; pi++){
+    var hidden = _findAdjacentHiddenEnemy(path[pi].x, path[pi].y, lead.owner, lead.id);
+    if(hidden){ stopAt = pi; ambushAt = { x: hidden.x, y: hidden.y }; break; }
+  }
+  var trail = [];
+  for(var pi2=stopAt; pi2>=0; pi2--) trail.push(path[pi2]);
+  var oldPos = [];
+  for(var i=0; i<seq.length; i++) oldPos.push({ x: seq[i].x, y: seq[i].y });
+  var full = trail.concat(oldPos.slice(1));
+  for(var i=0; i<seq.length; i++){
+    var u = seq[i], p = full[i];
+    u.preMoveX = u.x; u.preMoveY = u.y;
+    u.x = p.x; u.y = p.y;
+    u.moved = true;
+  }
+  var didMove = (stopAt > 0);
+  if(didMove) consumeFuelForMove(driver, driver.preMoveX, driver.preMoveY);
+  return {
+    moved: didMove, lead: lead, ambushAt: ambushAt,
+    stoppedEarly: (stopAt < path.length - 1), dist: stopAt
+  };
+}
+
+// 連結できる相手 (隣接する自軍の列車系ユニット)。編成の端どうしでのみ繋げる。
 function coupleCandidatesAround(unit){
-  var t = TYPE[unit.type];
   var list = [];
-  if(!t.isCoupler) return list;
-  if(unit.cargo && unit.cargo.length >= t.capacity) return list;
+  var t = TYPE[unit.type];
+  if(!t || !t.isTrain) return list;
+  var myChain = trainOf(unit);
+  if(myChain){
+    if(myChain[0].id !== unit.id && myChain[myChain.length-1].id !== unit.id) return list; // 中間の車輌からは連結できない
+    if(myChain.length >= TRAIN_MAX_CARS) return list;
+  }
+  var mySize = myChain ? myChain.length : 1;
   var dirs = [[1,0],[-1,0],[0,1],[0,-1]];
   for(var i=0; i<dirs.length; i++){
     var nx = unit.x + dirs[i][0], ny = unit.y + dirs[i][1];
     if(!inBounds(nx, ny)) continue;
     var o = unitAt(nx, ny);
-    if(!o || o.owner !== unit.owner) continue;
-    if(!TYPE[o.type].isTowed) continue;
-    if(!canCarryUnit(unit, o)) continue;
+    if(!o || o.owner !== unit.owner || o.id === unit.id) continue;
+    if(!TYPE[o.type].isTrain) continue;
+    if(myChain){
+      var inMine = false;
+      for(var k=0; k<myChain.length; k++){ if(myChain[k].id === o.id) inMine = true; }
+      if(inMine) continue;
+    }
+    if(mySize + 1 > TRAIN_MAX_CARS) continue;
     list.push(o);
   }
   return list;
@@ -11755,7 +12000,7 @@ function enterCoupleMode(){
   coupleMode = true;
   coupleValidSet = {};
   for(var i=0; i<cands.length; i++) setAdd(coupleValidSet, cands[i].x+','+cands[i].y);
-  setStatus('🔗 連結する車両を選んでください');
+  setStatus('🔗 連結する方向を選んでください（線路沿いに続く車輌はまとめて連結します）');
   var btnWrap = document.getElementById('command-buttons');
   btnWrap.innerHTML = '';
   var b = document.createElement('button');
@@ -11772,32 +12017,124 @@ function exitCoupleMode(){
   else render();
 }
 
+// 連結: 隣の車輌から線路沿いに続く自軍の列車系ユニットを、上限までまとめて連結する
 function executeCouple(x, y){
   if(!pendingUnit) return;
   var loco = pendingUnit;
   var car = unitAt(x, y);
-  if(!car || !canCarryUnit(loco, car)) return;
-  loco.cargo = loco.cargo || [];
-  loco.cargo.push({
-    type: car.type,
-    hp: car.hp,
-    owner: car.owner,
-    originalId: car.id,
-    fuel: car.fuel,
-    ammo: car.ammo ? car.ammo.slice() : null,
-    cargo: car.cargo ? car.cargo.slice() : [],
-    // 補給ユニット(補給貨車)の在庫は連結中も持ち越す
-    supplyFuelCount: car.supplyFuelCount,
-    supplyAmmoCount: car.supplyAmmoCount,
-    loadedRound: roundNumber
-  });
-  units = units.filter(function(u){ return u.id !== car.id; });
-  setStatus('🔗 ' + TYPE[car.type].name + 'を連結しました');
-  if(loco.owner === 'P' && window.plog) plog('🔗 ' + TYPE[loco.type].name + '@('+loco.x+','+loco.y+') が ' + TYPE[car.type].name + 'を連結');
+  if(!car) return;
+  var ids = [];
+  var myChain = trainOf(loco);
+  if(myChain){ for(var i=0; i<myChain.length; i++) ids.push(myChain[i].id); }
+  else ids.push(loco.id);
+  var added = [];
+  var curU = car;
+  var dirs = [[1,0],[-1,0],[0,1],[0,-1]];
+  while(curU && ids.length < TRAIN_MAX_CARS){
+    ids.push(curU.id);
+    added.push(curU);
+    var nextU = null;
+    for(var i=0; i<dirs.length; i++){
+      var o = unitAt(curU.x + dirs[i][0], curU.y + dirs[i][1]);
+      if(!o || o.owner !== loco.owner || o.hp <= 0) continue;
+      if(!TYPE[o.type].isTrain) continue;
+      if(ids.indexOf(o.id) >= 0) continue;
+      nextU = o; break;
+    }
+    curU = nextU;
+  }
+  // 一列につながっているか確認 (分岐していたら連結しない)
+  var comps = _trainComponents(ids);
+  if(comps.length !== 1 || !_orderTrain(comps[0]) || comps[0].length !== ids.length){
+    setStatus('🔗 一列に並んでいない車輌は連結できません');
+    exitCoupleMode();
+    return;
+  }
+  // 既存の編成から、今回まとめた車輌を取り除く
+  for(var ti=0; ti<trains.length; ti++){
+    trains[ti] = trains[ti].filter(function(id){ return ids.indexOf(id) < 0; });
+  }
+  trains.push(ids);
+  syncTrains();
+  var names = [];
+  for(var i=0; i<added.length; i++) names.push(TYPE[added[i].type].name);
+  setStatus('🔗 ' + names.join('・') + 'を連結しました（' + ids.length + '両編成）');
+  if(loco.owner === 'P' && window.plog){
+    plog('🔗 ' + TYPE[loco.type].name + '@('+loco.x+','+loco.y+') が ' + names.join('・') + 'を連結（'+ids.length+'両編成）');
+  }
   loco.acted = true;
   pendingUnit = null;
   coupleMode = false;
   coupleValidSet = {};
+  hideCommandPanel();
+  afterAction();
+}
+
+// ===== 切り離し =====
+// 選んだ車輌から先 (操作している車輌から見て向こう側) をまとめて切り離す。
+// 貨車はすでに線路の上にいるので、位置は動かさず編成の繋がりを切るだけ。
+function enterUncoupleMode(){
+  if(!pendingUnit) return;
+  var chain = trainOf(pendingUnit);
+  if(!chain || chain.length < 2) return;
+  uncoupleMode = true;
+  uncoupleValidSet = {};
+  for(var i=0; i<chain.length; i++){
+    if(chain[i].id === pendingUnit.id) continue;
+    setAdd(uncoupleValidSet, chain[i].x+','+chain[i].y);
+  }
+  setStatus('🔗 切り離す位置の車輌を選んでください（その車輌から先が切り離されます）');
+  var btnWrap = document.getElementById('command-buttons');
+  btnWrap.innerHTML = '';
+  var b = document.createElement('button');
+  b.textContent = 'キャンセル';
+  b.onclick = function(e){ e.stopPropagation(); exitUncoupleMode(); };
+  btnWrap.appendChild(b);
+  render();
+}
+
+function exitUncoupleMode(){
+  uncoupleMode = false;
+  uncoupleValidSet = {};
+  if(pendingUnit) showCommandPanel(pendingUnit, pendingJustMoved);
+  else render();
+}
+
+function executeUncouple(x, y){
+  if(!pendingUnit) return;
+  var chain = trainOf(pendingUnit);
+  if(!chain) return;
+  var target = unitAt(x, y);
+  if(!target) return;
+  var myIdx = -1, tIdx = -1;
+  for(var i=0; i<chain.length; i++){
+    if(chain[i].id === pendingUnit.id) myIdx = i;
+    if(chain[i].id === target.id) tIdx = i;
+  }
+  if(myIdx < 0 || tIdx < 0 || myIdx === tIdx) return;
+  var keep = [], cut = [];
+  if(tIdx > myIdx){
+    for(var i=0; i<tIdx; i++) keep.push(chain[i].id);
+    for(var i=tIdx; i<chain.length; i++) cut.push(chain[i].id);
+  } else {
+    for(var i=tIdx; i>=0; i--) cut.push(chain[i].id);
+    for(var i=tIdx+1; i<chain.length; i++) keep.push(chain[i].id);
+  }
+  var allIds = keep.concat(cut);
+  for(var ti=0; ti<trains.length; ti++){
+    trains[ti] = trains[ti].filter(function(id){ return allIds.indexOf(id) < 0; });
+  }
+  if(keep.length >= 2) trains.push(keep);
+  if(cut.length >= 2) trains.push(cut);
+  syncTrains();
+  setStatus('🔗 ' + cut.length + '両を切り離しました');
+  if(pendingUnit.owner === 'P' && window.plog){
+    plog('🔗 ' + TYPE[pendingUnit.type].name + '@('+pendingUnit.x+','+pendingUnit.y+') が '+cut.length+'両を切り離し');
+  }
+  pendingUnit.acted = true;
+  pendingUnit = null;
+  uncoupleMode = false;
+  uncoupleValidSet = {};
   hideCommandPanel();
   afterAction();
 }
@@ -11973,10 +12310,10 @@ function selectCargoForUnload(idx){
     setAdd(unloadValidSet, nx+','+ny);
   }
   if(setSize(unloadValidSet) === 0){
-    setStatus(TYPE[cargo.type].name + 'を' + (carrierT.isCoupler ? '切り離せる' : '降ろせる') + '場所がありません');
+    setStatus(TYPE[cargo.type].name + 'を降ろせる場所がありません');
     return;
   }
-  setStatus(TYPE[cargo.type].name + (carrierT.isCoupler ? 'を切り離す場所' : 'の降下先') + '(緑マス)を選んでください');
+  setStatus(TYPE[cargo.type].name + 'の降下先(緑マス)を選んでください');
   // ボタン: キャンセルだけ残す
   var btnWrap = document.getElementById('command-buttons');
   btnWrap.innerHTML = '';
@@ -12029,7 +12366,7 @@ function executeUnload(x, y){
   if(pendingUnit.owner === 'P' && window.plog){
     plog(TYPE[pendingUnit.type].name + '@('+pendingUnit.x+','+pendingUnit.y+') から ' + TYPE[cargo.type].name + 'を('+x+','+y+')に降車');
   }
-  setStatus(TYPE[cargo.type].name + (carrierT.isCoupler ? 'を切り離しました' : 'を降下させました'));
+  setStatus(TYPE[cargo.type].name + 'を降下させました');
   unloadMode = false;
   unloadCargoIdx = -1;
   unloadValidSet = {};
@@ -12264,11 +12601,56 @@ function onCellClick(x, y){
     return;
   }
   if(coupleMode) return;
+  // 切り離しモード
+  if(uncoupleMode && pendingUnit && setHas(uncoupleValidSet, k)){
+    executeUncouple(x, y);
+    return;
+  }
+  if(uncoupleMode) return;
   if(unloadMode && pendingUnit && setHas(unloadValidSet, k)){
     executeUnload(x, y);
     return;
   }
   if(unloadMode) return;
+  // 編成の移動 (列車): 緑マス = 編成の先頭が止まるマス
+  if(selected && !pendingUnit && setHas(movableSet, k) && trainOf(selected)){
+    var tChain = trainOf(selected);
+    // 自分のマスをクリック = その場で待機 (コマンドパネルへ)
+    if(x === selected.x && y === selected.y){
+      setClear(movableSet); setClear(attackableSet);
+      var tStay = selected; selected = null;
+      showCommandPanel(tStay, false);
+      return;
+    }
+    var tDrv = trainDriver(tChain, selected);
+    if(!tDrv){ setStatus('機関車がいないため、この編成は動かせません'); return; }
+    if(!trainAllReady(tChain)){ setStatus('行動済みの車輌があるため、この編成は発車できません'); return; }
+    var tInfo = trainMovableInfo(tChain, tDrv);
+    var tRes = executeTrainMove(tChain, tDrv, x, y, tInfo);
+    if(!tRes) return;
+    setClear(movableSet); setClear(attackableSet);
+    var tSel = selected; selected = null;
+    if(window.plog && tRes.moved){
+      plog('🚂 ' + trainLabel(tChain) + ' が (' + tRes.lead.x + ',' + tRes.lead.y + ') へ移動' + (tRes.stoppedEarly ? ' (伏兵察知で停止)' : ''));
+    }
+    // 操作した車輌以外は行動終了 (編成は1回の移動で全車が動くため)
+    for(var tI=0; tI<tChain.length; tI++){ if(tChain[tI].id !== tSel.id) tChain[tI].acted = true; }
+    if(tRes.ambushAt){
+      tSel.acted = true;
+      var tAmb = performAmbush(tRes.lead, function(){
+        units = units.filter(function(uu){ return uu.hp > 0; });
+        syncTrains();
+        hideCommandPanel();
+        afterAction();
+      });
+      if(tAmb) return;
+      hideCommandPanel();
+      afterAction();
+      return;
+    }
+    showCommandPanel(tSel, tRes.moved);
+    return;
+  }
   if(selected && !pendingUnit && setHas(movableSet, k)){
     // クリック先のユニット (見えないものは存在しないものとして扱う)
     var clickedVisible = clicked;
@@ -12384,6 +12766,28 @@ function onCellClick(x, y){
     }
   }
   if(clicked && clicked.owner === 'P' && !clicked.acted && !pendingUnit){
+    // 編成に組み込まれている車輌は、単独では動けない (編成ごと動く)
+    var selChain = trainOf(clicked);
+    if(selChain){
+      selected = clicked;
+      setClear(enemyThreatSet); setClear(enemyMoveSet);
+      movableSet = {};
+      setAdd(movableSet, clicked.x+','+clicked.y);
+      var selDrv = trainDriver(selChain, clicked);
+      var selReady = (selDrv && trainAllReady(selChain));
+      if(selReady){
+        var selInfo = trainMovableInfo(selChain, selDrv);
+        for(var selK in selInfo) setAdd(movableSet, selK);
+      }
+      // 編成は動くと全車が行動終了になるので、攻撃予告は現在位置からのみ
+      attackableSet = computeAttackable(clicked, clicked.x, clicked.y, false);
+      setStatus(TYPE[clicked.type].name + '選択中: ' +
+        (selReady ? '緑=編成の先頭が止まれるマス' :
+         (!selDrv ? '機関車がいないため動けません' : '行動済みの車輌があるため発車できません')) +
+        '（' + selChain.length + '両編成: ' + trainLabel(selChain) + '）');
+      render();
+      return;
+    }
     selected = clicked;
     setClear(enemyThreatSet); setClear(enemyMoveSet); // 敵脅威範囲をクリア
     movableSet = computeMovable(clicked);
@@ -12445,6 +12849,11 @@ function unitHTML(u, size){
   var submergedBadge = u.submerged ? '<div style="position:absolute;left:-2px;bottom:-3px;font-size:9px;background:#3a6a8a;color:white;padding:0 2px;border-radius:2px;font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,0.3);">潜</div>' : '';
   var stealthBadge = u.stealth ? '<div style="position:absolute;left:-2px;bottom:-3px;font-size:9px;background:#3a3a5a;color:white;padding:0 2px;border-radius:2px;font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,0.3);">ス</div>' : '';
   // 搭載中バッジ
+  // 連結中の車輌には🔗の印 (どこまでが1つの編成か盤面で分かるように)
+  var trainBadge = '';
+  if(t.isTrain && trainOf(u)){
+    trainBadge = '<div style="position:absolute;left:-2px;bottom:-3px;font-size:9px;background:#7A5A10;color:white;padding:0 2px;border-radius:2px;font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,0.3);">🔗</div>';
+  }
   var cargoBadge = '';
   if(t.capacity && u.cargo && u.cargo.length > 0){
     cargoBadge = '<div style="position:absolute;right:-2px;bottom:-3px;font-size:9px;background:#5a4a3a;color:white;padding:0 3px;border-radius:2px;font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,0.3);">'+u.cargo.length+'/'+t.capacity+'</div>';
@@ -12482,7 +12891,7 @@ function unitHTML(u, size){
     + '<div style="width:'+inner+'px;height:'+inner+'px;display:flex;align-items:center;justify-content:center;">' + iconSvg + '</div>'
     + '<div style="position:absolute;left:1px;right:1px;bottom:0;height:3px;background:rgba(0,0,0,0.2);border-radius:1px;overflow:hidden;"><div style="width:'+Math.max(0,hpRatio*100)+'%;height:100%;background:'+hpColor+';"></div></div>'
     + '<div style="position:absolute;top:-2px;right:-2px;font-size:8px;font-weight:600;background:'+color+';color:white;border-radius:50%;width:11px;height:11px;display:flex;align-items:center;justify-content:center;">'+dHP+'</div>'
-    + submergedBadge + stealthBadge + cargoBadge + fuelBadge + ammoBadge + '</div>';
+    + submergedBadge + stealthBadge + cargoBadge + trainBadge + fuelBadge + ammoBadge + '</div>';
 }
 
 // 道路接続対象の地形 (隣接時に道路グラフィックが繋がる)
@@ -12732,6 +13141,7 @@ function computePlayerVisibleCells(){
 }
 
 function render(){
+  syncTrains();   // 撃破などで切れた編成をここで整える
   var board = document.getElementById('board');
   board.innerHTML = '';
   var visSet = computePlayerVisibleCells();
@@ -12750,6 +13160,7 @@ function render(){
       if(setHas(railRepairSet, k)){ bg = '#BFE3CC'; border = '2px dashed #0F6E56'; }
       if(setHas(unloadValidSet, k)){ bg = '#A8E6C8'; border = '2px dashed #0F6E56'; }
       if(setHas(coupleValidSet, k)){ bg = '#E8D48A'; border = '2px dashed #7A5A10'; }
+      if(setHas(uncoupleValidSet, k)){ bg = '#E8D48A'; border = '2px dashed #7A5A10'; }
       if(setHas(movableSet, k)){ bg = '#A8E6C8'; border = '1.5px solid #0F6E56'; }
       // 敵脅威範囲表示 (敵ユニットクリック時)。重なったら赤(脅威)優先
       if(setHas(enemyMoveSet, k)){ bg = '#B8D8F0'; border = '1.5px solid #185FA5'; }
@@ -13345,7 +13756,7 @@ function renderTerrainTab(){
     ['道路', 0, '#D6BB8E', { INF:1, WHEEL:1, TRACK_L:1, TRACK_H:1 }, '全車両が高速移動。施設・道路間で接続グラフィック'],
     ['橋',   0, '#A88860', { INF:1, WHEEL:1, TRACK_L:1, TRACK_H:1 }, '川に架かる橋。工兵が建設でき、耐久10以上で通行可'],
     ['木組み', 0, '#9C8460', { INF:3, WHEEL:'×', TRACK_L:'×', TRACK_H:'×' }, '橋の未完成・破壊状態。工兵の工事で橋になる。壊しきると川に戻る'],
-    ['線路', 0, '#9A8A72', { INF:1, WHEEL:1, TRACK_L:1, TRACK_H:1 }, '列車系のみ移動コスト0.5。新規敷設はできず、マップに置かれたものを奪い合う'],
+    ['線路', 0, '#9A8A72', { INF:1, WHEEL:1, TRACK_L:1, TRACK_H:1 }, '列車系のみ移動コスト0.5。単線なので列車は味方の上もすり抜けられない。新規敷設はできず、マップに置かれたものを奪い合う'],
     ['路盤', 0, '#8E8878', { INF:1, WHEEL:1, TRACK_L:1, TRACK_H:1 }, '線路が壊れた状態。列車は走れない。工兵の工事(HP分)で線路に戻る'],
     ['鉄橋', 0, '#877559', { INF:1, WHEEL:1, TRACK_L:1, TRACK_H:1 }, '川に架かる線路。列車系のみ0.5'],
     ['橋脚', 0, '#7C7263', { INF:3, WHEEL:'×', TRACK_L:'×', TRACK_H:'×' }, '鉄橋が壊れた状態。列車は走れない。工兵の工事で鉄橋に戻る'],
@@ -15050,7 +15461,7 @@ document.getElementById('stage-change-btn').onclick = function(){
 document.getElementById('end-turn-btn').onclick = function(){
   if(turn === 'P' && !gameOver){
     for(var i=0; i<units.length; i++){ if(units[i].owner === 'P') units[i].acted = true; }
-    selected = null; pendingUnit = null; attackMode = false; unloadMode = false; setClear(unloadValidSet); unloadStarted = false; coupleMode = false; setClear(coupleValidSet);
+    selected = null; pendingUnit = null; attackMode = false; unloadMode = false; setClear(unloadValidSet); unloadStarted = false; coupleMode = false; setClear(coupleValidSet); uncoupleMode = false; setClear(uncoupleValidSet);
     setClear(movableSet); setClear(attackableSet);
     hideCommandPanel();
     endTurn();
