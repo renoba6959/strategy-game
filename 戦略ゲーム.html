@@ -1714,12 +1714,23 @@ function isSupplyRouteFacility(x, y, owner, unit){
 }
 
 // 積む: 施設の備蓄 → 補給ユニットの在庫 (満載まで、上限なし=備蓄を空にしてもよい)
+// ただし「そのターンに降ろされたぶん」は積み出せない (下の supplyRouteUnload で記録する)。
+// 拠点を中継して補給車を並べると、1ターンのうちに物資が何リンクも先へ飛んでしまうため。
+// ※ 降ろした物資を近くの味方が受け取るのは従来どおり (制限するのは積み出しだけ)
 function supplyRouteLoad(u, pos){
   var t = TYPE[u.type];
+  var cap = captures[pos.x+','+pos.y];
   var moved = 0;
+  var lockF = 0, lockA = 0;
+  if(cap && cap.stockLockRound === roundNumber){
+    lockF = cap.stockLockFuel || 0;
+    lockA = cap.stockLockAmmo || 0;
+  }
+  var st = cap ? facilityStock(cap, M[pos.y][pos.x]) : null;
   if(typeof t.supplyFuelMax === 'number'){
     var curF = (typeof u.supplyFuelCount === 'number') ? u.supplyFuelCount : t.supplyFuelMax;
     var needF = t.supplyFuelMax - curF;
+    if(st) needF = Math.min(needF, Math.max(0, st.fuel - lockF));
     if(needF > 0){
       var gotF = takeFacilityStock(pos, 'fuel', needF);
       u.supplyFuelCount = curF + gotF; moved += gotF;
@@ -1728,6 +1739,10 @@ function supplyRouteLoad(u, pos){
   if(typeof t.supplyAmmoMax === 'number'){
     var curA = (typeof u.supplyAmmoCount === 'number') ? u.supplyAmmoCount : t.supplyAmmoMax;
     var needA = t.supplyAmmoMax - curA;
+    if(st){
+      var st2now = facilityStock(cap, M[pos.y][pos.x]);
+      needA = Math.min(needA, Math.max(0, st2now.ammo - lockA));
+    }
     if(needA > 0){
       var gotA = takeFacilityStock(pos, 'ammo', needA);
       u.supplyAmmoCount = curA + gotA; moved += gotA;
@@ -1748,14 +1763,23 @@ function supplyRouteUnload(u, pos){
     var curF = (typeof u.supplyFuelCount === 'number') ? u.supplyFuelCount : t.supplyFuelMax;
     var roomF = st.spec.fuelMax - st.fuel;
     var giveF = Math.min(curF, roomF);
-    if(giveF > 0){ cap.stockFuel = st.fuel + giveF; u.supplyFuelCount = curF - giveF; moved += giveF; }
+    if(giveF > 0){
+      cap.stockFuel = st.fuel + giveF; u.supplyFuelCount = curF - giveF; moved += giveF;
+      // このターンに降ろしたぶんは、同じターンには積み出せないよう記録する
+      if(cap.stockLockRound !== roundNumber){ cap.stockLockRound = roundNumber; cap.stockLockFuel = 0; cap.stockLockAmmo = 0; }
+      cap.stockLockFuel = (cap.stockLockFuel || 0) + giveF;
+    }
   }
   if(typeof t.supplyAmmoMax === 'number'){
     var curA = (typeof u.supplyAmmoCount === 'number') ? u.supplyAmmoCount : t.supplyAmmoMax;
     var st2 = facilityStock(cap, M[pos.y][pos.x]);
     var roomA = st2.spec.ammoMax - st2.ammo;
     var giveA = Math.min(curA, roomA);
-    if(giveA > 0){ cap.stockAmmo = st2.ammo + giveA; u.supplyAmmoCount = curA - giveA; moved += giveA; }
+    if(giveA > 0){
+      cap.stockAmmo = st2.ammo + giveA; u.supplyAmmoCount = curA - giveA; moved += giveA;
+      if(cap.stockLockRound !== roundNumber){ cap.stockLockRound = roundNumber; cap.stockLockFuel = 0; cap.stockLockAmmo = 0; }
+      cap.stockLockAmmo = (cap.stockLockAmmo || 0) + giveA;
+    }
   }
   return moved;
 }
@@ -14200,6 +14224,7 @@ function renderSupplyTab(){
   html += '<li>自走できない補給ユニット (補給貨車) はルートを持てない — 機関車が運ぶ</li>';
   html += '<li>ルートを設定した補給ユニットを選ぶと、<b>実際に通るマス</b>が盤面に表示される (往路は濃く、復路は薄く)。道が無くて到達できない場合は<b>赤い破線</b>になる</li>';
   html += '</ul>';
+  html += '<div style="margin-top:6px; background:#fff4d6; padding:6px 8px; border-radius:3px;"><b>そのターンに降ろされた物資は、同じターンには積み出せません</b><br>拠点を中継点にして補給車を並べると、1ターンのうちに物資が何リンクも先へ飛んでしまうためです。物資は<b>1ターンに1リンクずつ</b>進みます。降ろした物資を近くの味方が受け取るのは今までどおりです。</div>';
   html += '<div style="margin-top:6px; background:#fff4d6; padding:6px 8px; border-radius:3px;"><b>積載庫に物資が入るのは「📦 積む」とルートの積み元だけ</b><br>施設の範囲補給では<b>積載庫は補充されません</b>。自動で補充すると、せっかく運んで降ろした物資をその施設から積み直すことになり、物資が行ったり来たりするだけになるためです。<br>補給ユニット<b>自身</b>の燃料・弾薬 (走るための燃料) は、他のユニットと同じように範囲補給で入ります。</div>';
   html += '</div>';
 
