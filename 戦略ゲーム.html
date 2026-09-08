@@ -1697,6 +1697,18 @@ function canCarrySupplyStock(u){
   return (typeof t.supplyFuelMax === 'number') || (typeof t.supplyAmmoMax === 'number');
 }
 
+// 生産した補給ユニットの積載庫を空にする
+// 満タンで出てくると、1台作るたびに燃料200・弾薬20が備蓄の外から湧いてしまう。
+// 物資は拠点の備蓄から「📦 積む」かルートの積み元で積む、に統一する。
+// ※ 空母は積み込みの操作を持たない (洋上の航空基地として機能しなくなる) ので対象外。
+//    canCarrySupplyStock は isSupply のユニットだけを見る。
+function emptySupplyStockOnBuild(u){
+  if(!canCarrySupplyStock(u)) return;
+  var t = TYPE[u.type];
+  if(typeof t.supplyFuelMax === 'number') u.supplyFuelCount = 0;
+  if(typeof t.supplyAmmoMax === 'number') u.supplyAmmoCount = 0;
+}
+
 // 積み元・降ろし先に指定できる施設か (自軍が占領していて備蓄を持てる拠点)
 // unit を渡すと、その補給ユニットが実際に使える拠点かも見る。
 // 航空補給ユニット (空中給油機) は空港系のみ。工場や都市で積み降ろしするのは
@@ -5917,6 +5929,7 @@ function aiProduceAndTakeOut(aiFaction, phase){
     var newU = makeUnit(p.type, aiFaction, spawnX, spawnY);
     newU.acted = false;
     newU.moved = false;
+    emptySupplyStockOnBuild(newU);   // 補給ユニットの積載庫は空で出てくる
     units.push(newU);
     production.splice(i, 1);
   }
@@ -14225,6 +14238,7 @@ function renderSupplyTab(){
   html += '<li>ルートを設定した補給ユニットを選ぶと、<b>実際に通るマス</b>が盤面に表示される (往路は濃く、復路は薄く)。道が無くて到達できない場合は<b>赤い破線</b>になる</li>';
   html += '</ul>';
   html += '<div style="margin-top:6px; background:#fff4d6; padding:6px 8px; border-radius:3px;"><b>そのターンに降ろされた物資は、同じターンには積み出せません</b><br>拠点を中継点にして補給車を並べると、1ターンのうちに物資が何リンクも先へ飛んでしまうためです。物資は<b>1ターンに1リンクずつ</b>進みます。降ろした物資を近くの味方が受け取るのは今までどおりです。</div>';
+  html += '<div style="margin-top:6px; background:#fff4d6; padding:6px 8px; border-radius:3px;"><b>生産した補給ユニットの積載庫は空です</b><br>満タンで出てくると、1台作るたびに物資が備蓄の外から湧いてしまうためです。拠点の隣で「📦 積む」か、補給ルートの積み元で積んでください。(空母は積み込みの操作を持たないので、従来どおり艦内在庫を持って出てきます)</div>';
   html += '<div style="margin-top:6px; background:#fff4d6; padding:6px 8px; border-radius:3px;"><b>積載庫に物資が入るのは「📦 積む」とルートの積み元だけ</b><br>施設の範囲補給では<b>積載庫は補充されません</b>。自動で補充すると、せっかく運んで降ろした物資をその施設から積み直すことになり、物資が行ったり来たりするだけになるためです。<br>補給ユニット<b>自身</b>の燃料・弾薬 (走るための燃料) は、他のユニットと同じように範囲補給で入ります。</div>';
   html += '</div>';
 
@@ -15621,6 +15635,7 @@ function takeOutProduction(idx){
   var newU = makeUnit(p.type, p.owner, spawnX, spawnY);
   newU.acted = false;
   newU.moved = false;
+  emptySupplyStockOnBuild(newU);   // 補給ユニットの積載庫は空で出てくる
   units.push(newU);
   production.splice(idx, 1);
   openProductionMenu(prodFacilityX, prodFacilityY);
