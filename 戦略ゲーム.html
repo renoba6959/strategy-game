@@ -2583,9 +2583,12 @@ function isAmbushHidden(u, viewerOwner, excluderId){
     if(!isAlly(v.owner, viewerOwner) || v.hp <= 0) continue;
     var vx = v.x, vy = v.y, vMoved = v.moved;
     if(excluderId !== undefined && v.id === excluderId){
-      // 奇襲される当人: 移動前の位置・未移動状態で評価する
+      // 奇襲される当人: 位置は「移動前」で見る (移動後の位置で見ると常に隣接=発見済みになるため)。
+      // ただし移動そのものが行動なので、動いたなら自分の探知は切れている扱いにする
+      // (港で止まって潜水艦を探知 → そのまま横付けして爆雷、が通ってしまうため)
       if(typeof v.preMoveX !== 'number' || typeof v.preMoveY !== 'number') continue;
-      vx = v.preMoveX; vy = v.preMoveY; vMoved = false;
+      vx = v.preMoveX; vy = v.preMoveY;
+      vMoved = !(v.preMoveX === v.x && v.preMoveY === v.y);
     }
     var d = manhattan(vx, vy, u.x, u.y);
     if(d <= 1) return false; // 隣接は無条件で発見 (すべての隠匿に共通)
@@ -3521,6 +3524,11 @@ function computeAttackable(unit, fromX, fromY, justMoved){
               && (TYPE[u.type].cat !== 'AIR' || heliHidesInTerrain(u)));
             // 天候による隠匿
             if(weatherHidesUnit(u)) targetHidden = true;
+            // 潜航中の潜水艦・ステルス爆撃機は普通の視界では見つからない。
+            // 「移動前は視界内だった」を根拠に撃てるようにすると、視界の広い艦ほど
+            // 潜水艦を叩けてしまうので、隠匿扱いにして隣接していた場合だけ認める
+            if(TYPE[u.type].canSubmerge && u.submerged) targetHidden = true;
+            if(TYPE[u.type].canStealth && u.stealth) targetHidden = true;
             var preSight = getEffectiveSight(unit); // 視界は移動前後で変わらない想定 (山にいると+1 等の地形ボーナスは反映)
             if(targetHidden){
               if(preDist <= 1) seenPreMove = true;
@@ -14585,7 +14593,9 @@ function renderRulesTab(){
     + '見えていない敵に隣接すると奇襲を受けます。<b>見えるかどうかの判定は表示と完全に同じ</b>で、次のとおりです。<br>'
     + '・<b>潜航中の潜水艦</b>: 探知範囲内で発見 (潜水艦3マス / 駆逐艦・フリゲート2マス / 対潜哨戒機3マス。探知するユニットがそのターン移動していないこと)。<b>隣接していれば対潜能力が無くても発見</b><br>'
     + '・<b>森・山のユニット</b>: 隣接するまで見えない。ただしヘリに対しては対空戦車(視界4)・対空ミサイル(視界5)・固定翼機は視界内で発見できる<br>'
-    + '・奇襲されるかどうかは<b>動く前の位置・未移動の状態</b>で判定する (移動後の位置で見ると常に隣接＝発見済みになってしまうため)<br>'
+    + '・奇襲されるかどうかは<b>動く前の位置</b>で判定する (移動後の位置で見ると常に隣接＝発見済みになってしまうため)<br>'
+    + '・ただし<b>移動そのものが行動</b>なので、動いたユニットは<b>自分の探知が切れている</b>扱いになる。港で止まって潜水艦を探知しても、そのまま横付けして爆雷を落とすことはできず、逆に奇襲を受ける<br>'
+    + '・<b>潜航中の潜水艦・ステルス爆撃機は普通の視界では見つからない</b>ので、視界が広い艦ほど有利ということはない。叩くには<b>止まったまま探知する僚艦</b>が要る (僚艦が探知していれば、動いてきた艦でも撃てる)<br>'
     + '・一度発見した敵を記憶する仕組みはありません。<b>離れれば見失います</b><br>'
     + '・<b>AIのユニットも同じように奇襲されます</b>。森・山に伏せた自軍ユニットの隣を敵が通れば発動します<br>'
     + '・伏兵に有効な武器が無い場合は奇襲が起きません (例: 歩兵の小銃は装甲車両に0なので、森の歩兵は戦車を奇襲できない)。戦車を待ち伏せるなら<b>対戦車歩兵</b>を置いてください'
