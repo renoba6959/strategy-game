@@ -703,8 +703,8 @@ var TYPE = {
   // ===== 列車系 (移動クラス TRAIN: 線路・鉄橋0.5 / 施設は駅として1 / それ以外は進入不可) =====
   // 線路は地形防御0なので、停車中を叩かれると装甲が高くても脆い。
   // 列車砲・補給貨車は自走できず、機関車の「連結」で牽引してもらう。
-  ARMORED_TRAIN: { name:'装甲列車', cat:'LAND', armorClass:'AV', cost:'TRAIN', move:6, sight:3, armor:4, fuelMax:70, isTrain:true, isCoupler:true, towMax:2, note:'線路の上だけを走る自走の装甲車両。装甲を貼った機関車なので、列車砲や補給貨車を2両まで牽引できる。線路は地形防御0なので停車中は狙われやすい', price:6000, prodTurns:3, weapons:[ W('列車砲塔', [1,1], false, {INF:8, UV:10, AV:9, US:8, AS:6, HE:5, AC:0}, {ammo:3, vsFacility:6}), W('機銃', [1,1], false, {INF:6, UV:4, AV:0, US:4, AS:0, HE:6, AC:0}, {infiniteAmmo:true}) ] },
-  LOCOMOTIVE: { name:'機関車', cat:'LAND', armorClass:'UV', cost:'TRAIN', move:7, sight:2, armor:2, fuelMax:99, isTrain:true, isCoupler:true, towMax:4, note:'非武装。隣接する車輌を「連結」して牽引・推進する。4両まで牽引でき、編成は最大5両。機関車か装甲列車が1両あれば前後どちらへも動ける', price:2500, prodTurns:2, weapons:[] },
+  ARMORED_TRAIN: { name:'装甲列車', cat:'LAND', armorClass:'AV', cost:'TRAIN', move:6, sight:3, armor:4, fuelMax:70, isTrain:true, isCoupler:true, towMax:2, note:'線路の上だけを走る自走の装甲車両。装甲を貼った機関車なので、列車砲や補給貨車を2両まで牽引できる(1両ごとに移動-1)。線路は地形防御0なので停車中は狙われやすい', price:6000, prodTurns:3, weapons:[ W('列車砲塔', [1,1], false, {INF:8, UV:10, AV:9, US:8, AS:6, HE:5, AC:0}, {ammo:3, vsFacility:6}), W('機銃', [1,1], false, {INF:6, UV:4, AV:0, US:4, AS:0, HE:6, AC:0}, {infiniteAmmo:true}) ] },
+  LOCOMOTIVE: { name:'機関車', cat:'LAND', armorClass:'UV', cost:'TRAIN', move:7, sight:2, armor:2, fuelMax:99, isTrain:true, isCoupler:true, towMax:4, note:'非武装。隣接する車輌を「連結」して牽引・推進する。4両まで牽引でき(1両ごとに移動-1)、編成は最大5両。機関車か装甲列車が1両あれば前後どちらへも動ける', price:2500, prodTurns:2, weapons:[] },
   RAIL_GUN: { name:'列車砲', cat:'LAND', armorClass:'UV', cost:'TRAIN', move:0, sight:1, armor:1, fuelMax:30, isTrain:true, isTowed:true, note:'自走できない。機関車に連結してもらって移動する超長射程の間接砲。停車していれば連結したまま撃てる', price:8000, prodTurns:4, weapons:[ W('列車砲', [3,6], true, {INF:14, UV:14, AV:12, US:12, AS:10, HE:0, AC:0}, {ammo:2, vsFacility:14}) ] },
   SUPPLY_CAR: { name:'補給貨車', cat:'LAND', armorClass:'UV', cost:'TRAIN', move:0, sight:1, armor:1, fuelMax:30, isTrain:true, isTowed:true, isSupply:true, supplyTarget:['LAND','HELI'], supplyFuel:true, supplyFuelMax:800, supplyAmmo:true, supplyAmmoMax:60, supplyRange:2, note:'自走できない。機関車に連結して線路で前線へ物資を運ぶ。線路から降りられない代わりに補給範囲は2マス。連結したままでも補給できる。燃料庫800/弾薬庫60', price:2000, prodTurns:2, weapons:[] }
 };
@@ -4311,8 +4311,16 @@ function updateInfoPanel(){
   }
   var infoChain = trainOf(u);
   if(infoChain){
+    var infoDrv = trainDriver(infoChain, u);
+    var infoTowed = trainTowedCount(infoChain);
+    var infoMoveTxt = '';
+    if(infoDrv){
+      var infoBase = TYPE[infoDrv.type].move || 0;
+      var infoEff = trainEffectiveMove(infoChain, infoDrv);
+      infoMoveTxt = '　移動 ' + infoBase + (infoTowed > 0 ? ('→<b>' + infoEff + '</b>（' + infoTowed + '両牽引）') : '');
+    }
     uhtml += '<div style="margin-top:6px;font-size:11px;color:#666;">🔗 ' + infoChain.length + '両編成' +
-             (trainHasLoco(infoChain) ? '' : '（機関車なし・動けません）') + '</div>';
+             (trainHasLoco(infoChain) ? infoMoveTxt : '（機関車なし・動けません）') + '</div>';
     for(var tci=0; tci<infoChain.length; tci++){
       var tcu = infoChain[tci];
       var tcIcon = ICONS[tcu.type] || '';
@@ -12090,6 +12098,18 @@ function trainOf(unit){
   return null;
 }
 
+// 牽引している車輌の数だけ移動力が落ちる (1両につき -1、最低1)
+// 「速く走るか、たくさん運ぶか」の選択になるように
+function trainTowedCount(chain){
+  var n = 0;
+  for(var i=0; i<chain.length; i++){ if(!TYPE[chain[i].type].isCoupler) n++; }
+  return n;
+}
+function trainEffectiveMove(chain, driver){
+  var base = TYPE[driver.type].move || 0;
+  return Math.max(1, base - trainTowedCount(chain));
+}
+
 // この編成が牽引できる車輌の数 (機関車4 / 装甲列車2 の合計)
 // 装甲列車は「装甲を貼った機関車」なので牽引できるが、機関車ほどの牽引力は無い
 function trainTowCapacity(members){
@@ -12141,7 +12161,7 @@ function trainMovableInfo(chain, driver){
   if(!chain || !driver) return res;
   var t = TYPE[driver.type];
   var fuelLimit = (driver.fuel !== undefined) ? Math.floor(driver.fuel) : t.move;
-  var maxMove = Math.min(t.move, fuelLimit);
+  var maxMove = Math.min(trainEffectiveMove(chain, driver), fuelLimit);
   var ends = (chain.length >= 2) ? [0, chain.length-1] : [0];
   var dirs = [[1,0],[-1,0],[0,1],[0,-1]];
   for(var e=0; e<ends.length; e++){
@@ -14237,6 +14257,7 @@ function renderTerrainTab(){
   html += '・<b>重キャタ</b>: 中戦車・重戦車・重駆逐戦車・ロケット砲 ※森進入不可<br>';
   html += '・水陸両用戦車は装輪扱いだが川と浅瀬を通行可能<br>';
   html += '・<b>列車</b>(機関車・装甲列車・列車砲・補給貨車): 線路・鉄橋・海上鉄橋・可動橋のみコスト0.5。施設・都市マスは「駅」としてコスト1。それ以外は進入不可。<b>単線なので味方の上もすり抜けられない</b><br>';
+  html += '・<b>牽引すると遅くなる</b>: 編成を動かすときの移動力は「引く車輌の移動力 − 牽引している車輌の数」(最低1)。機関車7は4両牽くと3、装甲列車6は2両牽くと4<br>';
   html += '・航空ユニットは全地形コスト1、地形防御を一切受けない (森・山に隠れず常に視認される)<br>';
   html += '・地上ユニット: 全地形・施設の防御を享受。<br>・海上ユニット: 港系施設の防御のみ享受。';
   html += '</div>';
