@@ -703,10 +703,10 @@ var TYPE = {
   // ===== 列車系 (移動クラス TRAIN: 線路・鉄橋0.5 / 施設は駅として1 / それ以外は進入不可) =====
   // 線路は地形防御0なので、停車中を叩かれると装甲が高くても脆い。
   // 列車砲・補給貨車は自走できず、機関車の「連結」で牽引してもらう。
-  ARMORED_TRAIN: { name:'装甲列車', cat:'LAND', armorClass:'AV', cost:'TRAIN', move:5, sight:3, armor:2, fuelMax:70, isTrain:true, isCoupler:true, towMax:2, note:'線路の上だけを走る自走の装甲車両。主砲は射程2-4の直射で、走りながら撃てる代わりに隣接した敵には使えない(機銃で応戦)。列車砲や補給貨車を2両まで牽引できる(1両ごとに移動-1)。対空は対空列車に任せる想定。線路は地形防御0なので停車中は狙われやすい', price:12000, prodTurns:3, weapons:[ W('列車砲塔', [2,4], false, {INF:8, UV:12, AV:10, US:12, AS:10, HE:0, AC:0}, {ammo:2, vsFacility:10}), W('機銃', [1,1], false, {INF:6, UV:4, AV:0, US:4, AS:0, HE:6, AC:4}, {infiniteAmmo:true}) ] },
+  ARMORED_TRAIN: { name:'装甲列車', cat:'LAND', armorClass:'AV', cost:'TRAIN', move:5, sight:3, armor:2, fuelMax:70, isTrain:true, isCoupler:true, towMax:2, note:'線路の上だけを走る自走の装甲車両。主砲は射程2-4の直射で、走りながら撃てる代わりに隣接した敵には使えない(機銃で応戦)。列車砲や補給貨車を2両まで牽引できる(牽く車輌の重さぶん移動が落ちる)。対空は対空列車に任せる想定。線路の上しか走れない', price:8000, prodTurns:3, weapons:[ W('列車砲塔', [2,4], false, {INF:8, UV:12, AV:10, US:12, AS:10, HE:0, AC:0}, {ammo:2, vsFacility:10}), W('機銃', [1,1], false, {INF:6, UV:4, AV:0, US:4, AS:0, HE:6, AC:4}, {infiniteAmmo:true}) ] },
   LOCOMOTIVE: { name:'機関車', cat:'LAND', armorClass:'UV', cost:'TRAIN', move:7, sight:2, armor:2, fuelMax:99, isTrain:true, isCoupler:true, towMax:4, note:'非武装。隣接する車輌を「連結」して牽引・推進する。4両まで牽引でき(1両ごとに移動-1)、編成は最大5両。機関車か装甲列車が1両あれば前後どちらへも動ける', price:2500, prodTurns:2, weapons:[] },
-  RAIL_GUN: { name:'列車砲', cat:'LAND', armorClass:'UV', cost:'TRAIN', move:0, sight:1, armor:1, fuelMax:30, isTrain:true, isTowed:true, note:'自走できない。機関車に連結してもらって移動する超長射程の間接砲。撃つときは必ず範囲攻撃で、通常の砲撃は着弾点と上下左右の5マス(弾薬5)、観測兵がいれば効力射で13マス(弾薬10)。停車していれば連結したまま撃てる', price:8000, prodTurns:4, weapons:[ W('列車砲', [3,6], true, {INF:14, UV:14, AV:12, US:12, AS:10, HE:0, AC:0}, {ammo:10, vsFacility:14, areaShot:true, shotAmmo:5, feAmmo:10}) ] },
-  SUPPLY_CAR: { name:'補給貨車', cat:'LAND', armorClass:'UV', cost:'TRAIN', move:0, sight:1, armor:1, fuelMax:30, isTrain:true, isTowed:true, isSupply:true, supplyTarget:['LAND','HELI'], supplyFuel:true, supplyFuelMax:800, supplyAmmo:true, supplyAmmoMax:60, supplyRange:2, note:'自走できない。機関車に連結して線路で前線へ物資を運ぶ。線路から降りられない代わりに補給範囲は2マス。連結したままでも補給できる。燃料庫800/弾薬庫60', price:2000, prodTurns:2, weapons:[] }
+  RAIL_GUN: { name:'列車砲', cat:'LAND', armorClass:'UV', cost:'TRAIN', move:0, towDrag:2, sight:1, armor:2, fuelMax:30, isTrain:true, isTowed:true, note:'自走できない。機関車や装甲列車に連結してもらって移動する超長射程の間接砲。重いので牽く側の移動を2下げる。撃つときは必ず範囲攻撃で、通常の砲撃は着弾点と上下左右の5マス(弾薬5)、観測兵がいれば効力射で13マス(弾薬10)。停車していれば連結したまま撃てる', price:10000, prodTurns:4, weapons:[ W('列車砲', [3,6], true, {INF:16, UV:16, AV:14, US:14, AS:12, HE:0, AC:0}, {ammo:10, vsFacility:20, areaShot:true, shotAmmo:5, feAmmo:10}) ] },
+  SUPPLY_CAR: { name:'補給貨車', cat:'LAND', armorClass:'UV', cost:'TRAIN', move:0, towDrag:1, sight:1, armor:1, fuelMax:30, isTrain:true, isTowed:true, isSupply:true, supplyTarget:['LAND','HELI'], supplyFuel:true, supplyFuelMax:800, supplyAmmo:true, supplyAmmoMax:60, supplyRange:2, note:'自走できない。機関車や装甲列車に連結して線路で前線へ物資を運ぶ。牽く側の移動を1下げる。線路から降りられない代わりに補給範囲は2マス。連結したままでも補給できる。燃料庫800/弾薬庫60', price:2000, prodTurns:2, weapons:[] }
 };
 
 var ARMOR_LABELS = { INF:'歩兵', UV:'非装甲車両', AV:'装甲車両', US:'非装甲艦船', AS:'装甲艦船', HE:'ヘリ', AC:'航空機', SUB:'潜水艦' };
@@ -2450,6 +2450,13 @@ function carrierAt(x, y, owner, target){
 }
 function displayHP(h){ return Math.max(0, Math.ceil(h/10)); }
 function setStatus(msg){ document.getElementById('status').textContent = msg; }
+
+// 移動の表記。自走できない車輌 (列車砲・補給貨車) は「牽く側の移動をいくつ下げるか」を
+// -2 / -1 のように出す。0 と書くより、連結したときの重さが分かりやすいため。
+function moveLabel(t){
+  if(t && typeof t.towDrag === 'number' && !t.move) return '-' + t.towDrag;
+  return (t && t.move !== undefined) ? String(t.move) : '0';
+}
 
 // ===== お知らせの履歴 (右パネル) =====
 // 最新の1件は上の「お知らせ」に出て、それより前をここに残す。
@@ -4233,7 +4240,7 @@ function updateInfoPanel(){
   if(terOnlyDef > 0 && heliHidesInTerrain(u)){
     uhtml += '<div style="font-size:11px;color:#666;padding-left:8px;">※ 固定翼機の攻撃には地形の分は効きません（装甲 ' + t.armor + (weaDefNow > 0 ? ' +' + weaDefNow : '') + '）</div>';
   }
-  uhtml += '<div>移動: ' + t.move + ' · 視界: ' + getEffectiveSight(u) + ((t.sight||2) !== getEffectiveSight(u) ? '<span style="font-size:10px;color:#888;">(基本'+(t.sight||2)+')</span>' : '') + ' · 分類: ' + ARMOR_LABELS[t.armorClass] + '</div>';
+  uhtml += '<div>移動: ' + moveLabel(t) + ' · 視界: ' + getEffectiveSight(u) + ((t.sight||2) !== getEffectiveSight(u) ? '<span style="font-size:10px;color:#888;">(基本'+(t.sight||2)+')</span>' : '') + ' · 分類: ' + ARMOR_LABELS[t.armorClass] + '</div>';
   // 燃料表示
   if(u.fuel !== undefined && t.fuelMax !== undefined){
     var fuelPct = u.fuel / t.fuelMax;
@@ -4380,7 +4387,8 @@ function updateInfoPanel(){
     if(infoDrv){
       var infoBase = TYPE[infoDrv.type].move || 0;
       var infoEff = trainEffectiveMove(infoChain, infoDrv);
-      infoMoveTxt = '　移動 ' + infoBase + (infoTowed > 0 ? ('→<b>' + infoEff + '</b>（' + infoTowed + '両牽引）') : '');
+      var infoDrag = trainTowDrag(infoChain);
+      infoMoveTxt = '　移動 ' + infoBase + (infoTowed > 0 ? ('→<b>' + infoEff + '</b>（' + infoTowed + '両牽引・重さ' + infoDrag + '）') : '');
     }
     uhtml += '<div style="margin-top:6px;font-size:11px;color:#666;">🔗 ' + infoChain.length + '両編成' +
              (trainHasLoco(infoChain) ? infoMoveTxt : '（機関車なし・動けません）') + '</div>';
@@ -12168,9 +12176,19 @@ function trainTowedCount(chain){
   for(var i=0; i<chain.length; i++){ if(!TYPE[chain[i].type].isCoupler) n++; }
   return n;
 }
+// 牽引されている車輌の重さの合計 (列車砲2 / 補給貨車1。既定は1)
+function trainTowDrag(chain){
+  var d = 0;
+  for(var i=0; i<chain.length; i++){
+    var t = TYPE[chain[i].type];
+    if(t.isCoupler) continue;
+    d += (typeof t.towDrag === 'number') ? t.towDrag : 1;
+  }
+  return d;
+}
 function trainEffectiveMove(chain, driver){
   var base = TYPE[driver.type].move || 0;
-  return Math.max(1, base - trainTowedCount(chain));
+  return Math.max(1, base - trainTowDrag(chain));
 }
 
 // この編成が牽引できる車輌の数 (機関車4 / 装甲列車2 の合計)
@@ -14173,7 +14191,7 @@ function renderUnitsTab(){
         h += '</td>';
         h += '<td style="padding:6px 4px; text-align:center; vertical-align:middle; font-size:10px;">' + ARMOR_LABELS[t.armorClass] + '</td>';
         h += '<td style="padding:6px 4px; text-align:center; vertical-align:middle; color:' + armorColor + ';">' + t.armor + '</td>';
-        h += '<td style="padding:6px 4px; text-align:center; vertical-align:middle; color:' + moveColor + ';">' + t.move + '</td>';
+        h += '<td style="padding:6px 4px; text-align:center; vertical-align:middle; color:' + moveColor + ';">' + moveLabel(t) + '</td>';
         h += '<td style="padding:6px 4px; text-align:center; vertical-align:middle; color:' + sightColor + ';">' + (t.sight || 2) + '</td>';
         h += '<td style="padding:6px 4px; text-align:center; vertical-align:middle;">' + (t.fuelMax || '−') + '</td>';
         // 武装なし: 各セルを「-」で埋める (武器名・射程・弾・種別・8カテゴリ = 11セル)
@@ -14210,7 +14228,7 @@ function renderUnitsTab(){
           h += '</td>';
           h += '<td rowspan="' + weaponCount + '" style="padding:6px 4px; text-align:center; vertical-align:middle; font-size:10px;">' + ARMOR_LABELS[t.armorClass] + '</td>';
           h += '<td rowspan="' + weaponCount + '" style="padding:6px 4px; text-align:center; vertical-align:middle; color:' + armorColor + '; font-weight:500;">' + t.armor + '</td>';
-          h += '<td rowspan="' + weaponCount + '" style="padding:6px 4px; text-align:center; vertical-align:middle; color:' + moveColor + '; font-weight:500;">' + t.move + '</td>';
+          h += '<td rowspan="' + weaponCount + '" style="padding:6px 4px; text-align:center; vertical-align:middle; color:' + moveColor + '; font-weight:500;">' + moveLabel(t) + '</td>';
           h += '<td rowspan="' + weaponCount + '" style="padding:6px 4px; text-align:center; vertical-align:middle; color:' + sightColor + '; font-weight:500;">' + (t.sight || 2) + '</td>';
           h += '<td rowspan="' + weaponCount + '" style="padding:6px 4px; text-align:center; vertical-align:middle; font-weight:500;">' + (t.fuelMax || '−') + '</td>';
         }
@@ -15891,7 +15909,7 @@ function showProduceConfirm(unitType){
   // 基本性能
   html += '<div style="margin-top:10px; font-size:12px; line-height:1.7;">';
   html += '<div>分類: <b>'+(ARMOR_LABELS[t.armorClass]||t.armorClass)+'</b> ・ '+catName(t.cat)+'</div>';
-  html += '<div>移動 <b>'+t.move+'</b> ・ 視界 <b>'+(t.sight||2)+'</b> ・ 装甲 <b>'+(t.armor||0)+'</b> ・ 燃料 <b>'+(t.fuelMax||99)+'</b></div>';
+  html += '<div>移動 <b>'+moveLabel(t)+'</b> ・ 視界 <b>'+(t.sight||2)+'</b> ・ 装甲 <b>'+(t.armor||0)+'</b> ・ 燃料 <b>'+(t.fuelMax||99)+'</b></div>';
   // 特性
   var traits = [];
   if(t.canCapture) traits.push('拠点を占領できる');
