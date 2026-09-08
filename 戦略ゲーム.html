@@ -7112,23 +7112,39 @@ function _aiEngineerHomeObjectivesRemain(u, aiFaction){
 
 // AI: 工兵が隣接川マスに橋を建設実行 (プレイヤーの executeBridgeBuild と同じ動作)
 // 戻り値: 建設した川マスの {x, y}、または null (実施せず)
-// AI: 工事中の橋・線路を仕上げる (着手しただけで放置しないため)
+// AI: 工事中の橋・鉄橋を仕上げる (着手しただけで放置しないため)
 // 隣接していれば工事し、離れていれば一番近い工事現場へ向かう。
 // 対象は「開通していないもの」だけ (耐久10以上の補強はAIには任せない)
+//
+// AIが向かう対象は「直すと地上ユニットの通行が変わるもの」に限る:
+//   ・橋脚 → 鉄橋、木組み → 橋 : 開通すると車両が川を渡れるようになる (価値あり)
+//   ・路盤 → 線路             : 地上ユニットの移動コストは線路と同じで、得をするのは
+//                                列車だけ。AIは列車を作らないので対象外
+//   ・海上橋脚/可動橋脚        : 同じく列車専用。しかも工兵が保線通路(コスト3)で
+//                                海の上まで歩いて行ってしまうので対象外
+// 優先順位は「再建 > 工事 > 橋建設」。離れた工事現場へ向かうのは、自陣側に未確保の
+// 占領対象 (廃墟・中立拠点) が残っていないときだけにする (橋建設と同じ条件)。
 var AI_CONSTRUCTION_RANGE = 6;   // これより遠い工事現場はAIの工兵が向かわない
 function aiContinueConstruction(unit){
   if(!TYPE[unit.type].isEngineer) return null;
   var best = null, bestD = Infinity;
   for(var y=0; y<H; y++){
     for(var x=0; x<W; x++){
-      var t = TER[M[y][x]];
+      var terKey = M[y][x];
+      var t = TER[terKey];
       if(!t || !t.buildHpMax || !t.isIncomplete) continue;
+      if(terKey === 'RAIL_RUINED' || t.isSeaRail) continue;   // 列車専用の工事はAIの対象外
       var d = manhattan(unit.x, unit.y, x, y);
-      if(d > AI_CONSTRUCTION_RANGE) continue;   // 遠方の路盤に釣られて占領をやめないように
+      if(d > AI_CONSTRUCTION_RANGE) continue;   // 遠方の工事現場に釣られて占領をやめないように
       if(d < bestD){ bestD = d; best = { x: x, y: y }; }
     }
   }
   if(!best) return null;
+  if(bestD > 1 && _aiEngineerHomeObjectivesRemain(unit, unit.owner)){
+    // 自陣側に未確保の廃墟・中立拠点が残っている → 再建/占領が先
+    if(window.AI_DEBUG) try{ console.log('  → 工事スキップ: 自陣側に未確保の占領対象があるので再建/占領を優先'); }catch(e){}
+    return null;
+  }
   if(bestD <= 1){
     // 隣接 (または足元) なので工事する
     var amount = displayHP(unit.hp);
@@ -14747,7 +14763,7 @@ function renderAITab(){
   html += '<ol style="margin:2px 0 0 18px; padding:0;">';
   html += '<li>HP &lt; 5 → 撤退</li>';
   html += '<li>地続きの<b>廃墟</b> → 再建</li>';
-  html += '<li><b>未開通の工事現場</b> (路盤・橋脚・木組み) → 工事継続。<b>6マス以内</b>のものだけを対象にする (遠方に釣られないため)</li>';
+  html += '<li><b>未開通の橋脚 (鉄橋) ・木組み (橋)</b> → 🛠 工事。<b>6マス以内</b>で、かつ<b>自陣側に未確保の廃墟・中立拠点が無いとき</b>だけ向かう (足元・隣なら常に工事する)。<b>路盤と海上橋脚は対象外</b> — 直して得をするのは列車だけで、AIは列車を作らないため (工兵が海上鉄橋の上まで歩いて行ってしまうのも防ぐ)</li>';
   html += '<li><b>橋建設すべき川</b> → 橋建設</li>';
   html += '<li>地続きの<b>占領目標</b> → 占領</li>';
   html += '<li>海を隔てた廃墟の再建 → 輸送ユニットで渡海して再建</li>';
