@@ -1991,6 +1991,46 @@ function facilityReachDist(reach, f){
   return best;
 }
 
+// ===== 自動巡回 =====
+// 積み元・降ろし先を固定せず、毎ターン選び直す。
+//   降ろし先 = 備蓄を「自分では作れない」自軍拠点 (都市・大都市・商業都市・首都) のうち
+//              充足率が最も低いもの。工場などを降ろし先にすると、積んだ拠点に
+//              そのまま降ろす堂々巡りになるので外している
+//   積み元   = 備蓄を作れる自軍施設 (工場系・港系・空港系・弾薬工廠) のうち在庫が多いもの
+// 前線への据え置きは従来どおり「駐留地点」で指定する (自動巡回は後方の補充向け)
+function autoRoutePick(u, want){
+  var kinds = supplyKindsOf(u);
+  if(kinds.length === 0) return null;
+  var reach = bfsPathDistances(u.x, u.y, u);
+  var best = null, bestScore = 0;
+  for(var k in captures){
+    var cap = captures[k];
+    if(cap.owner !== u.owner) continue;
+    var xy = k.split(',');
+    var fx = parseInt(xy[0]), fy = parseInt(xy[1]);
+    if(!isSupplyRouteFacility(fx, fy, u.owner, u)) continue;
+    var st = facilityStock(cap, M[fy][fx]);
+    if(!st.spec) continue;
+    var f = { x: fx, y: fy, st: st };
+    var d = facilityReachDist(reach, f);
+    if(d === undefined) continue;                 // 届かない拠点は対象外
+    var makes = (st.spec.fuelGain > 0 || st.spec.ammoGain > 0);
+    var ratio = facilityStockRatio(f, kinds);
+    var score;
+    if(want === 'from'){
+      if(!makes) continue;                        // 積むのは備蓄を作れる施設だけ
+      if(ratio <= 0) continue;                    // 空の施設では積めない
+      score = -ratio * 100 + d;                   // 在庫が多く、近いものを優先
+    } else {
+      if(makes) continue;                         // 工場などは降ろし先にしない
+      if(ratio >= 1) continue;                    // 満タンの拠点は用がない
+      score = ratio * 100 + d * 0.5;              // 乏しく、近いものを優先
+    }
+    if(best === null || score < bestScore){ bestScore = score; best = f; }
+  }
+  return best ? { x: best.x, y: best.y } : null;
+}
+
 // AI: 補給ユニットに補給ルートを割り当てる (段階3)
 // 積み元 = 備蓄を生産できる自軍施設で在庫の多いもの
 // 降ろし先 = 備蓄が乏しく、前線 (敵) に近い自軍拠点
@@ -2028,7 +2068,7 @@ function aiAssignSupplyRoutes(aiFaction){
   var taken = {};
   for(var i=0; i<units.length; i++){
     var su = units[i];
-    if(su.owner !== aiFaction || su.hp <= 0 || !su.route) continue;
+    if(su.owner !== aiFaction || su.hp <= 0 || !su.route || !su.route.to) continue;
     taken[su.route.to.x+','+su.route.to.y] = true;
   }
 
@@ -2118,16 +2158,33 @@ function runSupplyRoutes(owner){
     if(u.owner !== owner || u.hp <= 0) continue;
     if(!u.route) continue;
     if(!canCarrySupplyStock(u)){ delete u.route; delete u.routeTarget; continue; }
-    // 積み元が自軍でなくなったらルート解除 (降ろし先が施設の場合はそちらも見る)
     var toIsFacility = (u.route.toKind !== 'point');
-    if(!isSupplyRouteFacility(u.route.from.x, u.route.from.y, owner, u)
-       || (toIsFacility && !isSupplyRouteFacility(u.route.to.x, u.route.to.y, owner, u))){
-      delete u.route; delete u.routeTarget;
-      if(owner === 'P') setStatus('🚚 補給ルートの施設が失われたため、ルートを解除しました');
-      continue;
-    }
-    if(u.routeTarget !== 'from' && u.routeTarget !== 'to'){
-      u.routeTarget = supplyStockFull(u) ? 'to' : 'from';
+    if(u.route.auto){
+      // 自動巡回: 毎ターン行き先を選び直す (拠点を取られても設定し直し不要)
+      u.routeTarget = supplyStockLow(u) ? 'from' : 'to';
+      var pk = autoRoutePick(u, u.routeTarget);
+      if(!pk){
+        // 補給の要る拠点が無ければ積みに戻る / 積み元も無ければその場で待つ
+        u.routeTarget = (u.routeTarget === 'to') ? 'from' : 'to';
+        pk = autoRoutePick(u, u.routeTarget);
+      }
+      if(!pk) continue;   // 行き先なし: 今ターンは動かない (ルートは保持)
+      if(u.routeTarget === 'from') u.route.from = pk; else u.route.to = pk;
+      if(!u.route.from) u.route.from = pk;
+      if(!u.route.to) u.route.to = pk;
+      u.route.toKind = 'facility';
+      toIsFacility = true;
+    } else {
+      // 積み元が自軍でなくなったらルート解除 (降ろし先が施設の場合はそちらも見る)
+      if(!isSupplyRouteFacility(u.route.from.x, u.route.from.y, owner, u)
+         || (toIsFacility && !isSupplyRouteFacility(u.route.to.x, u.route.to.y, owner, u))){
+        delete u.route; delete u.routeTarget;
+        if(owner === 'P') setStatus('🚚 補給ルートの施設が失われたため、ルートを解除しました');
+        continue;
+      }
+      if(u.routeTarget !== 'from' && u.routeTarget !== 'to'){
+        u.routeTarget = supplyStockFull(u) ? 'to' : 'from';
+      }
     }
     // 前線の駐留地点へのルート: 在庫が2割以下になったら積み元へ戻る
     if(!toIsFacility && u.routeTarget === 'to' && supplyStockLow(u)) u.routeTarget = 'from';
@@ -4196,7 +4253,11 @@ function updateInfoPanel(){
     }
   }
   // 補給ルートの表示 (段階3)
-  if(u.route){
+  if(u.route && u.route.auto){
+    var autoWhat = (u.routeTarget === 'from') ? '積みに移動中' : '補給の乏しい拠点へ移動中';
+    uhtml += '<div style="margin-top:6px;font-size:11px;color:#0F6E56;">🔄 <b>自動巡回</b>（' + autoWhat + '）</div>';
+    if(u.route.to) uhtml += '<div style="font-size:11px;color:#666;">いまの行き先: ('+(u.routeTarget === 'from' ? u.route.from.x+','+u.route.from.y : u.route.to.x+','+u.route.to.y)+')</div>';
+  } else if(u.route){
     var rFrom = TER[M[u.route.from.y][u.route.from.x]];
     var isPointRoute = (u.route.toKind === 'point');
     var rToLabel = isPointRoute
@@ -11300,6 +11361,8 @@ function showCommandPanel(unit, justMoved){
   if(canCarrySupplyStock(unit)){
     // 自走できないもの (補給貨車) は機関車が運ぶのでルートを持てない
     if(TYPE[unit.type].move > 0) addBtn(unit.route ? '🚚 補給ルートを設定し直す' : '🚚 補給ルート設定', enterRouteSetMode, true);
+    // 自動巡回: 積み元・降ろし先を指定せず、備蓄の乏しい拠点へ自動で運ぶ
+    if(TYPE[unit.type].move > 0 && !(unit.route && unit.route.auto)) addBtn('🔄 自動巡回', doAutoRoute, true);
     // 自軍拠点の上または隣接なら、手動で積み降ろしできる
     // 隣接する拠点が複数あるときは、どこに積み降ろしするかを選ばせる
     var rfs = routeFacilitiesAround(unit);
@@ -11480,6 +11543,26 @@ function clearSupplyRouteAt(x, y){
   setStatus('🚚 ' + TYPE[u.type].name + 'の補給ルートを解除しました');
   render();
   updateInfoPanel();
+}
+
+// 自動巡回に設定する (積み元・降ろし先はターンごとに選び直す)
+function doAutoRoute(){
+  if(!pendingUnit) return;
+  var u = pendingUnit;
+  var want = supplyStockLow(u) ? 'from' : 'to';
+  var pick = autoRoutePick(u, want) || autoRoutePick(u, want === 'to' ? 'from' : 'to');
+  if(!pick){
+    setStatus('🔄 巡回できる拠点がありません（自軍の拠点に届く経路が要ります）');
+    return;
+  }
+  u.route = { auto: true, from: pick, to: pick, toKind: 'facility' };
+  u.routeTarget = want;
+  setStatus('🔄 自動巡回にしました（備蓄の乏しい都市へ運び、空になったら工場などへ積みに戻ります）');
+  if(window.plog) plog('🔄 ' + TYPE[u.type].name + '@('+u.x+','+u.y+') を自動巡回に設定');
+  u.acted = true;
+  pendingUnit = null;
+  setClear(attackableSet); hideCommandPanel();
+  afterAction();
 }
 
 function doManualLoad(pos){
@@ -14423,6 +14506,10 @@ function renderSupplyTab(){
   html += '<li>積み元・降ろし先を敵に取られると、ルートは自動で解除される</li>';
   html += '<li><b>空中給油機</b>は空港系でしか積み降ろしできない。燃料が減ると最寄りの空港・空母へ帰投し、8割まで戻るとルートを再開する (墜落防止)</li>';
   html += '<li>自走できない補給ユニット (補給貨車) はルートを持てない — 機関車が運ぶ</li>';
+  html += '<li><b>🔄 自動巡回</b>: 積み元・降ろし先を指定せず、<b>備蓄の乏しい拠点へ自動で運ぶ</b>。毎ターン行き先を選び直すので、拠点を取られても設定し直さなくてよい<br>'
+        + '　・降ろし先は<b>都市・大都市・商業都市・首都</b>（備蓄を自分では作れない拠点）だけ。工場などを降ろし先にすると、積んだ拠点にそのまま降ろす堂々巡りになるため<br>'
+        + '　・積み元は<b>備蓄を作れる施設</b>（工場系・港系・空港系・弾薬工廠）で、在庫が多く近いもの<br>'
+        + '　・在庫が2割以下になったら積みに戻る。前線に据え置きたいときは従来どおり<b>駐留地点</b>を指定する</li>';
   html += '<li>ルートを設定した補給ユニットを選ぶと、<b>実際に通るマス</b>が盤面に表示される (往路は濃く、復路は薄く)。道が無くて到達できない場合は<b>赤い破線</b>になる</li>';
   html += '</ul>';
   html += '<div style="margin-top:6px; background:#fff4d6; padding:6px 8px; border-radius:3px;"><b>そのターンに降ろされた物資は、同じターンには積み出せません</b><br>拠点を中継点にして補給車を並べると、1ターンのうちに物資が何リンクも先へ飛んでしまうためです。物資は<b>1ターンに1リンクずつ</b>進みます。降ろした物資を近くの味方が受け取るのは今までどおりです。</div>';
