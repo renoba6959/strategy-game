@@ -1540,7 +1540,8 @@ function carrierResupplyOnLoad(carrier, cargoUnit){
 
 // ===== 燃料・弾薬ヘルパ =====
 // 移動時の燃料消費 (移動前位置との距離 × 消費レート)
-function consumeFuelForMove(unit, fromX, fromY){
+// mult: 1マスあたりの消費倍率 (編成の牽引で重くなるぶん。既定1)
+function consumeFuelForMove(unit, fromX, fromY, mult){
   var t = TYPE[unit.type];
   var moveDist = manhattan(fromX, fromY, unit.x, unit.y);
   // 厳密にはBFSの実距離 (unit._lastMoveDist) を使うべきだが、シンプルにマンハッタン距離で代替
@@ -1548,6 +1549,7 @@ function consumeFuelForMove(unit, fromX, fromY){
   // 仕様: 航空機は通常通り2倍消費、潜水艦の潜航中も2倍消費 (浮上中は通常通り)
   var rate = (t.cat === 'AIR') ? 2 : 1;
   if(t.canSubmerge && unit.submerged) rate = 2;
+  if(typeof mult === 'number' && mult > 0) rate *= mult;   // 牽引しているぶん重い
   if(unit.fuel === undefined) return; // 旧データ互換
   unit.fuel = Math.max(0, unit.fuel - moveDist * rate);
 }
@@ -4393,7 +4395,7 @@ function updateInfoPanel(){
       var infoBase = TYPE[infoDrv.type].move || 0;
       var infoEff = trainEffectiveMove(infoChain, infoDrv);
       var infoDrag = trainTowDrag(infoChain);
-      infoMoveTxt = '　移動 ' + infoBase + (infoTowed > 0 ? ('→<b>' + infoEff + '</b>（' + infoTowed + '両牽引・重さ' + infoDrag + '）') : '');
+      infoMoveTxt = '　移動 ' + infoBase + (infoTowed > 0 ? ('→<b>' + infoEff + '</b>（' + infoTowed + '両牽引・重さ' + infoDrag + '・燃料1マス' + (1 + infoDrag) + '）') : '');
     }
     uhtml += '<div style="margin-top:6px;font-size:11px;color:#666;">🔗 ' + infoChain.length + '両編成' +
              (trainHasLoco(infoChain) ? infoMoveTxt : '（機関車なし・動けません）') + '</div>';
@@ -12246,7 +12248,8 @@ function trainMovableInfo(chain, driver){
   var res = {};
   if(!chain || !driver) return res;
   var t = TYPE[driver.type];
-  var fuelLimit = (driver.fuel !== undefined) ? Math.floor(driver.fuel) : t.move;
+  var burn = 1 + trainTowDrag(chain);   // 1マスあたりの燃料消費
+  var fuelLimit = (driver.fuel !== undefined) ? Math.floor(driver.fuel / burn) : t.move;
   var maxMove = Math.min(trainEffectiveMove(chain, driver), fuelLimit);
   var ends = (chain.length >= 2) ? [0, chain.length-1] : [0];
   var dirs = [[1,0],[-1,0],[0,1],[0,-1]];
@@ -12330,7 +12333,8 @@ function executeTrainMove(chain, driver, destX, destY, info){
     u.moved = true;
   }
   var didMove = (stopAt > 0);
-  if(didMove) consumeFuelForMove(driver, driver.preMoveX, driver.preMoveY);
+  // 牽引している重さのぶん燃料を余計に使う (重さ2なら1マスあたり3)
+  if(didMove) consumeFuelForMove(driver, driver.preMoveX, driver.preMoveY, 1 + trainTowDrag(chain));
   return {
     moved: didMove, lead: lead, ambushAt: ambushAt,
     stoppedEarly: (stopAt < path.length - 1), dist: stopAt
@@ -14593,6 +14597,7 @@ function renderSupplyTab(){
   html += '<li><b>空軍 (cat:AIR)</b>: 1マス移動あたり<b>2燃料</b>消費 + 停止していても<b>毎ターン1燃料</b>自動消費</li>';
   html += '<li>各ユニットの最大燃料は<b>fuelMax</b>で個別設定 (ユニットタブ参照)</li>';
   html += '<li><b>自走しない車輌 (列車砲・補給貨車・対空列車) は燃料を持ちません</b> (表記は −)。牽かれて動くだけなので、燃料を使うのは牽く側の機関車・装甲列車です</li>';
+  html += '<li><b>牽引すると燃料を余計に使います</b>: 1マスあたりの消費は「1 + 牽いている車輌の重さの合計」。重さ2 (対空列車+補給貨車など) を牽いていれば1マス3消費で、10マス進むと30。移動力も重さのぶん下がります</li>';
   html += '</ul>';
   html += '</div>';
 
