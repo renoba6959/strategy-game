@@ -699,7 +699,7 @@ var TYPE = {
   ARMORED_TRAIN: { name:'装甲列車', cat:'LAND', armorClass:'AV', cost:'TRAIN', move:6, sight:3, armor:4, fuelMax:70, isTrain:true, note:'線路の上だけを走る自走の装甲車両。線路は地形防御0なので停車中は狙われやすい', price:6000, prodTurns:3, weapons:[ W('列車砲塔', [1,1], false, {INF:8, UV:10, AV:9, US:8, AS:6, HE:5, AC:0}, {ammo:3, vsFacility:6}), W('機銃', [1,1], false, {INF:6, UV:4, AV:0, US:4, AS:0, HE:6, AC:0}, {infiniteAmmo:true}) ] },
   LOCOMOTIVE: { name:'機関車', cat:'LAND', armorClass:'UV', cost:'TRAIN', move:7, sight:2, armor:2, fuelMax:99, isTrain:true, isCoupler:true, note:'非武装。隣接する車輌を「連結」して牽引・推進する。編成は最大5両で、機関車が1両あれば前後どちらへも動ける', price:2500, prodTurns:2, weapons:[] },
   RAIL_GUN: { name:'列車砲', cat:'LAND', armorClass:'UV', cost:'TRAIN', move:0, sight:1, armor:1, fuelMax:30, isTrain:true, isTowed:true, note:'自走できない。機関車に連結してもらって移動する超長射程の間接砲。停車していれば連結したまま撃てる', price:8000, prodTurns:4, weapons:[ W('列車砲', [3,6], true, {INF:14, UV:14, AV:12, US:12, AS:10, HE:0, AC:0}, {ammo:2, vsFacility:14}) ] },
-  SUPPLY_CAR: { name:'補給貨車', cat:'LAND', armorClass:'UV', cost:'TRAIN', move:0, sight:1, armor:1, fuelMax:30, isTrain:true, isTowed:true, isSupply:true, supplyTarget:['LAND','HELI'], supplyFuel:true, supplyFuelMax:800, supplyAmmo:true, supplyAmmoMax:60, note:'自走できない。機関車に連結して線路で前線へ物資を運ぶ。連結したままでも隣の味方に補給できる。燃料庫800/弾薬庫60', price:2000, prodTurns:2, weapons:[] }
+  SUPPLY_CAR: { name:'補給貨車', cat:'LAND', armorClass:'UV', cost:'TRAIN', move:0, sight:1, armor:1, fuelMax:30, isTrain:true, isTowed:true, isSupply:true, supplyTarget:['LAND','HELI'], supplyFuel:true, supplyFuelMax:800, supplyAmmo:true, supplyAmmoMax:60, supplyRange:2, note:'自走できない。機関車に連結して線路で前線へ物資を運ぶ。線路から降りられない代わりに補給範囲は2マス。連結したままでも補給できる。燃料庫800/弾薬庫60', price:2000, prodTurns:2, weapons:[] }
 };
 
 var ARMOR_LABELS = { INF:'歩兵', UV:'非装甲車両', AV:'装甲車両', US:'非装甲艦船', AS:'装甲艦船', HE:'ヘリ', AC:'航空機', SUB:'潜水艦' };
@@ -2285,16 +2285,17 @@ function getSupplySource(unit){
   //    隣接する補給ユニットを全部調べ、「燃料を出せる相手」と「弾薬を出せる相手」を
   //    それぞれ採用する (最初の1つで打ち切ると、燃料専門の相手が先に見つかったときに
   //    弾薬補給が丸ごと無視されてしまうため)。同種が複数あるときは在庫が残っている方を優先。
-  var dirs = [[1,0],[-1,0],[0,1],[0,-1]];
+  //    補給ユニットの補給範囲は既定1マス (隣接)。TYPE の supplyRange で広げられる。
+  //    補給貨車だけ2マス: 線路から降りられず相手に近寄れないため、その見返り。
   var fuelAny = null, fuelStocked = null;
   var ammoAny = null, ammoStocked = null;
-  for(var i=0; i<dirs.length; i++){
-    var nx = unit.x + dirs[i][0], ny = unit.y + dirs[i][1];
-    if(!inBounds(nx, ny)) continue;
-    var n = unitAt(nx, ny);
-    if(!n || n.owner !== unit.owner || n.hp <= 0) continue;
+  for(var i=0; i<units.length; i++){
+    var n = units[i];
+    if(n.id === unit.id) continue;
+    if(n.owner !== unit.owner || n.hp <= 0) continue;
     var nt = TYPE[n.type];
     if(!nt.isSupply) continue;
+    if(manhattan(n.x, n.y, unit.x, unit.y) > (nt.supplyRange || 1)) continue;
     if(!_supplyTargetMatches(nt, unit)) continue;
     // 旧仕様 (supplyFuel未定義) は supplyAmmo の真偽から推定: supplyAmmo=true なら両方、false なら燃料のみ
     var canFuel = (typeof nt.supplyFuel === 'boolean') ? nt.supplyFuel : true;
@@ -14331,7 +14332,7 @@ function renderSupplyTab(){
   html += '<tr style="background:#fafaf3;"><td style="padding:3px 6px;">生産施設 (工場系/港系/空港系・全Lv)</td><td style="padding:3px 6px; text-align:center;"><b>2マス</b></td><td style="padding:3px 6px;">カテゴリ一致 (工場=地上/港=艦船/空港=航空)。ヘリは工場系からも可</td><td style="padding:3px 6px; text-align:center;"><b>50%</b></td></tr>';
   html += '<tr><td style="padding:3px 6px;">都市・大都市・商業都市・首都</td><td style="padding:3px 6px; text-align:center;"><b>2マス</b></td><td style="padding:3px 6px;">地上・ヘリ</td><td style="padding:3px 6px; text-align:center;"><b>20%</b></td></tr>';
   html += '<tr style="background:#fafaf3;"><td style="padding:3px 6px;">空母系 (搭載中の搭載機)</td><td style="padding:3px 6px; text-align:center;">同マス</td><td style="padding:3px 6px;">航空</td><td style="padding:3px 6px; text-align:center;"><b>100%</b></td></tr>';
-  html += '<tr><td style="padding:3px 6px;">補給ユニット (補給車/補給艦/給油艦/補給貨車/空中給油機)</td><td style="padding:3px 6px; text-align:center;">隣接</td><td style="padding:3px 6px;">それぞれの対象カテゴリ</td><td style="padding:3px 6px; text-align:center;"><b>100%</b></td></tr>';
+  html += '<tr><td style="padding:3px 6px;">補給ユニット (補給車/補給艦/給油艦/空中給油機)</td><td style="padding:3px 6px; text-align:center;">隣接</td><td style="padding:3px 6px;">それぞれの対象カテゴリ</td><td style="padding:3px 6px; text-align:center;"><b>100%</b></td></tr>';
   html += '</table>';
   html += '<div style="font-size:10px; color:#888; margin-top:4px;">・燃料と弾薬は<b>別々に</b>「最も補給量の多い源」を選びます (給油艦と補給艦を両隣に付ければ両方受けられる)。同率なら備蓄を消費しない施設を優先。<br>・例: 機動戦闘車(弾薬3) が都市の圏内(20%) → 3×20%=0.6→1発/T、満タンに3T<br>・<b>HP回復(+2)と施設スロットへの収容は、従来どおり施設マスの上にいるときだけ</b>です</div>';
   html += '</div>';
@@ -14391,7 +14392,7 @@ function renderSupplyTab(){
   html += '<tr><td style="padding:3px 6px;">空母</td><td style="padding:3px 6px; text-align:center;">海軍</td><td style="padding:3px 6px; text-align:center;">500</td><td style="padding:3px 6px; text-align:center;">25</td><td style="padding:3px 6px;">航空機4機搭載</td></tr>';
   html += '<tr style="background:#fafaf3;"><td style="padding:3px 6px;">装甲空母</td><td style="padding:3px 6px; text-align:center;">海軍</td><td style="padding:3px 6px; text-align:center;">400</td><td style="padding:3px 6px; text-align:center;">20</td><td style="padding:3px 6px;">航空機3機搭載、装甲4</td></tr>';
   html += '<tr><td style="padding:3px 6px;">空中給油機</td><td style="padding:3px 6px; text-align:center;">空軍</td><td style="padding:3px 6px; text-align:center;">200</td><td style="padding:3px 6px; text-align:center;">―</td><td style="padding:3px 6px;">燃料専用、隣接空軍に補給。積み降ろしは空港系のみ</td></tr>';
-  html += '<tr style="background:#fafaf3;"><td style="padding:3px 6px;">補給貨車</td><td style="padding:3px 6px; text-align:center;">陸軍(列車)</td><td style="padding:3px 6px; text-align:center;"><b>800</b></td><td style="padding:3px 6px; text-align:center;"><b>60</b></td><td style="padding:3px 6px;">隣接の陸上ユニット・ヘリに補給。自走できず機関車が牽引する。<b>連結したままでも補給できる</b></td></tr>';
+  html += '<tr style="background:#fafaf3;"><td style="padding:3px 6px;">補給貨車</td><td style="padding:3px 6px; text-align:center;">陸軍(列車)</td><td style="padding:3px 6px; text-align:center;"><b>800</b></td><td style="padding:3px 6px; text-align:center;"><b>60</b></td><td style="padding:3px 6px;"><b>2マス範囲</b>の陸上ユニット・ヘリに補給 (線路から降りられない見返り)。自走できず機関車が牽引する。<b>連結したままでも補給できる</b></td></tr>';
   html += '</table>';
   html += '<div style="font-size:10px; color:#888; margin-top:4px;">※ 補給ユニットの在庫は自軍拠点で補充する (拠点の備蓄から引かれる)。弾薬工廠は補給範囲3マス・補給率100%だが、備蓄 (燃料800/弾薬80) の範囲内で、無限ではない。</div>';
   html += '</div>';
