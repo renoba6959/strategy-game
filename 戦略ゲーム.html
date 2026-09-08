@@ -299,6 +299,10 @@ var TER = {
   // 陸上ユニットは渡れない (工兵だけは保線通路を歩ける ← moveCost の特例)。
   SEA_RAIL: { name:'海上鉄橋', def:0, color:'#5F7E96', isRail:true, isSeaRail:true, buildHpMax:30 },
   SEA_RAIL_RUINED: { name:'海上橋脚', def:0, color:'#54708A', isRail:true, isSeaRail:true, isRailRuined:true, isIncomplete:true, buildHpMax:30 },
+  // 可動橋: 航路の上だけ開く区間。ここだけは主力艦艇も通り抜けられる海峡の関所。
+  // 壊れて可動橋脚になると桁が航路に落ちるので、主力艦艇は通れなくなる。
+  SEA_RAIL_DRAW: { name:'可動橋', def:0, color:'#6B88A0', isRail:true, isSeaRail:true, isDrawBridge:true, buildHpMax:30 },
+  SEA_RAIL_DRAW_RUINED: { name:'可動橋脚', def:0, color:'#5C7690', isRail:true, isSeaRail:true, isDrawBridge:true, isRailRuined:true, isIncomplete:true, buildHpMax:30 },
   // 都市系 (3段階直列)
   CITY:    { name:'都市', def:2, color:'#B8B5B0', heal:2, capturable:true, income:1000, capHpMax:20, level:1, group:'city', upgradeTo:['BIG_CITY'], defenseSlots:1, lightSource:true, sight:2 },
   BIG_CITY: { name:'大都市', def:3, color:'#A8A5A0', heal:2, capturable:true, income:1500, capHpMax:30, level:2, group:'city', upgradeTo:['COMMERCE_CITY','AMMO_DEPOT'], defenseSlots:2, lightSource:true, sight:2 },
@@ -403,18 +407,18 @@ var COST = {
   // 重キャタピラ: 中戦車・重戦車・重駆逐戦車。森不可
   TRACK_H:{ PLAIN:2, FOREST:Infinity, MOUNTAIN:Infinity, ROAD:1, RAIL:1, RAIL_BRIDGE:1, RAIL_RUINED:1, RAIL_BRIDGE_RUINED:Infinity, BRIDGE:1, BRIDGE_RUINED:Infinity, CITY:1, FACTORY:1, AIRPORT:1, PORT:1, CAPITAL:1, BIG_CITY:1, COMMERCE_CITY:1, AMMO_DEPOT:1, WHEEL_FACTORY:1, WHEEL_ARSENAL:1, WHEEL_WORKS:1, TRACK_FACTORY:1, TRACK_ARSENAL:1, TRACK_WORKS:1, AIR_BASE:1, AIR_ARSENAL:1, AIR_WORKS:1, NAVY_BASE:1, NAVY_ARSENAL:1, NAVY_WORKS:1, RUINS_CITY:1, RUINS_FACTORY:1, RUINS_AIRPORT:1, RUINS_PORT:1, SHOAL:3, REEF:Infinity, RIVER:Infinity, SEA:Infinity, DEEP_SEA:Infinity },
   // 海上ユニット
-  SHIP_S: { PLAIN:Infinity, FOREST:Infinity, MOUNTAIN:Infinity, ROAD:Infinity, RAIL:Infinity, RAIL_BRIDGE:Infinity, RAIL_RUINED:Infinity, RAIL_BRIDGE_RUINED:Infinity, SEA_RAIL:1, SEA_RAIL_RUINED:1, BRIDGE:Infinity, BRIDGE_RUINED:Infinity, CITY:Infinity, FACTORY:Infinity, AIRPORT:Infinity, PORT:1, CAPITAL:Infinity, BIG_CITY:Infinity, COMMERCE_CITY:Infinity, AMMO_DEPOT:Infinity, WHEEL_FACTORY:Infinity, WHEEL_ARSENAL:Infinity, WHEEL_WORKS:Infinity, TRACK_FACTORY:Infinity, TRACK_ARSENAL:Infinity, TRACK_WORKS:Infinity, AIR_BASE:Infinity, AIR_ARSENAL:Infinity, AIR_WORKS:Infinity, NAVY_BASE:1, NAVY_ARSENAL:1, NAVY_WORKS:1, RUINS_CITY:Infinity, RUINS_FACTORY:Infinity, RUINS_AIRPORT:Infinity, RUINS_PORT:Infinity, SHOAL:Infinity, REEF:2, RIVER:Infinity, SEA:1, DEEP_SEA:1 },
-  SHIP_L: { PLAIN:Infinity, FOREST:Infinity, MOUNTAIN:Infinity, ROAD:Infinity, RAIL:Infinity, RAIL_BRIDGE:Infinity, RAIL_RUINED:Infinity, RAIL_BRIDGE_RUINED:Infinity, SEA_RAIL:1, SEA_RAIL_RUINED:1, BRIDGE:Infinity, BRIDGE_RUINED:Infinity, CITY:Infinity, FACTORY:Infinity, AIRPORT:Infinity, PORT:1, CAPITAL:Infinity, BIG_CITY:Infinity, COMMERCE_CITY:Infinity, AMMO_DEPOT:Infinity, WHEEL_FACTORY:Infinity, WHEEL_ARSENAL:Infinity, WHEEL_WORKS:Infinity, TRACK_FACTORY:Infinity, TRACK_ARSENAL:Infinity, TRACK_WORKS:Infinity, AIR_BASE:Infinity, AIR_ARSENAL:Infinity, AIR_WORKS:Infinity, NAVY_BASE:1, NAVY_ARSENAL:1, NAVY_WORKS:1, RUINS_CITY:Infinity, RUINS_FACTORY:Infinity, RUINS_AIRPORT:Infinity, RUINS_PORT:Infinity, SHOAL:Infinity, REEF:Infinity, RIVER:Infinity, SEA:1, DEEP_SEA:1 },
+  SHIP_S: { PLAIN:Infinity, FOREST:Infinity, MOUNTAIN:Infinity, ROAD:Infinity, RAIL:Infinity, RAIL_BRIDGE:Infinity, RAIL_RUINED:Infinity, RAIL_BRIDGE_RUINED:Infinity, SEA_RAIL:Infinity, SEA_RAIL_RUINED:Infinity, SEA_RAIL_DRAW:2, SEA_RAIL_DRAW_RUINED:Infinity, BRIDGE:Infinity, BRIDGE_RUINED:Infinity, CITY:Infinity, FACTORY:Infinity, AIRPORT:Infinity, PORT:1, CAPITAL:Infinity, BIG_CITY:Infinity, COMMERCE_CITY:Infinity, AMMO_DEPOT:Infinity, WHEEL_FACTORY:Infinity, WHEEL_ARSENAL:Infinity, WHEEL_WORKS:Infinity, TRACK_FACTORY:Infinity, TRACK_ARSENAL:Infinity, TRACK_WORKS:Infinity, AIR_BASE:Infinity, AIR_ARSENAL:Infinity, AIR_WORKS:Infinity, NAVY_BASE:1, NAVY_ARSENAL:1, NAVY_WORKS:1, RUINS_CITY:Infinity, RUINS_FACTORY:Infinity, RUINS_AIRPORT:Infinity, RUINS_PORT:Infinity, SHOAL:Infinity, REEF:2, RIVER:Infinity, SEA:1, DEEP_SEA:1 },
+  SHIP_L: { PLAIN:Infinity, FOREST:Infinity, MOUNTAIN:Infinity, ROAD:Infinity, RAIL:Infinity, RAIL_BRIDGE:Infinity, RAIL_RUINED:Infinity, RAIL_BRIDGE_RUINED:Infinity, SEA_RAIL:Infinity, SEA_RAIL_RUINED:Infinity, SEA_RAIL_DRAW:2, SEA_RAIL_DRAW_RUINED:Infinity, BRIDGE:Infinity, BRIDGE_RUINED:Infinity, CITY:Infinity, FACTORY:Infinity, AIRPORT:Infinity, PORT:1, CAPITAL:Infinity, BIG_CITY:Infinity, COMMERCE_CITY:Infinity, AMMO_DEPOT:Infinity, WHEEL_FACTORY:Infinity, WHEEL_ARSENAL:Infinity, WHEEL_WORKS:Infinity, TRACK_FACTORY:Infinity, TRACK_ARSENAL:Infinity, TRACK_WORKS:Infinity, AIR_BASE:Infinity, AIR_ARSENAL:Infinity, AIR_WORKS:Infinity, NAVY_BASE:1, NAVY_ARSENAL:1, NAVY_WORKS:1, RUINS_CITY:Infinity, RUINS_FACTORY:Infinity, RUINS_AIRPORT:Infinity, RUINS_PORT:Infinity, SHOAL:Infinity, REEF:Infinity, RIVER:Infinity, SEA:1, DEEP_SEA:1 },
   // 輸送系艦船(輸送船・給油艦): 浅瀬OK
-  SHIP_T: { PLAIN:Infinity, FOREST:Infinity, MOUNTAIN:Infinity, ROAD:Infinity, RAIL:Infinity, RAIL_BRIDGE:Infinity, RAIL_RUINED:Infinity, RAIL_BRIDGE_RUINED:Infinity, SEA_RAIL:1, SEA_RAIL_RUINED:1, BRIDGE:Infinity, BRIDGE_RUINED:Infinity, CITY:Infinity, FACTORY:Infinity, AIRPORT:Infinity, PORT:1, CAPITAL:Infinity, BIG_CITY:Infinity, COMMERCE_CITY:Infinity, AMMO_DEPOT:Infinity, WHEEL_FACTORY:Infinity, WHEEL_ARSENAL:Infinity, WHEEL_WORKS:Infinity, TRACK_FACTORY:Infinity, TRACK_ARSENAL:Infinity, TRACK_WORKS:Infinity, AIR_BASE:Infinity, AIR_ARSENAL:Infinity, AIR_WORKS:Infinity, NAVY_BASE:1, NAVY_ARSENAL:1, NAVY_WORKS:1, RUINS_CITY:Infinity, RUINS_FACTORY:Infinity, RUINS_AIRPORT:Infinity, RUINS_PORT:Infinity, SHOAL:1, REEF:2, RIVER:Infinity, SEA:1, DEEP_SEA:1 },
+  SHIP_T: { PLAIN:Infinity, FOREST:Infinity, MOUNTAIN:Infinity, ROAD:Infinity, RAIL:Infinity, RAIL_BRIDGE:Infinity, RAIL_RUINED:Infinity, RAIL_BRIDGE_RUINED:Infinity, SEA_RAIL:Infinity, SEA_RAIL_RUINED:Infinity, SEA_RAIL_DRAW:2, SEA_RAIL_DRAW_RUINED:Infinity, BRIDGE:Infinity, BRIDGE_RUINED:Infinity, CITY:Infinity, FACTORY:Infinity, AIRPORT:Infinity, PORT:1, CAPITAL:Infinity, BIG_CITY:Infinity, COMMERCE_CITY:Infinity, AMMO_DEPOT:Infinity, WHEEL_FACTORY:Infinity, WHEEL_ARSENAL:Infinity, WHEEL_WORKS:Infinity, TRACK_FACTORY:Infinity, TRACK_ARSENAL:Infinity, TRACK_WORKS:Infinity, AIR_BASE:Infinity, AIR_ARSENAL:Infinity, AIR_WORKS:Infinity, NAVY_BASE:1, NAVY_ARSENAL:1, NAVY_WORKS:1, RUINS_CITY:Infinity, RUINS_FACTORY:Infinity, RUINS_AIRPORT:Infinity, RUINS_PORT:Infinity, SHOAL:1, REEF:2, RIVER:Infinity, SEA:1, DEEP_SEA:1 },
   // 航空: どこでも1
   // 列車: 線路・鉄橋の上しか走れない (コスト0.5)。施設・都市マスは「駅」として通れる
-  TRAIN:  { RAIL:0.5, RAIL_BRIDGE:0.5, SEA_RAIL:0.5,
+  TRAIN:  { RAIL:0.5, RAIL_BRIDGE:0.5, SEA_RAIL:0.5, SEA_RAIL_DRAW:0.5,
             CITY:1, BIG_CITY:1, COMMERCE_CITY:1, AMMO_DEPOT:1, CAPITAL:1,
             FACTORY:1, WHEEL_FACTORY:1, TRACK_FACTORY:1, WHEEL_ARSENAL:1, TRACK_ARSENAL:1, WHEEL_WORKS:1, TRACK_WORKS:1,
             AIRPORT:1, AIR_BASE:1, AIR_ARSENAL:1, AIR_WORKS:1,
             PORT:1, NAVY_BASE:1, NAVY_ARSENAL:1, NAVY_WORKS:1 },
-  AIR:    { PLAIN:1, FOREST:1, MOUNTAIN:1, ROAD:1, RAIL:1, RAIL_BRIDGE:1, RAIL_RUINED:1, RAIL_BRIDGE_RUINED:1, SEA_RAIL:1, SEA_RAIL_RUINED:1, BRIDGE:1, BRIDGE_RUINED:1, CITY:1, FACTORY:1, AIRPORT:1, PORT:1, CAPITAL:1, BIG_CITY:1, COMMERCE_CITY:1, AMMO_DEPOT:1, WHEEL_FACTORY:1, WHEEL_ARSENAL:1, WHEEL_WORKS:1, TRACK_FACTORY:1, TRACK_ARSENAL:1, TRACK_WORKS:1, AIR_BASE:1, AIR_ARSENAL:1, AIR_WORKS:1, NAVY_BASE:1, NAVY_ARSENAL:1, NAVY_WORKS:1, RUINS_CITY:1, RUINS_FACTORY:1, RUINS_AIRPORT:1, RUINS_PORT:1, SHOAL:1, REEF:1, RIVER:1, SEA:1, DEEP_SEA:1 }
+  AIR:    { PLAIN:1, FOREST:1, MOUNTAIN:1, ROAD:1, RAIL:1, RAIL_BRIDGE:1, RAIL_RUINED:1, RAIL_BRIDGE_RUINED:1, SEA_RAIL:1, SEA_RAIL_RUINED:1, SEA_RAIL_DRAW:1, SEA_RAIL_DRAW_RUINED:1, BRIDGE:1, BRIDGE_RUINED:1, CITY:1, FACTORY:1, AIRPORT:1, PORT:1, CAPITAL:1, BIG_CITY:1, COMMERCE_CITY:1, AMMO_DEPOT:1, WHEEL_FACTORY:1, WHEEL_ARSENAL:1, WHEEL_WORKS:1, TRACK_FACTORY:1, TRACK_ARSENAL:1, TRACK_WORKS:1, AIR_BASE:1, AIR_ARSENAL:1, AIR_WORKS:1, NAVY_BASE:1, NAVY_ARSENAL:1, NAVY_WORKS:1, RUINS_CITY:1, RUINS_FACTORY:1, RUINS_AIRPORT:1, RUINS_PORT:1, SHOAL:1, REEF:1, RIVER:1, SEA:1, DEEP_SEA:1 }
 };
 
 var ICONS = {
@@ -637,7 +641,7 @@ var TYPE = {
   AA_TANK: { name:'対空戦車', cat:'LAND', armorClass:'UV', cost:'TRACK_L', move:5, sight:4, armor:2, fuelMax:50, price:2500, prodTurns:2, weapons:[ W('対空機関砲', [1,1], false, {INF:10, UV:8, AV:6, US:6, AS:6, HE:12, AC:10}, {ammo:3}) ] },
   AA_MISSILE: { name:'対空ミサイル', cat:'LAND', armorClass:'UV', cost:'WHEEL', move:5, sight:5, armor:1, fuelMax:60, price:2000, prodTurns:3, weapons:[ W('地対空ミサイル', [2,4], true, {HE:14, AC:12}, {ammo:2}) ] },
   FRIGATE: { name:'フリゲート', cat:'SEA', armorClass:'US', cost:'SHIP_S', move:6, sight:4, armor:0, fuelMax:80, price:2000, prodTurns:2, weapons:[ W('主砲/爆雷', [1,1], false, {INF:4, UV:4, AV:4, US:4, HE:4, AC:3, SUB:6}, {ammo:3}) ] },
-  CHASER: { name:'駆潜艇', cat:'SEA', armorClass:'US', cost:'SHIP_S', move:6, sight:2, armor:0, fuelMax:60, price:1000, prodTurns:1, weapons:[ W('魚雷', [1,2], true, {US:6, AS:6}, {ammo:2}), W('爆雷', [1,1], false, {SUB:8}, {ammo:2}) ] },
+  CHASER: { name:'駆潜艇', cat:'SEA', lowProfile:true, armorClass:'US', cost:'SHIP_S', move:6, sight:2, armor:0, fuelMax:60, price:1000, prodTurns:1, weapons:[ W('魚雷', [1,2], true, {US:6, AS:6}, {ammo:2}), W('爆雷', [1,1], false, {SUB:8}, {ammo:2}) ] },
   DESTROYER: { name:'駆逐艦', cat:'SEA', armorClass:'US', cost:'SHIP_S', move:6, sight:4, armor:2, fuelMax:80, price:2500, prodTurns:2, weapons:[ W('艦砲/HH', [1,2], true, {INF:6, UV:8, AV:6, US:6, AS:4, HE:9, AC:8, SUB:6}, {ammo:3}), W('副砲/爆雷', [1,1], false, {INF:4, UV:4, US:4, HE:8, AC:7, SUB:8}, {ammo:3}) ] },
   AA_DESTROYER: { name:'対空駆逐艦', cat:'SEA', armorClass:'US', cost:'SHIP_S', move:7, sight:5, armor:1, fuelMax:80, price:3000, prodTurns:2, weapons:[ W('艦砲/HH', [1,3], true, {INF:6, UV:6, AV:4, US:4, HE:11, AC:10, SUB:4}, {ammo:2}), W('副砲/爆雷', [1,1], false, {INF:4, UV:4, US:4, HE:10, AC:9, SUB:6}, {ammo:2}) ] },
   LIGHT_CRUISER: { name:'軽巡洋艦', cat:'SEA', armorClass:'AS', cost:'SHIP_L', move:5, sight:3, armor:3, fuelMax:70, price:4000, prodTurns:3, weapons:[ W('主砲', [2,3], true, {INF:10, UV:10, AV:8, US:8, AS:6, HE:7, AC:6}, {ammo:4}), W('副砲', [1,1], false, {INF:8, UV:8, AV:6, US:6, AS:4, HE:6, AC:5}, {ammo:2}) ] },
@@ -645,9 +649,9 @@ var TYPE = {
   // 巡洋戦艦: 戦艦より移動高速、装甲4 (戦艦5・重巡4)、間接射程2-5+直接1
   BATTLE_CRUISER: { name:'巡洋戦艦', cat:'SEA', armorClass:'AS', cost:'SHIP_L', move:5, sight:2, armor:4, fuelMax:60, price:8000, prodTurns:4, weapons:[ W('主砲', [2,5], true, {INF:12, UV:12, AV:10, US:10, AS:8, HE:1, AC:0}, {ammo:3, vsFacility:10}), W('副砲', [1,1], false, {INF:10, UV:10, AV:8, US:8, AS:6, HE:0, AC:0}, {ammo:3}) ] },
   BATTLESHIP: { name:'戦艦', cat:'SEA', armorClass:'AS', cost:'SHIP_L', move:4, sight:1, armor:5, fuelMax:50, price:10000, prodTurns:5, weapons:[ W('主砲', [2,5], true, {INF:14, UV:14, AV:12, US:12, AS:10, HE:3, AC:2}, {ammo:2, vsFacility:12}), W('副砲', [1,1], false, {INF:12, UV:12, AV:10, US:10, AS:8, HE:2, AC:1}, {ammo:4}) ] },
-  SUBMARINE: { name:'潜水艦', cat:'SEA', armorClass:'US', cost:'SHIP_S', move:4, sight:3, armor:0, fuelMax:70, canSubmerge:true, price:4500, prodTurns:2, weapons:[ W('通常魚雷', [1,2], false, {US:10, AS:8, SUB:4}, {ammo:3}), W('音響魚雷', [1,3], true, {US:14, AS:12, SUB:8}, {ammo:3}) ] },
+  SUBMARINE: { name:'潜水艦', cat:'SEA', lowProfile:true, armorClass:'US', cost:'SHIP_S', move:4, sight:3, armor:0, fuelMax:70, canSubmerge:true, price:4500, prodTurns:2, weapons:[ W('通常魚雷', [1,2], false, {US:10, AS:8, SUB:4}, {ammo:3}), W('音響魚雷', [1,3], true, {US:14, AS:12, SUB:8}, {ammo:3}) ] },
   // 攻撃型潜水艦: 対潜特化潜水艦 (軍港以上で生産)
-  ATTACK_SUBMARINE: { name:'攻撃型潜水艦', cat:'SEA', armorClass:'US', cost:'SHIP_S', move:4, sight:3, armor:1, fuelMax:80, canSubmerge:true, price:6000, prodTurns:3, weapons:[ W('中距離魚雷', [1,2], false, {US:6, AS:4, SUB:8}, {ammo:3}), W('誘導魚雷', [1,3], true, {US:10, AS:8, SUB:12}, {ammo:3}) ] },
+  ATTACK_SUBMARINE: { name:'攻撃型潜水艦', cat:'SEA', lowProfile:true, armorClass:'US', cost:'SHIP_S', move:4, sight:3, armor:1, fuelMax:80, canSubmerge:true, price:6000, prodTurns:3, weapons:[ W('中距離魚雷', [1,2], false, {US:6, AS:4, SUB:8}, {ammo:3}), W('誘導魚雷', [1,3], true, {US:10, AS:8, SUB:12}, {ammo:3}) ] },
   FIGHTER: { name:'戦闘機', cat:'AIR', armorClass:'AC', cost:'AIR', move:8, sight:4, armor:1, fuelMax:60, price:10000, prodTurns:3, weapons:[ W('空対空ミサイル', [1,2], true, {HE:14, AC:12}, {ammo:3}), W('機銃', [1,1], false, {INF:4, UV:6, US:6, HE:10, AC:8}, {ammo:4}) ] },
   BOMBER: { name:'爆撃機', cat:'AIR', armorClass:'AC', cost:'AIR', move:6, sight:3, armor:3, fuelMax:50, price:15000, prodTurns:3, weapons:[ W('爆弾', [1,1], false, {INF:12, UV:10, AV:8, US:8, AS:6, HE:0, AC:0}, {ammo:2, vsFacility:14}) ] },
   ATTACKER: { name:'近接支援機', cat:'AIR', armorClass:'AC', cost:'AIR', move:7, sight:3, armor:3, fuelMax:60, price:15000, prodTurns:3, weapons:[ W('空対地ミサイル', [1,1], false, {INF:8, UV:12, AV:12, US:6, AS:6, HE:0, AC:0}, {ammo:2, vsFacility:8}), W('機関砲', [1,1], false, {INF:10, UV:10, AV:10, US:4, AS:4, HE:12, AC:0}, {ammo:5}) ] },
@@ -671,9 +675,9 @@ var TYPE = {
   SPG: { name:'自走砲', cat:'LAND', armorClass:'UV', cost:'TRACK_L', move:5, sight:2, armor:1, fuelMax:50, price:3000, prodTurns:2, weapons:[ W('榴弾砲', [2,4], true, {INF:8, UV:8, AV:8, US:8, AS:6, HE:0, AC:0}, {ammo:3, vsFacility:6}) ] },
   MLRS: { name:'ロケット砲', cat:'LAND', armorClass:'UV', cost:'TRACK_H', move:4, sight:2, armor:1, fuelMax:50, price:5000, prodTurns:3, weapons:[ W('多連装ロケット', [3,5], true, {INF:10, UV:10, AV:8, US:8, AS:6, HE:0, AC:0}, {ammo:3, vsFacility:6}) ] },
 
-  TRANSPORT_SHIP: { name:'輸送船', cat:'SEA', armorClass:'US', cost:'SHIP_T', move:5, sight:2, armor:1, fuelMax:70, capacity:2, canCarry:'LAND', note:'陸ユニット2輸送、浅瀬OK', price:3000, prodTurns:2, weapons:[] },
-  OILER: { name:'給油艦', cat:'SEA', armorClass:'US', cost:'SHIP_T', move:5, sight:2, armor:1, fuelMax:70, isSupply:true, supplyTarget:['SEA'], supplyFuel:true, supplyFuelMax:1000, supplyAmmo:false, note:'隣接海上ユニットに燃料のみ補給、浅瀬OK。燃料庫1000', price:4000, prodTurns:2, weapons:[] },
-  AMMO_SHIP: { name:'補給艦', cat:'SEA', armorClass:'US', cost:'SHIP_T', move:5, sight:2, armor:1, fuelMax:70, isSupply:true, supplyTarget:['SEA'], supplyFuel:false, supplyAmmo:true, supplyAmmoMax:40, note:'隣接海上ユニットに弾薬のみ補給、浅瀬OK。弾薬庫40。燃料補給は給油艦が担当', price:4000, prodTurns:2, weapons:[] },
+  TRANSPORT_SHIP: { name:'輸送船', cat:'SEA', lowProfile:true, armorClass:'US', cost:'SHIP_T', move:5, sight:2, armor:1, fuelMax:70, capacity:2, canCarry:'LAND', note:'陸ユニット2輸送、浅瀬OK', price:3000, prodTurns:2, weapons:[] },
+  OILER: { name:'給油艦', cat:'SEA', lowProfile:true, armorClass:'US', cost:'SHIP_T', move:5, sight:2, armor:1, fuelMax:70, isSupply:true, supplyTarget:['SEA'], supplyFuel:true, supplyFuelMax:1000, supplyAmmo:false, note:'隣接海上ユニットに燃料のみ補給、浅瀬OK。燃料庫1000', price:4000, prodTurns:2, weapons:[] },
+  AMMO_SHIP: { name:'補給艦', cat:'SEA', lowProfile:true, armorClass:'US', cost:'SHIP_T', move:5, sight:2, armor:1, fuelMax:70, isSupply:true, supplyTarget:['SEA'], supplyFuel:false, supplyAmmo:true, supplyAmmoMax:40, note:'隣接海上ユニットに弾薬のみ補給、浅瀬OK。弾薬庫40。燃料補給は給油艦が担当', price:4000, prodTurns:2, weapons:[] },
   LIGHT_CARRIER: { name:'軽空母', cat:'SEA', armorClass:'US', cost:'SHIP_L', move:4, sight:3, armor:2, fuelMax:99, capacity:2, canCarry:'AIR', quickDeploy:true, supplyFuel:true, supplyFuelMax:300, supplyAmmo:true, supplyAmmoMax:15, carrierHeal:1, note:'2機搭載・搭載機に燃料/弾薬補給(燃料庫300/弾薬庫15)・搭載中航空+1HP/T', price:5000, prodTurns:3, weapons:[ W('艦対空ミサイル', [2,2], true, {HE:4, AC:2}, {ammo:5}), W('機銃', [1,1], false, {INF:4, UV:4, HE:4, AC:2}, {infiniteAmmo:true}) ] },
   CARRIER: { name:'空母', cat:'SEA', armorClass:'AS', cost:'SHIP_L', move:4, sight:3, armor:3, fuelMax:99, capacity:4, canCarry:'AIR', quickDeploy:true, supplyFuel:true, supplyFuelMax:500, supplyAmmo:true, supplyAmmoMax:25, carrierHeal:2, note:'4機搭載・搭載機に燃料/弾薬補給(燃料庫500/弾薬庫25)・搭載中航空+2HP/T', price:12000, prodTurns:4, weapons:[ W('艦対空ミサイル', [2,4], true, {HE:6, AC:4}, {ammo:5}), W('機関砲', [1,1], false, {INF:6, UV:6, AV:4, US:4, HE:5, AC:3}, {infiniteAmmo:true}) ] },
   ARMORED_CARRIER: { name:'装甲空母', cat:'SEA', armorClass:'AS', cost:'SHIP_L', move:4, sight:3, armor:4, fuelMax:99, capacity:3, canCarry:'AIR', quickDeploy:true, supplyFuel:true, supplyFuelMax:400, supplyAmmo:true, supplyAmmoMax:20, carrierHeal:2, note:'3機搭載・搭載機に燃料/弾薬補給(燃料庫400/弾薬庫20)・搭載中航空+2HP/T', price:15000, prodTurns:5, weapons:[ W('艦対空ミサイル', [2,4], true, {HE:6, AC:4}, {ammo:5}), W('機関砲', [1,1], false, {INF:8, UV:8, AV:6, US:6, AS:4, HE:6, AC:4}, {infiniteAmmo:true}) ] },
@@ -708,7 +712,7 @@ var CHARS = {
   '!':'RUINS_FACTORY', '?':'RUINS_AIRPORT', ';':'RUINS_CITY', ':':'RUINS_PORT',
   's':'SHOAL', 'r':'RIVER', 'b':'BRIDGE', '~':'SEA',
   'L':'RAIL', 'l':'RAIL_BRIDGE', 'q':'RAIL_RUINED', 'Q':'RAIL_BRIDGE_RUINED', 'j':'BRIDGE_RUINED',
-  'V':'SEA_RAIL', 'v':'SEA_RAIL_RUINED',
+  'V':'SEA_RAIL', 'v':'SEA_RAIL_RUINED', 'D':'SEA_RAIL_DRAW', 'd':'SEA_RAIL_DRAW_RUINED',
   '#':'REEF', '_':'DEEP_SEA'
 };
 
@@ -2580,10 +2584,18 @@ function unitAtVisible(x, y, viewerOwner){
 }
 function inBounds(x,y){ return x>=0 && x<W && y>=0 && y<H; }
 function moveCost(type, terId){
-  var c = COST[TYPE[type].cost][terId];
-  // 海上鉄橋・海上橋脚: 保線通路があるので工兵だけは歩いて渡れる。
-  // (壊れた海上橋脚を直しに行く手段がないと、真ん中で切られた鉄橋が永久に復旧できないため)
-  if(c === undefined && TYPE[type].isEngineer && TER[terId] && TER[terId].isSeaRail) return 3;
+  var t = TYPE[type];
+  var c = COST[t.cost][terId];
+  var ter = TER[terId];
+  if(ter && ter.isSeaRail){
+    // 海上鉄橋の下をくぐれるかは「艦の高さと幅」で決まる。
+    //  ・潜水艦/駆潜艇/補助艦艇 (lowProfile): 桁下を素通りできる → 1
+    //  ・それ以外の艦艇: 可動橋の航路部分しか抜けられない (基本表で 可動橋2 / 他は不可)
+    //  ・工兵: 保線通路を歩いて渡れる → 3
+    //    (これが無いと、海の真ん中で切られた鉄橋を直しに行けず永久に復旧できない)
+    if(t.lowProfile) return 1;
+    if(t.isEngineer) return 3;
+  }
   return (c === undefined) ? Infinity : c;
 }
 function manhattan(x1,y1,x2,y2){ return Math.abs(x1-x2)+Math.abs(y1-y2); }
@@ -5935,9 +5947,8 @@ function aiProduceAndTakeOut(aiFaction, phase){
         var nx = carrier.x + deployDirs[di][0];
         var ny = carrier.y + deployDirs[di][1];
         if(!inBounds(nx, ny)) continue;
-        var costKey = cgT.cost;
-        var c = COST[costKey] && COST[costKey][M[ny][nx]];
-        if(c === undefined || c === Infinity) continue;
+        var c = moveCost(cg.type, M[ny][nx]);
+        if(c === Infinity) continue;
         if(unitAt(nx, ny)) continue;
         // 発艦は隣接マスならどこでも (距離は変わらず 1)
         bestDeploy = { x: nx, y: ny }; break;
@@ -7519,8 +7530,8 @@ function _aiFindNearestRepairPoint(unit, aiFaction){
     if(!ter || !ter.heal) continue;
     if(ter.healCat && ter.healCat !== t.cat) continue;
     // このユニットがその地形に侵入可能か (=向かえるか)
-    var c = COST[t.cost] && COST[t.cost][M[cy][cx]];
-    if(c === undefined || c === Infinity) continue;
+    var c = moveCost(unit.type, M[cy][cx]);
+    if(c === Infinity) continue;
     // 仕様書セクション2: 施設マスが他の自軍ユニットで埋まっていれば候補から除外
     // (自分自身がそのマスに居る場合は除外しない = その場で修理を受ける)
     var occupier = unitAt(cx, cy);
@@ -8164,9 +8175,7 @@ function aiComputeDangerScore(faction, x, y, selfUnit){
 // unit: 経路を計算する対象ユニット (コストカテゴリで通れる地形が決まる)
 // 注: ZOC や敵ユニット占有マスは考慮しない (純粋な地形通行可否のみ)
 function bfsPathDistances(targetX, targetY, unit){
-  var t = TYPE[unit.type];
-  var costTable = COST[t.cost];
-  if(!costTable) return {};
+  if(!COST[TYPE[unit.type].cost]) return {};
   var visited = {};
   var queue = [{ x: targetX, y: targetY, d: 0 }];
   visited[targetX+','+targetY] = 0;
@@ -8177,9 +8186,8 @@ function bfsPathDistances(targetX, targetY, unit){
       var nx = cur.x + dirs[di][0];
       var ny = cur.y + dirs[di][1];
       if(nx<0||ny<0||nx>=W||ny>=H) continue;
-      var terKey = M[ny][nx];
-      var c = costTable[terKey];
-      if(c === undefined || c === Infinity) continue;
+      var c = moveCost(unit.type, M[ny][nx]);
+      if(c === Infinity) continue;
       var nd = cur.d + c;
       var key = nx+','+ny;
       if(visited[key] !== undefined && visited[key] <= nd) continue;
@@ -8263,7 +8271,7 @@ function aiUnloadableTiles(carrier, cargoType){
     if(!inBounds(nx, ny)) continue;
     if(unitAt(nx, ny)) continue;
     var ter = M[ny][nx];
-    var c = COST[TYPE[cargoType].cost][ter];
+    var c = moveCost(cargoType, ter);
     if(c === Infinity) continue;
     result.push({ x: nx, y: ny, ter: ter });
   }
@@ -11597,6 +11605,8 @@ var BUILD_STAGE = {
   RAIL_BRIDGE_RUINED: { done: 'RAIL_BRIDGE', undone: 'RAIL_BRIDGE_RUINED' },
   SEA_RAIL:           { done: 'SEA_RAIL',    undone: 'SEA_RAIL_RUINED' },
   SEA_RAIL_RUINED:    { done: 'SEA_RAIL',    undone: 'SEA_RAIL_RUINED' },
+  SEA_RAIL_DRAW:        { done: 'SEA_RAIL_DRAW', undone: 'SEA_RAIL_DRAW_RUINED' },
+  SEA_RAIL_DRAW_RUINED: { done: 'SEA_RAIL_DRAW', undone: 'SEA_RAIL_DRAW_RUINED' },
   BRIDGE:             { done: 'BRIDGE',      undone: 'BRIDGE_RUINED' },
   BRIDGE_RUINED:      { done: 'BRIDGE',      undone: 'BRIDGE_RUINED' }
 };
@@ -12494,7 +12504,7 @@ var ROAD_CONNECT_TILES = {
 // 線路の描画 (枕木＋2本のレール)。隣接する線路・鉄橋・施設とつながる
 // 線路・鉄橋の描画本体
 // n/sN/e/w = つながっている向き、isBridge = 鉄橋なら川面と鋼の桁を下に敷く
-function railTilesSVG(n, sN, e, w, isBridge, isRuined, isSea){
+function railTilesSVG(n, sN, e, w, isBridge, isRuined, isSea, isDraw){
   if(!n && !sN && !e && !w){ n = true; sN = true; } // 孤立しているときは縦向きで描く
   var tieCol = '#5A4B36', railCol = '#3A3129';
   if(isRuined){ tieCol = '#6E6A5E'; railCol = '#77705F'; } // 廃線: 錆びて色が抜ける
@@ -12525,7 +12535,7 @@ function railTilesSVG(n, sN, e, w, isBridge, isRuined, isSea){
       parts.push('<rect x="23" y="1" width="7" height="3" fill="#5A626C" opacity="0.8"/>');
       parts.push('<rect x="23" y="28" width="7" height="3" fill="#5A626C" opacity="0.8"/>');
     }
-    if(isSea){
+    if(isSea && !isDraw){
       // 海中から立つコンクリートの橋脚 (高架橋であることを見せる)
       if(horiz){
         parts.push('<rect x="5" y="22.6" width="4" height="8" fill="#8C8A82" opacity="0.9"/>');
@@ -12534,6 +12544,17 @@ function railTilesSVG(n, sN, e, w, isBridge, isRuined, isSea){
         parts.push('<rect x="22.6" y="5" width="8" height="4" fill="#8C8A82" opacity="0.9"/>');
         parts.push('<rect x="22.6" y="23" width="8" height="4" fill="#8C8A82" opacity="0.9"/>');
       }
+    }
+    if(isDraw){
+      // 可動橋: 航路を空けるため橋脚を両端に寄せ、中央に旋回台を据える
+      if(horiz){
+        parts.push('<rect x="0.5" y="22.6" width="4" height="8" fill="#8C8A82" opacity="0.9"/>');
+        parts.push('<rect x="27.5" y="22.6" width="4" height="8" fill="#8C8A82" opacity="0.9"/>');
+      } else {
+        parts.push('<rect x="22.6" y="0.5" width="8" height="4" fill="#8C8A82" opacity="0.9"/>');
+        parts.push('<rect x="22.6" y="27.5" width="8" height="4" fill="#8C8A82" opacity="0.9"/>');
+      }
+      parts.push('<circle cx="16" cy="16" r="7.2" fill="#AEB6BF"/>');
     }
     tieCol = '#4A525C'; // 桁の上なので枕木は暗めの鋼色
   }
@@ -12570,6 +12591,13 @@ function railTilesSVG(n, sN, e, w, isBridge, isRuined, isSea){
   if(e) seg(true, 16, 32);
   if(n) seg(false, 0, 16);
   if(sN) seg(false, 16, 32);
+  if(isDraw){
+    // 旋回台の輪郭はレールの上に重ねて、可動区間だとひと目で分かるようにする
+    parts.push('<circle cx="16" cy="16" r="7.2" fill="none" stroke="#2E3640" stroke-width="1.2"/>');
+    parts.push('<circle cx="16" cy="16" r="2.4" fill="#2E3640"/>');
+    parts.push('<path d="M11.5,11.5 A6.4,6.4 0 0 1 20.5,11.5" fill="none" stroke="#E2B23C" stroke-width="1.2"/>');
+    parts.push('<path d="M20.5,20.5 A6.4,6.4 0 0 1 11.5,20.5" fill="none" stroke="#E2B23C" stroke-width="1.2"/>');
+  }
   return '<svg viewBox="0 0 32 32" width="100%" height="100%" style="position:absolute;inset:0;pointer-events:none;">' + parts.join('') + '</svg>';
 }
 
@@ -12583,7 +12611,7 @@ function railSVG(x, y){
   var tk = TER[M[y][x]] || {};
   return railTilesSVG(isRailish(x, y-1), isRailish(x, y+1), isRailish(x+1, y), isRailish(x-1, y),
                       (M[y][x] === 'RAIL_BRIDGE' || M[y][x] === 'RAIL_BRIDGE_RUINED' || !!tk.isSeaRail),
-                      !!tk.isRailRuined, !!tk.isSeaRail);
+                      !!tk.isRailRuined, !!tk.isSeaRail, !!tk.isDrawBridge);
 }
 
 function roadSVG(x, y){
@@ -13321,8 +13349,10 @@ function renderTerrainTab(){
     ['路盤', 0, '#8E8878', { INF:1, WHEEL:1, TRACK_L:1, TRACK_H:1 }, '線路が壊れた状態。列車は走れない。工兵の工事(HP分)で線路に戻る'],
     ['鉄橋', 0, '#877559', { INF:1, WHEEL:1, TRACK_L:1, TRACK_H:1 }, '川に架かる線路。列車系のみ0.5'],
     ['橋脚', 0, '#7C7263', { INF:3, WHEEL:'×', TRACK_L:'×', TRACK_H:'×' }, '鉄橋が壊れた状態。列車は走れない。工兵の工事で鉄橋に戻る'],
-    ['海上鉄橋', 0, '#5F7E96', { INF:'×', WHEEL:'×', TRACK_L:'×', TRACK_H:'×' }, '島と島を結ぶ高架橋。列車0.5、艦船は下をくぐれる。工兵のみ保線通路を通行可(3)'],
-    ['海上橋脚', 0, '#54708A', { INF:'×', WHEEL:'×', TRACK_L:'×', TRACK_H:'×' }, '海上鉄橋が壊れた状態。列車は走れず、海峡が艦船に開放される'],
+    ['海上鉄橋', 0, '#5F7E96', { INF:'×', WHEEL:'×', TRACK_L:'×', TRACK_H:'×' }, '島と島を結ぶ高架橋。列車0.5、工兵3。桁下を抜けられるのは潜水艦・駆潜艇・補助艦艇のみ(1)'],
+    ['海上橋脚', 0, '#54708A', { INF:'×', WHEEL:'×', TRACK_L:'×', TRACK_H:'×' }, '海上鉄橋が壊れた状態。列車は走れない。艦船の通行条件は海上鉄橋と同じ'],
+    ['可動橋', 0, '#6B88A0', { INF:'×', WHEEL:'×', TRACK_L:'×', TRACK_H:'×' }, '航路が開いた区間。ここだけは全ての艦船が通れる(2)。列車0.5、工兵3'],
+    ['可動橋脚', 0, '#5C7690', { INF:'×', WHEEL:'×', TRACK_L:'×', TRACK_H:'×' }, '可動橋が壊れた状態。桁が航路に落ち、主力艦艇も通れなくなる'],
     ['浅瀬', 0, '#B5DDE6', { INF:1, WHEEL:1, TRACK_L:2, TRACK_H:3 }, '輸送船・給油艦・補給艦・補給艦のみ進入可'],
     ['川',   0, '#A8C8DC', { INF:3, WHEEL:'×', TRACK_L:'×', TRACK_H:'×' }, '歩兵のみ通行可。水陸両用戦車は装輪扱いで通行可'],
     ['海',   0, '#7BB0DA', { INF:'×', WHEEL:'×', TRACK_L:'×', TRACK_H:'×' }, '艦船・航空のみ。水深無限']
@@ -15374,7 +15404,7 @@ function edRailSVG(x, y){
   var tk = TER[ed.cells[y][x]] || {};
   return railTilesSVG(isRailish(x, y-1), isRailish(x, y+1), isRailish(x+1, y), isRailish(x-1, y),
                       (ed.cells[y][x] === 'RAIL_BRIDGE' || ed.cells[y][x] === 'RAIL_BRIDGE_RUINED' || !!tk.isSeaRail),
-                      !!tk.isRailRuined, !!tk.isSeaRail);
+                      !!tk.isRailRuined, !!tk.isSeaRail, !!tk.isDrawBridge);
 }
 
 function edRoadSVG(x, y){
@@ -15415,7 +15445,7 @@ function edApplyTool(x, y){
     // 地形が変わったらユニット配置を再検証 (cost が無限なら除去)
     var u = edUnitAt(x, y);
     if(u){
-      var c = COST[TYPE[u.type].cost][ed.selectedTerrain];
+      var c = moveCost(u.type, ed.selectedTerrain);
       if(c === Infinity){
         ed.units = ed.units.filter(function(uu){ return !(uu.x===x && uu.y===y); });
       }
@@ -15425,7 +15455,7 @@ function edApplyTool(x, y){
     ed.units = ed.units.filter(function(u){ return !(u.x===x && u.y===y); });
     // 配置可能か確認
     var t = ed.cells[y][x];
-    var c = COST[TYPE[ed.selectedUnit].cost][t];
+    var c = moveCost(ed.selectedUnit, t);
     if(c !== Infinity){
       ed.units.push({ type: ed.selectedUnit, owner: ed.selectedOwner, x: x, y: y });
     } else {
@@ -15470,7 +15500,7 @@ function edApplyTool(x, y){
       // ユニット再検証
       var uu = edUnitAt(px, py);
       if(uu){
-        var cc = COST[TYPE[uu.type].cost][ed.selectedTerrain];
+        var cc = moveCost(uu.type, ed.selectedTerrain);
         if(cc === Infinity){
           ed.units = ed.units.filter(function(z){ return !(z.x===px && z.y===py); });
         }
@@ -15632,7 +15662,7 @@ function edApplyRect(x1, y1, x2, y2){
       }
       var uu = edUnitAt(x, y);
       if(uu){
-        var cc = COST[TYPE[uu.type].cost][ed.selectedTerrain];
+        var cc = moveCost(uu.type, ed.selectedTerrain);
         if(cc === Infinity){
           ed.units = ed.units.filter(function(z){ return !(z.x===x && z.y===y); });
         }
@@ -15646,7 +15676,7 @@ function edRenderPalette(){
   var pal = document.getElementById('ed-palette');
   pal.innerHTML = '';
   if(ed.tool === 'terrain' || ed.tool === 'bucket' || ed.tool === 'rect'){
-    var terKeys = ['PLAIN','FOREST','MOUNTAIN','ROAD','BRIDGE','BRIDGE_RUINED','RAIL','RAIL_BRIDGE','RAIL_RUINED','RAIL_BRIDGE_RUINED','SEA_RAIL','SEA_RAIL_RUINED','CITY','BIG_CITY','COMMERCE_CITY','AMMO_DEPOT','CAPITAL','FACTORY','WHEEL_FACTORY','TRACK_FACTORY','WHEEL_ARSENAL','TRACK_ARSENAL','WHEEL_WORKS','TRACK_WORKS','AIRPORT','AIR_BASE','AIR_ARSENAL','AIR_WORKS','PORT','NAVY_BASE','NAVY_ARSENAL','NAVY_WORKS','SHOAL','REEF','RIVER','SEA','DEEP_SEA','RUINS_CITY','RUINS_FACTORY','RUINS_AIRPORT','RUINS_PORT'];
+    var terKeys = ['PLAIN','FOREST','MOUNTAIN','ROAD','BRIDGE','BRIDGE_RUINED','RAIL','RAIL_BRIDGE','RAIL_RUINED','RAIL_BRIDGE_RUINED','SEA_RAIL','SEA_RAIL_RUINED','SEA_RAIL_DRAW','SEA_RAIL_DRAW_RUINED','CITY','BIG_CITY','COMMERCE_CITY','AMMO_DEPOT','CAPITAL','FACTORY','WHEEL_FACTORY','TRACK_FACTORY','WHEEL_ARSENAL','TRACK_ARSENAL','WHEEL_WORKS','TRACK_WORKS','AIRPORT','AIR_BASE','AIR_ARSENAL','AIR_WORKS','PORT','NAVY_BASE','NAVY_ARSENAL','NAVY_WORKS','SHOAL','REEF','RIVER','SEA','DEEP_SEA','RUINS_CITY','RUINS_FACTORY','RUINS_AIRPORT','RUINS_PORT'];
     var html = '<div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:4px;">';
     for(var i=0; i<terKeys.length; i++){
       var k = terKeys[i];
@@ -15659,7 +15689,7 @@ function edRenderPalette(){
         // 盤面と同じ描画を使う (横向きの一本として見せる)
         html += railTilesSVG(false, false, true, true,
           (k === 'RAIL_BRIDGE' || k === 'RAIL_BRIDGE_RUINED' || !!TER[k].isSeaRail),
-          !!TER[k].isRailRuined, !!TER[k].isSeaRail);
+          !!TER[k].isRailRuined, !!TER[k].isSeaRail, !!TER[k].isDrawBridge);
       } else if(TERRAIN_DECO[k]){
         html += TERRAIN_DECO[k];
       }
