@@ -4305,8 +4305,20 @@ function updateInfoPanel(){
   if(u.owner === 'P'){
     var src = getSupplySource(u);
     if(src){
-      var supplyType = (src.fuel && src.ammo) ? '燃料+弾薬' : (src.fuel ? '燃料のみ' : '弾薬のみ');
-      uhtml += '<div style="margin-top:3px;color:#0F6E56;font-size:11px;">⛽ 補給中: '+supplyType+' (' + src.name + ')</div>';
+      // 補給元が補給ユニットで在庫が尽きている場合は、その旨を知らせる
+      // (「補給中」とだけ出ると、届いていないのに届いているように見えるため)
+      var lackF = !!(src.fuel && src.fuelFromUnit && _supplyStockLeft(src.fuelFromUnit, 'fuel') <= 0);
+      var lackA = !!(src.ammo && src.ammoFromUnit && _supplyStockLeft(src.ammoFromUnit, 'ammo') <= 0);
+      var okF = src.fuel && !lackF, okA = src.ammo && !lackA;
+      if(okF || okA){
+        var supplyType = (okF && okA) ? '燃料+弾薬' : (okF ? '燃料のみ' : '弾薬のみ');
+        uhtml += '<div style="margin-top:3px;color:#0F6E56;font-size:11px;">⛽ 補給中: '+supplyType+' (' + src.name + ')</div>';
+      }
+      if(lackF || lackA){
+        var lackTxt = (lackF && lackA) ? '燃料と弾薬' : (lackF ? '燃料' : '弾薬');
+        var lackSrc = TYPE[(lackF ? src.fuelFromUnit : src.ammoFromUnit).type].name;
+        uhtml += '<div style="margin-top:3px;color:#A32D2D;font-size:11px;">⚠ ' + lackSrc + 'の' + lackTxt + 'が不足しています（補給できません）</div>';
+      }
     }
   }
   var infoChain = trainOf(u);
