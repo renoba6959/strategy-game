@@ -1760,6 +1760,20 @@ function supplyRouteUnload(u, pos){
   return moved;
 }
 
+// 在庫が満タンか (運べる種類がすべて上限に達しているか)
+function supplyStockFull(u){
+  var t = TYPE[u.type];
+  if(typeof t.supplyFuelMax === 'number'){
+    var ff = (typeof u.supplyFuelCount === 'number') ? u.supplyFuelCount : t.supplyFuelMax;
+    if(ff < t.supplyFuelMax) return false;
+  }
+  if(typeof t.supplyAmmoMax === 'number'){
+    var aa = (typeof u.supplyAmmoCount === 'number') ? u.supplyAmmoCount : t.supplyAmmoMax;
+    if(aa < t.supplyAmmoMax) return false;
+  }
+  return true;
+}
+
 // 在庫が乏しいか (運べるものがどれも上限の2割以下)
 // 前線の駐留地点から積み元へ戻る判断に使う。空になる前に動くので補給の切れ目が短い
 function supplyStockLow(u){
@@ -4338,13 +4352,13 @@ function applyTurnStart(owner){
         if(u.ammo[j] < (w.ammo !== undefined ? w.ammo : 6)){ needAmmo = true; break; }
       }
     }
-    // 補給ユニット自身の弾薬庫(空母・補給車・補給艦)が満タンでなければ、それも補給対象
-    if(t.supplyAmmo && typeof t.supplyAmmoMax === 'number'){
+    // 空母の弾薬庫が満タンでなければ、それも補給対象 (補給ユニットの積載庫は対象外)
+    if(t.supplyAmmo && typeof t.supplyAmmoMax === 'number' && !t.isSupply){
       var curCount = (typeof u.supplyAmmoCount === 'number') ? u.supplyAmmoCount : t.supplyAmmoMax;
       if(curCount < t.supplyAmmoMax) needAmmo = true;
     }
-    // 補給ユニット自身の燃料庫(空母・補給車・給油艦・空中給油機)が満タンでなければ、それも補給対象
-    if(t.supplyFuel && typeof t.supplyFuelMax === 'number'){
+    // 空母の燃料庫が満タンでなければ、それも補給対象 (補給ユニットの積載庫は対象外)
+    if(t.supplyFuel && typeof t.supplyFuelMax === 'number' && !t.isSupply){
       var curFuelCount = (typeof u.supplyFuelCount === 'number') ? u.supplyFuelCount : t.supplyFuelMax;
       if(curFuelCount < t.supplyFuelMax) needFuel = true;
     }
@@ -4367,9 +4381,9 @@ function applyTurnStart(owner){
           didSupply = true;
           if(fGive < fuelNeed) partial = true;
         }
-        // 補給先が空母・補給ユニットなどの「燃料庫保有ユニット」なら、その燃料庫も補充
-        // (1ポイント = 1ポイント)
-        if(fCounter > 0 && t.supplyFuel && typeof t.supplyFuelMax === 'number'){
+        // 補給先が空母なら、その燃料庫も補充 (1ポイント = 1ポイント)
+        // 補給ユニット同士で在庫を移し替えるのは、運搬の意味がなくなるので行わない
+        if(fCounter > 0 && t.supplyFuel && typeof t.supplyFuelMax === 'number' && !t.isSupply){
           var ownFuelCount = (typeof u.supplyFuelCount === 'number') ? u.supplyFuelCount : t.supplyFuelMax;
           var ownFuelNeed = t.supplyFuelMax - ownFuelCount;
           if(ownFuelNeed > 0){
@@ -4395,8 +4409,12 @@ function applyTurnStart(owner){
           }
           if(u.fuel < fuelMax) partial = true;
         }
-        // 補給ユニット自身の燃料庫も rate に応じて補給 (これも施設の備蓄から引く)
-        if(t.supplyFuel && typeof t.supplyFuelMax === 'number'){
+        // 空母の燃料庫も rate に応じて補給 (これも施設の備蓄から引く)
+        // ただし補給ユニット (isSupply) の積載庫はここでは補充しない。
+        // 補充を自動でやると、せっかく運んで降ろした物資を次のターンにその施設から
+        // 積み直すことになり、物資が行ったり来たりするだけになるため。
+        // 積載庫に入れるのは「📦 積む」とルートの積み元だけ (supplyRouteLoad)。
+        if(t.supplyFuel && typeof t.supplyFuelMax === 'number' && !t.isSupply){
           var ownFuelCnt = (typeof u.supplyFuelCount === 'number') ? u.supplyFuelCount : t.supplyFuelMax;
           if(ownFuelCnt < t.supplyFuelMax){
             var wantFuelStock = Math.min(t.supplyFuelMax - ownFuelCnt, Math.ceil(t.supplyFuelMax * fRate));
@@ -4440,9 +4458,9 @@ function applyTurnStart(owner){
           var w = t.weapons[j];
           if(u.ammo[j] === undefined) u.ammo[j] = w.infiniteAmmo ? -1 : (w.ammo !== undefined ? w.ammo : 6);
         }
-        // 補給先が空母・補給ユニットなどの「弾薬庫保有ユニット」なら、その弾薬庫も補充する
-        // (1ポイント = 1ポイント、つまり 補給艦の1から空母の1へ)
-        if(counter > 0 && t.supplyAmmo && typeof t.supplyAmmoMax === 'number'){
+        // 補給先が空母なら、その弾薬庫も補充する (1ポイント = 1ポイント、補給艦の1から空母の1へ)
+        // 補給ユニット同士で在庫を移し替えるのは、運搬の意味がなくなるので行わない
+        if(counter > 0 && t.supplyAmmo && typeof t.supplyAmmoMax === 'number' && !t.isSupply){
           var ownCount = (typeof u.supplyAmmoCount === 'number') ? u.supplyAmmoCount : t.supplyAmmoMax;
           var ownNeed = t.supplyAmmoMax - ownCount;
           if(ownNeed > 0){
@@ -4489,8 +4507,8 @@ function applyTurnStart(owner){
           var w = t.weapons[j];
           if(u.ammo[j] === undefined) u.ammo[j] = w.infiniteAmmo ? -1 : (w.ammo !== undefined ? w.ammo : 6);
         }
-        // 空母・補給ユニット自身の弾薬庫も rate に応じて補給
-        if(t.supplyAmmo && typeof t.supplyAmmoMax === 'number'){
+        // 空母の弾薬庫も rate に応じて補給 (補給ユニットの積載庫は上と同じ理由で対象外)
+        if(t.supplyAmmo && typeof t.supplyAmmoMax === 'number' && !t.isSupply){
           var ownCnt = (typeof u.supplyAmmoCount === 'number') ? u.supplyAmmoCount : t.supplyAmmoMax;
           if(ownCnt < t.supplyAmmoMax){
             var wantStock = Math.min(t.supplyAmmoMax - ownCnt, Math.ceil(t.supplyAmmoMax * rate));
@@ -8739,6 +8757,23 @@ function aiScoutAction(u, aiFaction){
 function aiSupplyAction(u, aiFaction){
   var t = TYPE[u.type];
   if(!t.isSupply) return false;
+
+  // 積載庫の自動補充は廃止した (運んだ物資をその施設から積み直してしまうため) ので、
+  // AI は拠点に着いたら自分で積み込む。プレイヤーの「📦 積む」に相当する。
+  // 積めるのは備蓄を作れる施設 (工場系・港系・空港系・弾薬工廠) だけ。
+  // 都市は運び先なので、そこで積むと運んだものを持ち帰ることになる。
+  if(canCarrySupplyStock(u) && !supplyStockFull(u)){
+    var loadFacs = routeFacilitiesAround(u);
+    for(var lfi=0; lfi<loadFacs.length; lfi++){
+      var lter = TER[M[loadFacs[lfi].y][loadFacs[lfi].x]];
+      if(!lter || (!lter.slots && !lter.ammoDepot)) continue;
+      var gotStock = supplyRouteLoad(u, loadFacs[lfi]);
+      if(gotStock > 0){
+        if(window.AI_DEBUG) try{ console.log('  → supply: '+lter.name+'('+loadFacs[lfi].x+','+loadFacs[lfi].y+')で積み込み '+gotStock); }catch(e){}
+        break;
+      }
+    }
+  }
 
   // === 仕様書セクション8 補給ユニットの行動 ===
 
@@ -13247,16 +13282,48 @@ function render(){
 var routeHoverX = null, routeHoverY = null;
 function routeCellCenter(x, y){ return { cx: 22 + 43 * x, cy: 22 + 43 * y }; }
 
+// ルートで実際に通るマスを求める
+// ルートの自動移動は bfsPathDistances の距離が小さいマスへ進むので、同じ距離場を
+// 下っていけば、実際にたどるマスの並びがそのまま得られる。
+// (他ユニットによる迂回までは織り込まない。塞がれていればその都度ずれる)
+function supplyRoutePathTiles(u, fromPos, toPos){
+  if(!u || !fromPos || !toPos) return null;
+  if(!COST[TYPE[u.type].cost]) return null;
+  var dist = bfsPathDistances(toPos.x, toPos.y, u);
+  var cd = dist[fromPos.x+','+fromPos.y];
+  if(cd === undefined) return null;   // そもそも到達できない
+  var path = [{ x: fromPos.x, y: fromPos.y }];
+  var cx = fromPos.x, cy = fromPos.y;
+  var dirs = [[1,0],[-1,0],[0,1],[0,-1]];
+  for(var guard=0; guard<600 && cd > 0; guard++){
+    var best = null, bestD = cd, bestTie = Infinity;
+    for(var i=0; i<dirs.length; i++){
+      var nx = cx + dirs[i][0], ny = cy + dirs[i][1];
+      if(!inBounds(nx, ny)) continue;
+      var d = dist[nx+','+ny];
+      if(d === undefined || d >= cd) continue;
+      var tie = manhattan(nx, ny, toPos.x, toPos.y);
+      if(d < bestD || (d === bestD && tie < bestTie)){ bestD = d; bestTie = tie; best = { x: nx, y: ny }; }
+    }
+    if(!best) break;
+    path.push(best);
+    cx = best.x; cy = best.y; cd = bestD;
+  }
+  return path;
+}
+
 function renderRouteOverlay(){
   var board = document.getElementById('board');
   if(!board) return;
   var old = document.getElementById('route-overlay');
   if(old && old.parentNode) old.parentNode.removeChild(old);
 
-  var lines = [];
+  // legs = 描く区間。active=いま向かっている区間 / それ以外は復路として薄く描く
+  var legs = [], marks = [];
   if(routeSetMode && routeSetMode.from && routeHoverX !== null){
     // 指定中: 積み元からカーソルまで
-    lines.push({ from: routeSetMode.from, to: { x: routeHoverX, y: routeHoverY }, pending: true });
+    legs.push({ unit: routeSetMode.unit, from: routeSetMode.from, to: { x: routeHoverX, y: routeHoverY }, pending: true, active: true });
+    marks.push({ from: routeSetMode.from, to: { x: routeHoverX, y: routeHoverY }, point: false, unit: null });
   } else {
     var seen = {};
     var cands = [];
@@ -13267,43 +13334,68 @@ function renderRouteOverlay(){
       var u = cands[i];
       if(!u || u.owner !== 'P' || !u.route || seen[u.id]) continue;
       seen[u.id] = true;
-      lines.push({ from: u.route.from, to: u.route.to, unit: u, point: (u.route.toKind === 'point') });
+      var goingFrom = (u.routeTarget === 'from');
+      var tgt   = goingFrom ? u.route.from : u.route.to;
+      var other = goingFrom ? u.route.to   : u.route.from;
+      // いまの位置 → 目的地 (往路)
+      legs.push({ unit: u, from: { x: u.x, y: u.y }, to: tgt, active: true });
+      // 目的地 → もう一方の端 (復路)
+      legs.push({ unit: u, from: tgt, to: other, active: false });
+      marks.push({ from: u.route.from, to: u.route.to, point: (u.route.toKind === 'point'), unit: u });
     }
   }
-  if(lines.length === 0) return;
+  if(legs.length === 0) return;
 
   var w = 43 * W + 1, h = 43 * H + 1;
-  var svg = '<svg id="route-overlay" width="'+w+'" height="'+h+'" viewBox="0 0 '+w+' '+h+'" '
-    + 'style="position:absolute;left:0;top:0;pointer-events:none;z-index:5;">'
+  var svg = '<svg id="route-overlay" width="'+w+'" height="'+h+'" style="position:absolute; left:0; top:0; pointer-events:none; z-index:5;">'
     + '<defs><marker id="route-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto">'
     + '<path d="M0,0 L10,5 L0,10 z" fill="#BA7517"/></marker></defs>';
-  for(var li=0; li<lines.length; li++){
-    var l = lines[li];
-    var a = routeCellCenter(l.from.x, l.from.y);
-    var b = routeCellCenter(l.to.x, l.to.y);
-    var dx = b.cx - a.cx, dy = b.cy - a.cy;
-    var len = Math.sqrt(dx*dx + dy*dy) || 1;
-    // 端の印と重ならないよう、線を少し内側で止める
-    var sx = a.cx + dx/len * 12, sy = a.cy + dy/len * 12;
-    var ex = b.cx - dx/len * 15, ey = b.cy - dy/len * 15;
-    var col = l.pending ? '#BA7517' : '#0F6E56';
-    svg += '<line x1="'+sx+'" y1="'+sy+'" x2="'+ex+'" y2="'+ey+'" stroke="#ffffff" stroke-width="6" stroke-linecap="round" opacity="0.65"/>';
-    svg += '<line x1="'+sx+'" y1="'+sy+'" x2="'+ex+'" y2="'+ey+'" stroke="'+col+'" stroke-width="3" '
-      + 'stroke-dasharray="8 5" stroke-linecap="round" marker-end="url(#route-arrow)"/>';
-    // 積み元 (緑の輪)
+
+  for(var li=0; li<legs.length; li++){
+    var l = legs[li];
+    var col = l.pending ? '#BA7517' : (l.active ? '#0F6E56' : '#7FA894');
+    var tiles = supplyRoutePathTiles(l.unit, l.from, l.to);
+    if(!tiles || tiles.length < 2){
+      // 到達できない (または経路が出せない) → 直線を赤の破線で描いて知らせる
+      var a0 = routeCellCenter(l.from.x, l.from.y), b0 = routeCellCenter(l.to.x, l.to.y);
+      svg += '<line x1="'+a0.cx+'" y1="'+a0.cy+'" x2="'+b0.cx+'" y2="'+b0.cy+'" stroke="#ffffff" stroke-width="6" stroke-linecap="round" opacity="0.6"/>';
+      svg += '<line x1="'+a0.cx+'" y1="'+a0.cy+'" x2="'+b0.cx+'" y2="'+b0.cy+'" stroke="#A32D2D" stroke-width="3" stroke-dasharray="4 6" stroke-linecap="round"/>';
+      continue;
+    }
+    // 通るマスを四角で示す (端のマスは輪で示すので除く)
+    for(var ti=1; ti<tiles.length-1; ti++){
+      var c = routeCellCenter(tiles[ti].x, tiles[ti].y);
+      svg += '<rect x="'+(c.cx-13)+'" y="'+(c.cy-13)+'" width="26" height="26" rx="4" fill="'+col+'" '
+        + 'fill-opacity="'+(l.active ? '0.16' : '0.09')+'" stroke="'+col+'" stroke-opacity="'+(l.active ? '0.55' : '0.3')+'" stroke-width="1"/>';
+    }
+    // 経路の線 (マスの中心をつなぐ)
+    var pts = [];
+    for(var ti2=0; ti2<tiles.length; ti2++){
+      var cc = routeCellCenter(tiles[ti2].x, tiles[ti2].y);
+      pts.push(cc.cx + ',' + cc.cy);
+    }
+    var pstr = pts.join(' ');
+    svg += '<polyline points="'+pstr+'" fill="none" stroke="#ffffff" stroke-width="6" stroke-linejoin="round" stroke-linecap="round" opacity="'+(l.active ? '0.65' : '0.4')+'"/>';
+    svg += '<polyline points="'+pstr+'" fill="none" stroke="'+col+'" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"'
+      + (l.active ? ' marker-end="url(#route-arrow)"' : ' stroke-dasharray="6 5" opacity="0.75"') + '/>';
+  }
+
+  // 積み元・降ろし先・現在位置の印
+  for(var mi=0; mi<marks.length; mi++){
+    var mk = marks[mi];
+    var a = routeCellCenter(mk.from.x, mk.from.y);
+    var b = routeCellCenter(mk.to.x, mk.to.y);
     svg += '<circle cx="'+a.cx+'" cy="'+a.cy+'" r="14" fill="none" stroke="#ffffff" stroke-width="5" opacity="0.65"/>';
     svg += '<circle cx="'+a.cx+'" cy="'+a.cy+'" r="14" fill="none" stroke="#0F6E56" stroke-width="2.5"/>';
-    // 降ろし先 (拠点=橙の輪 / 駐留地点=破線の四角)
     svg += '<circle cx="'+b.cx+'" cy="'+b.cy+'" r="14" fill="none" stroke="#ffffff" stroke-width="5" opacity="0.65"/>';
-    if(l.point){
+    if(mk.point){
       svg += '<rect x="'+(b.cx-13)+'" y="'+(b.cy-13)+'" width="26" height="26" fill="none" stroke="#BA7517" stroke-width="2.5" stroke-dasharray="5 4"/>';
     } else {
       svg += '<circle cx="'+b.cx+'" cy="'+b.cy+'" r="14" fill="none" stroke="#BA7517" stroke-width="2.5"/>';
     }
-    // いまの位置
-    if(l.unit){
-      var c = routeCellCenter(l.unit.x, l.unit.y);
-      svg += '<circle cx="'+c.cx+'" cy="'+c.cy+'" r="5" fill="#BA7517" stroke="#ffffff" stroke-width="2"/>';
+    if(mk.unit){
+      var c2 = routeCellCenter(mk.unit.x, mk.unit.y);
+      svg += '<circle cx="'+c2.cx+'" cy="'+c2.cy+'" r="5" fill="#BA7517" stroke="#ffffff" stroke-width="2"/>';
     }
   }
   svg += '</svg>';
@@ -14106,7 +14198,9 @@ function renderSupplyTab(){
   html += '<li>積み元・降ろし先を敵に取られると、ルートは自動で解除される</li>';
   html += '<li><b>空中給油機</b>は空港系でしか積み降ろしできない。燃料が減ると最寄りの空港・空母へ帰投し、8割まで戻るとルートを再開する (墜落防止)</li>';
   html += '<li>自走できない補給ユニット (補給貨車) はルートを持てない — 機関車が運ぶ</li>';
+  html += '<li>ルートを設定した補給ユニットを選ぶと、<b>実際に通るマス</b>が盤面に表示される (往路は濃く、復路は薄く)。道が無くて到達できない場合は<b>赤い破線</b>になる</li>';
   html += '</ul>';
+  html += '<div style="margin-top:6px; background:#fff4d6; padding:6px 8px; border-radius:3px;"><b>積載庫に物資が入るのは「📦 積む」とルートの積み元だけ</b><br>施設の範囲補給では<b>積載庫は補充されません</b>。自動で補充すると、せっかく運んで降ろした物資をその施設から積み直すことになり、物資が行ったり来たりするだけになるためです。<br>補給ユニット<b>自身</b>の燃料・弾薬 (走るための燃料) は、他のユニットと同じように範囲補給で入ります。</div>';
   html += '</div>';
 
   // === 補給ユニット一覧 ===
@@ -14797,6 +14891,7 @@ function renderAITab(){
   html += '<li>積み元は<b>備蓄を作れる生産施設</b>、降ろし先は<b>備蓄が枯れていて前線に近い拠点</b>を優先する</li>';
   html += '<li>道を塞がれるなどで運べない状態が続くと、数ターンで別の拠点へ組み直す</li>';
   html += '<li>ルートを持つ補給ユニットはターン開始時に自動で動くため、主な仕事は「後方の施設間の運搬」と「駐留地点での支援」になる</li>';
+  html += '<li>積載庫は自動補充されないので、AI は拠点に着いたら<b>自分で積み込む</b> (プレイヤーの「📦 積む」に相当)。積めるのは<b>備蓄を作れる施設</b> (工場系・港系・空港系・弾薬工廠) だけで、都市では積まない (運び先で積むと持ち帰りになるため)</li>';
   html += '</ul>';
 
   html += '</div>';
