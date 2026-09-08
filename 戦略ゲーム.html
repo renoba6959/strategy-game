@@ -1547,9 +1547,7 @@ function consumeFuelForMove(unit, fromX, fromY){
   var rate = (t.cat === 'AIR') ? 2 : 1;
   if(t.canSubmerge && unit.submerged) rate = 2;
   if(unit.fuel === undefined) return; // 旧データ互換
-  var used = moveDist * rate;
-  unit.fuel = Math.max(0, unit.fuel - used);
-  unit._lastMoveFuel = used;   // 移動キャンセルで戻すために覚えておく
+  unit.fuel = Math.max(0, unit.fuel - moveDist * rate);
 }
 
 // ターン開始時の航空機の燃料消費 (停止時消費 -1)
@@ -12749,11 +12747,9 @@ function cancelMove(){
     if(typeof cu.preMoveX === 'number' && typeof cu.preMoveY === 'number'){
       cu.x = cu.preMoveX; cu.y = cu.preMoveY;
     }
-    if(typeof cu._lastMoveFuel === 'number'){
-      var cuMax = TYPE[cu.type].fuelMax || 99;
-      cu.fuel = Math.min(cuMax, (cu.fuel || 0) + cu._lastMoveFuel);
-      delete cu._lastMoveFuel;
-    }
+    // ※ 燃料は戻さない。戻すと「動かして索敵 → キャンセル → また動かす」を
+    //    燃料ゼロで繰り返せてしまい、戦場の霧が意味を失うため。
+    //    キャンセルで戻るのは位置だけ (誤操作の取り消し用)。
     cu.moved = false;
     if(cu.id !== pendingUnit.id) cu.acted = false;   // 編成の他の車輌も行動前に戻す
   }
@@ -14381,7 +14377,8 @@ function renderRulesTab(){
     + '</div>'
     + '<h4>移動の操作</h4>'
     + '緑のマスに<b>カーソルを合わせると、そこまで通る経路</b>が琥珀色で表示されます。そのまま<b>クリックすれば移動</b>します。編成 (列車) も同じです。<br>'
-    + '思わぬ経路を通って敵に接触したり伏兵に遭うのを避けるためのものです。表示されるのは<b>本来たどる経路</b>で、伏兵を察知して途中で止まる位置は出ません (伏兵の居場所を教えることになるため)。'
+    + '思わぬ経路を通って敵に接触したり伏兵に遭うのを避けるためのものです。表示されるのは<b>本来たどる経路</b>で、伏兵を察知して途中で止まる位置は出ません (伏兵の居場所を教えることになるため)。<br>'
+    + '<b>「移動キャンセル」で戻るのは位置だけで、燃料は戻りません。</b>戻すと「動かして索敵 → キャンセル → また動かす」を燃料ゼロで繰り返せてしまい、戦場の霧が意味を失うためです。'
     + '<h4>移動後制約</h4>間接武器は移動後使用不可(航空ユニットは例外)。'
     + '<h4>地形防御</h4>地上ユニット: 全地形・施設の防御を享受。海上ユニット: 港系施設の防御のみ享受。航空ユニット: 地形防御一切なし。'
     + '<h4>反撃</h4>射程内に有効武器を持っていれば反撃(直接・間接どちらでも可)。</br>※間接武器でも射程に入っていれば反撃可能。'
