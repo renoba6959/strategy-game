@@ -3042,7 +3042,12 @@ function executeMoveWithAmbushCheck(unit, targetX, targetY){
   unit.moved = true;
   var jm = !(actualX === fromX && actualY === fromY);
   if(jm) consumeFuelForMove(unit, fromX, fromY);
+  // 伏兵の奇襲: 移動したなら必ず判定する (AIの移動はすべてこの関数を通る)
+  // 以前は呼び出し側の4か所でしか判定しておらず、しかも「目的地のマスが伏兵の
+  // マスだった場合」だけだったため、プレイヤーが隠した伏兵がAIにほぼ効かなかった。
+  var ambushFired = jm ? resolveAmbushInstant(unit) : false;
   return {
+    ambushed: ambushFired,
     ambushAt: moveResult.ambushAt,
     hitAmbush: moveResult.hitAmbush,
     fromX: fromX, fromY: fromY,
@@ -3692,8 +3697,14 @@ function showAmbushEffect(unit, dmg, callback){
 // それを起点に、moveTo マスを射程に収める同陣営の全ユニットから1発ずつ射撃する。
 // victim は反撃不可、奇襲後は強制 acted=true。
 // 引数 onComplete: 全アニメーション完了後に呼ばれるコールバック (引数: ambushed boolean)
-function performAmbush(victim, onComplete){
-  // victim と異なる陣営かつ中立でないユニットが伏兵候補
+// ===== 伏兵の奇襲 =====
+// 「移動した先の隣に、そのユニットから見て未発見だった敵がいた」ときに発動する。
+// 判定と射撃計画は _planAmbush にまとめ、2つの実行方法から共通で使う。
+//   ・プレイヤーの移動 → performAmbush        (1発ずつ演出しながら適用)
+//   ・AIの移動        → resolveAmbushInstant (状態は同期で確定し、演出は後追い)
+// AIの移動は22か所あり、各所で演出の完了を待たせると「撃破されたユニットで
+// そのまま攻撃を続ける」ような事故が起きるため、AI側は同期で解決する。
+function _planAmbush(victim){
   var dirs = [[1,0],[-1,0],[0,1],[0,-1]];
   // Step 1: 隣接マスに「victim 側から見て未発見」だった敵ユニットを検出 (= 伏兵)
   var hiddenAdjacent = [];
@@ -3703,44 +3714,32 @@ function performAmbush(victim, onComplete){
     if(!inBounds(nx, ny)) continue;
     var u = unitAt(nx, ny);
     if(!u || isAlly(u.owner, victim.owner) || u.owner === 'N' || u.hp <= 0) continue;
-    // 伏兵判定: 森・山にいて、victim 陣営に未発見か (FoW の有無に関係なく動作)
     if(!isAmbushHidden(u, victim.owner, victim.id)) continue;
-    // 一回目の伏兵で陣営を確定 (複数陣営の伏兵が混在していたら最初のものを採用)
     if(ambusherOwner === null) ambusherOwner = u.owner;
-    // 同一陣営の伏兵だけ参加 (複雑化を避ける)
     if(u.owner === ambusherOwner) hiddenAdjacent.push(u);
   }
-  if(hiddenAdjacent.length === 0){
-    if(window.AI_DEBUG) try{ console.log('  → ambush check: no hidden ambusher around victim ('+victim.x+','+victim.y+')'); }catch(e){}
-    if(onComplete) onComplete(false);
-    return false;
-  }
-  if(window.AI_DEBUG) try{ console.log('  → AMBUSH! '+hiddenAdjacent.length+' hidden unit(s) attacking victim '+TYPE[victim.type].name+' @('+victim.x+','+victim.y+')'); }catch(e){}
-  // Step 2: 奇襲射撃メンバーを集める (ambusherOwner と同じ陣営)
-  var shooters = [];
-  var seen = {};
+  if(hiddenAdjacent.length === 0) return null;
+  // Step 2: 奇襲射撃メンバーを集める (ambusherOwner と同じ陣営で、victim を撃てる位置)
+  var shooters = [], seen = {};
   for(var i=0; i<hiddenAdjacent.length; i++){
-    var u = hiddenAdjacent[i];
-    if(!seen[u.id]){ seen[u.id] = true; shooters.push(u); }
+    var hu = hiddenAdjacent[i];
+    if(!seen[hu.id]){ seen[hu.id] = true; shooters.push(hu); }
   }
   for(var i=0; i<units.length; i++){
-    var u = units[i];
-    if(u.owner !== ambusherOwner || u.hp <= 0) continue;
-    if(seen[u.id]) continue;
-    var dist = manhattan(u.x, u.y, victim.x, victim.y);
-    var t = TYPE[u.type];
+    var su = units[i];
+    if(su.owner !== ambusherOwner || su.hp <= 0) continue;
+    if(seen[su.id]) continue;
+    var dist = manhattan(su.x, su.y, victim.x, victim.y);
+    var st = TYPE[su.type];
     var inRange = false;
-    for(var w=0; w<t.weapons.length; w++){
-      var weap = t.weapons[w];
+    for(var w=0; w<st.weapons.length; w++){
+      var weap = st.weapons[w];
       if(dist >= weap.range[0] && dist <= weap.range[1]){
         var atkVal = weap.atk[getArmorClass(victim)] || 0;
         if(atkVal > 0){ inRange = true; break; }
       }
     }
-    if(inRange){
-      seen[u.id] = true;
-      shooters.push(u);
-    }
+    if(inRange){ seen[su.id] = true; shooters.push(su); }
   }
   // Step 3: 各ユニットの射撃計画を作成 (HPはまだ減らさない)
   var plannedHits = [];
@@ -3749,26 +3748,32 @@ function performAmbush(victim, onComplete){
     if(simHp <= 0) break;
     var sh = shooters[i];
     var r = bestAttackOn(sh, victim, sh.x, sh.y, false);
-    if(!r) continue;
+    if(!r) continue;   // その相手に有効な武器が無い (例: 歩兵の小銃 vs 戦車)
     plannedHits.push({ shooter: sh, dmg: r.dmg, weapon: r.weapon, weaponIdx: r.weaponIdx });
     simHp = Math.max(0, simHp - r.dmg * 10);
   }
-  if(plannedHits.length === 0){
-    if(onComplete) onComplete(false);
-    return false;
-  }
-  // 全ダメージ合計を先に計算
-  var totalDmg = 0;
-  for(var i=0; i<plannedHits.length; i++) totalDmg += plannedHits[i].dmg;
-  // メッセージを作成
-  var partsList = [];
+  if(plannedHits.length === 0) return null;
+  var totalDmg = 0, partsList = [];
   for(var i=0; i<plannedHits.length; i++){
+    totalDmg += plannedHits[i].dmg;
     partsList.push(TYPE[plannedHits[i].shooter.type].name + ' ' + plannedHits[i].dmg);
   }
   var willKill = (victim.hp - totalDmg * 10) <= 0;
   var msg = '⚡奇襲! ' + TYPE[victim.type].name + 'が伏兵に遭遇 — ' + partsList.join(' / ') + ' = 計' + totalDmg + 'ダメ' + (willKill ? ' (撃破)' : '');
-  setStatus(msg);
-  // Step 4: 1発ずつ順番にアニメーション
+  return { plannedHits: plannedHits, totalDmg: totalDmg, willKill: willKill, msg: msg };
+}
+
+function performAmbush(victim, onComplete){
+  var plan = _planAmbush(victim);
+  if(!plan){
+    if(window.AI_DEBUG) try{ console.log('  → ambush check: no hidden ambusher around victim ('+victim.x+','+victim.y+')'); }catch(e){}
+    if(onComplete) onComplete(false);
+    return false;
+  }
+  var plannedHits = plan.plannedHits;
+  if(window.AI_DEBUG) try{ console.log('  → AMBUSH! '+plannedHits.length+' hidden unit(s) attacking victim '+TYPE[victim.type].name+' @('+victim.x+','+victim.y+')'); }catch(e){}
+  setStatus(plan.msg);
+  // 1発ずつ順番にアニメーション
   animationLock = true;
   var idx = 0;
   function processNext(){
@@ -3777,7 +3782,6 @@ function performAmbush(victim, onComplete){
       victim.acted = true;
       victim.moved = true;
       if(victim.hp === 0 && victim.cargo && victim.cargo.length > 0) victim.cargo = [];
-      // 弾薬消費を一括反映 (HPは段階的に反映済み)
       for(var i=0; i<plannedHits.length; i++){
         if(plannedHits[i].weaponIdx !== undefined){
           consumeAmmoForAttack(plannedHits[i].shooter, plannedHits[i].weaponIdx);
@@ -3793,12 +3797,31 @@ function performAmbush(victim, onComplete){
     victim.hp = Math.max(0, victim.hp - hit.dmg * 10);
     showAmbushEffect(victim, hit.dmg, function(){
       render(); // HP反映後の盤面更新
-      // 射撃間の間
       setTimeout(processNext, 250);
     });
   }
-  // 最初の1発までの間
   setTimeout(processNext, 200);
+  return true;
+}
+
+// AIの移動用: 奇襲をその場で確定させる (ゲーム状態は同期、演出は後追い)
+function resolveAmbushInstant(victim){
+  var plan = _planAmbush(victim);
+  if(!plan) return false;
+  var plannedHits = plan.plannedHits;
+  for(var i=0; i<plannedHits.length; i++){
+    victim.hp = Math.max(0, victim.hp - plannedHits[i].dmg * 10);
+    if(plannedHits[i].weaponIdx !== undefined){
+      consumeAmmoForAttack(plannedHits[i].shooter, plannedHits[i].weaponIdx);
+    }
+  }
+  victim.acted = true;
+  victim.moved = true;
+  if(victim.hp === 0 && victim.cargo && victim.cargo.length > 0) victim.cargo = [];
+  setStatus(plan.msg);
+  if(window.plog) try{ plog(plan.msg + ' @('+victim.x+','+victim.y+')'); }catch(e){}
+  if(window.AI_DEBUG) try{ console.log('  → AMBUSH! ' + plan.msg); }catch(e){}
+  try{ showAmbushEffect(victim, plan.totalDmg, null); }catch(e){}
   return true;
 }
 
@@ -10025,17 +10048,14 @@ function aiTurn(){
               if(window.AI_DEBUG) try{ console.log('  → MOVE to ('+bestMoveC.x+','+bestMoveC.y+')'); }catch(e){}
               var aiMoveRC = executeMoveWithAmbushCheck(u, bestMoveC.x, bestMoveC.y);
               if(window.AI_DEBUG && aiMoveRC.stoppedEarly) try{ console.log('    伏兵察知で早期停止 (戦闘行動 → '+aiMoveRC.toX+','+aiMoveRC.toY+')'); }catch(e){}
-              // 目的地が伏兵マスだった場合のみ奇襲発動
-              if(aiMoveRC.justMoved && aiMoveRC.hitAmbush){
-                var ambushedC = performAmbush(u, function(wasAmbushed){
-                  if(wasAmbushed){
-                    units = units.filter(function(uu){ return uu.hp > 0; });
-                    render();
-                    if(checkWin()) return;
-                    setTimeout(step, aiStepDelay(600));
-                  }
-                });
-                if(ambushedC){ u.acted = true; return; }
+              // 奇襲は executeMoveWithAmbushCheck の中で判定・適用済み
+              if(aiMoveRC.ambushed){
+                units = units.filter(function(uu){ return uu.hp > 0; });
+                u.acted = true;
+                render();
+                if(checkWin()) return;
+                setTimeout(step, aiStepDelay(600));
+                return;
               }
               // 移動先が拠点なら占領開始 (廃墟マスは工兵で再建)
               var capArrivedC = captures[u.x+','+u.y];
@@ -10181,17 +10201,14 @@ function aiTurn(){
         if(bestEvac){
           var aiMoveRE = executeMoveWithAmbushCheck(u, bestEvac.x, bestEvac.y);
           if(window.AI_DEBUG && aiMoveRE.stoppedEarly) try{ console.log('    伏兵察知で早期停止 (回避行動)'); }catch(e){}
-          // 目的地が伏兵マスだった場合のみ奇襲発動
-          if(aiMoveRE.justMoved && aiMoveRE.hitAmbush){
-            var ambushedE = performAmbush(u, function(wasAmbushed){
-              if(wasAmbushed){
-                units = units.filter(function(uu){ return uu.hp > 0; });
-                render();
-                if(checkWin()) return;
-                setTimeout(step, aiStepDelay(600));
-              }
-            });
-            if(ambushedE){ u.acted = true; return; }
+          // 奇襲は executeMoveWithAmbushCheck の中で判定・適用済み
+          if(aiMoveRE.ambushed){
+            units = units.filter(function(uu){ return uu.hp > 0; });
+            u.acted = true;
+            render();
+            if(checkWin()) return;
+            setTimeout(step, aiStepDelay(600));
+            return;
           }
           u.acted = true;
           render();
@@ -10266,17 +10283,14 @@ function aiTurn(){
               if(window.AI_DEBUG) try{ console.log('  → COMBAT MOVE to ('+bestMoveA.x+','+bestMoveA.y+') newDist='+bestMoveAD); }catch(e){}
               var aiMoveRA = executeMoveWithAmbushCheck(u, bestMoveA.x, bestMoveA.y);
               if(window.AI_DEBUG && aiMoveRA.stoppedEarly) try{ console.log('    伏兵察知で早期停止'); }catch(e){}
-              // 目的地が伏兵マスだった場合のみ奇襲発動
-              if(aiMoveRA.justMoved && aiMoveRA.hitAmbush){
-                var ambushedA = performAmbush(u, function(wasAmbushed){
-                  if(wasAmbushed){
-                    units = units.filter(function(uu){ return uu.hp > 0; });
-                    render();
-                    if(checkWin()) return;
-                    setTimeout(step, aiStepDelay(600));
-                  }
-                });
-                if(ambushedA){ u.acted = true; return; }
+              // 奇襲は executeMoveWithAmbushCheck の中で判定・適用済み
+              if(aiMoveRA.ambushed){
+                units = units.filter(function(uu){ return uu.hp > 0; });
+                u.acted = true;
+                render();
+                if(checkWin()) return;
+                setTimeout(step, aiStepDelay(600));
+                return;
               }
               u.acted = true;
               render();
@@ -10406,16 +10420,14 @@ function aiTurn(){
           if(window.AI_DEBUG) try{ console.log('  → RALLY MOVE to ('+bestMoveR.x+','+bestMoveR.y+') newDist='+bestMoveRD); }catch(e){}
           var aiMoveRR = executeMoveWithAmbushCheck(u, bestMoveR.x, bestMoveR.y);
           if(window.AI_DEBUG && aiMoveRR.stoppedEarly) try{ console.log('    伏兵察知で早期停止'); }catch(e){}
-          if(aiMoveRR.justMoved && aiMoveRR.hitAmbush){
-            var ambushedR = performAmbush(u, function(wasAmbushed){
-              if(wasAmbushed){
-                units = units.filter(function(uu){ return uu.hp > 0; });
-                render();
-                if(checkWin()) return;
-                setTimeout(step, aiStepDelay(600));
-              }
-            });
-            if(ambushedR){ u.acted = true; return; }
+          // 奇襲は executeMoveWithAmbushCheck の中で判定・適用済み
+          if(aiMoveRR.ambushed){
+            units = units.filter(function(uu){ return uu.hp > 0; });
+            u.acted = true;
+            render();
+            if(checkWin()) return;
+            setTimeout(step, aiStepDelay(600));
+            return;
           }
           u.acted = true;
           render();
@@ -10944,17 +10956,16 @@ function aiTurn(){
       }catch(e){}
     }
 
-    // 奇襲チェック: AI が伏兵に突っ込んだ場合
+    // 奇襲チェック: executeMoveWithAmbushCheck の中で判定・適用済み
     if(justMoved){
-      var ambushed = performAmbush(u, function(wasAmbushed){
-        if(wasAmbushed){
-          units = units.filter(function(uu){ return uu.hp > 0; });
-          render();
-          if(checkWin()) return;
-          setTimeout(step, aiStepDelay(600));
-        }
-      });
-      if(ambushed) return; // 非同期処理に委ねるのでここで戻る
+      if(moveRes.ambushed){
+        units = units.filter(function(uu){ return uu.hp > 0; });
+        u.acted = true;
+        render();
+        if(checkWin()) return;
+        setTimeout(step, aiStepDelay(600));
+        return;
+      }
       // 伏兵察知で停止したが奇襲不発の場合: 攻撃機会のみ追加チェック (acted=true で行動終了)
       if(moveRes.stoppedEarly && moveRes.ambushAt){
         // 隣接で停止 + 奇襲不発 → 行動終了 (このユニットはこのターンこれ以上動かない)
@@ -14140,7 +14151,9 @@ function renderRulesTab(){
     + '・<b>潜航中の潜水艦</b>: 探知範囲内で発見 (潜水艦3マス / 駆逐艦・フリゲート2マス / 対潜哨戒機3マス。探知するユニットがそのターン移動していないこと)。<b>隣接していれば対潜能力が無くても発見</b><br>'
     + '・<b>森・山のユニット</b>: 隣接するまで見えない。ただしヘリに対しては対空戦車(視界4)・対空ミサイル(視界5)・固定翼機は視界内で発見できる<br>'
     + '・奇襲されるかどうかは<b>動く前の位置・未移動の状態</b>で判定する (移動後の位置で見ると常に隣接＝発見済みになってしまうため)<br>'
-    + '・一度発見した敵を記憶する仕組みはありません。<b>離れれば見失います</b>'
+    + '・一度発見した敵を記憶する仕組みはありません。<b>離れれば見失います</b><br>'
+    + '・<b>AIのユニットも同じように奇襲されます</b>。森・山に伏せた自軍ユニットの隣を敵が通れば発動します<br>'
+    + '・伏兵に有効な武器が無い場合は奇襲が起きません (例: 歩兵の小銃は装甲車両に0なので、森の歩兵は戦車を奇襲できない)。戦車を待ち伏せるなら<b>対戦車歩兵</b>を置いてください'
     + '</div>'
     + '<h4>占領</h4>歩兵で拠点HP分削る。'
     + '<h4>勝利</h4>敵全滅 OR 全拠点支配。'
