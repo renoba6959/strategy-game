@@ -11375,7 +11375,9 @@ function showCommandPanel(unit, justMoved){
   if(canSubmergeNow) addBtn(unit.submerged ? '浮上' : '潜航', doSubmerge);
   if(canStealth) addBtn(unit.stealth ? 'ステルス解除' : 'ステルスON', doStealth);
   addBtn('待機', doWait);
-  if(justMoved) addBtn('移動キャンセル', cancelMove);   // 動いていなければ戻す先が無い
+  // 動いていないときも押せるようにする。これを隠すと「待機(=そのターンを捨てる)」しか
+  // 出口が無くなるため。動いていなければ選択を解いて元の状態に戻すだけ。
+  addBtn(justMoved ? '移動キャンセル' : '選択解除', cancelMove);
   panel.style.visibility = 'visible';
   setClear(attackableSet);
   setStatus(TYPE[unit.type].name + 'のコマンドを選択してください');
@@ -12741,9 +12743,11 @@ function cancelMove(){
   // 編成の場合は、連結している車輌をまとめて元の位置に戻す。
   var cancelChain = trainOf(pendingUnit);
   var cancelList = cancelChain ? cancelChain : [pendingUnit];
+  var cancelMoved = false;
   for(var ci=0; ci<cancelList.length; ci++){
     var cu = cancelList[ci];
     if(!cu.moved) continue;   // 動いていない車輌はそのまま
+    cancelMoved = true;
     if(typeof cu.preMoveX === 'number' && typeof cu.preMoveY === 'number'){
       cu.x = cu.preMoveX; cu.y = cu.preMoveY;
     }
@@ -12758,7 +12762,7 @@ function cancelMove(){
   unloadMode = false; unloadCargoIdx = -1; unloadStarted = false;
   hideCommandPanel();
   selected = null; setClear(movableSet);
-  setStatus('行動をキャンセルしました');
+  setStatus(cancelMoved ? '移動をキャンセルしました（燃料は戻りません）' : '選択を解除しました');
   render();
 }
 function afterAction(){ render(); updateInfoPanel(); if(checkWin()) return; }
