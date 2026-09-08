@@ -104,6 +104,13 @@ button:hover { background: #f0f0f0; }
       <div style="font-size:11px;color:var(--color-text-secondary);margin-bottom:4px;">ユニット</div>
       <div id="unit-content" style="color:var(--color-text-secondary);">ユニットをクリック</div>
     </div>
+    <div style="background: var(--color-background-secondary); border-radius: var(--border-radius-md); padding: 10px 12px; margin-top: 8px; font-size: 12px; line-height: 1.5;">
+      <div style="display:flex; align-items:center; gap:6px; font-size:11px; color:var(--color-text-secondary); margin-bottom:4px;">
+        <span>お知らせの履歴</span>
+        <button id="log-clear" style="margin-left:auto; font-size:10px; padding:1px 6px; border:1px solid #ccc; background:#fff; border-radius:3px; cursor:pointer;">消去</button>
+      </div>
+      <div id="log-content" style="max-height:260px; overflow-y:auto; color:var(--color-text-secondary); font-size:11.5px;">まだありません</div>
+    </div>
   </div>
 </div>
 
@@ -2388,6 +2395,43 @@ function carrierAt(x, y, owner, target){
 }
 function displayHP(h){ return Math.max(0, Math.ceil(h/10)); }
 function setStatus(msg){ document.getElementById('status').textContent = msg; }
+
+// ===== お知らせの履歴 (右パネル) =====
+// 最新の1件は上の「お知らせ」に出て、それより前をここに残す。
+// 攻撃・奇襲・占領など、あとから見返したいものを積んでいく。
+var gameLog = [];
+function pushLog(msg){
+  if(!msg) return;
+  gameLog.unshift({ round: (typeof roundNumber === 'number' ? roundNumber : 0), msg: String(msg) });
+  if(gameLog.length > 120) gameLog.length = 120;   // 増えすぎないように打ち切る
+  renderLog();
+}
+function renderLog(){
+  var el = document.getElementById('log-content');
+  if(!el) return;
+  if(gameLog.length === 0){ el.textContent = 'まだありません'; return; }
+  var h = '';
+  for(var i=0; i<gameLog.length; i++){
+    h += '<div style="padding:2px 0; border-bottom:1px solid rgba(0,0,0,0.06);">'
+       + '<span style="color:#999; font-size:10px;">R' + gameLog[i].round + '</span> '
+       + gameLog[i].msg + '</div>';
+  }
+  el.innerHTML = h;
+}
+// 自軍が絡む戦闘だけ履歴に残す (敵同士の撃ち合いまで出すと埋もれるため)
+function logCombat(att, def, r1, r2){
+  try{
+    if(!att || !def || !TYPE[att.type] || !TYPE[def.type]) return;
+    if(att.owner !== 'P' && def.owner !== 'P') return;
+    var an = (att.owner === 'P' ? '自軍の' : '敵の') + TYPE[att.type].name;
+    var dn = (def.owner === 'P' ? '自軍の' : '敵の') + TYPE[def.type].name;
+    var msg = '⚔ ' + an + ' → ' + dn + ' ' + (r1 ? r1.dmg : 0) + 'ダメージ';
+    if(r2) msg += '（反撃 ' + r2.dmg + '）';
+    if(def.hp <= 0) msg += ' 💥撃破';
+    else if(att.hp <= 0) msg += ' 💥' + an + 'が撃破された';
+    pushLog(msg);
+  }catch(e){}
+}
 // 占領したときの「備蓄を鹵獲しました」のお知らせ。performCapture が入れ、
 // doCapture が「占領完了！」の代わりに表示する (何を手に入れたか分かるように)
 var lastCaptureNotice = '';
@@ -3598,6 +3642,7 @@ function performAttack(att, def, justMoved, attackMode){
   // 撃破時の搭載ユニット全滅
   if(def.hp === 0 && def.cargo && def.cargo.length > 0) def.cargo = [];
   if(att.hp === 0 && att.cargo && att.cargo.length > 0) att.cargo = [];
+  logCombat(att, def, r1, r2);
   return { r1: r1, r2: r2 };
 }
 
@@ -3787,6 +3832,7 @@ function performAmbush(victim, onComplete){
   var plannedHits = plan.plannedHits;
   if(window.AI_DEBUG) try{ console.log('  → AMBUSH! '+plannedHits.length+' hidden unit(s) attacking victim '+TYPE[victim.type].name+' @('+victim.x+','+victim.y+')'); }catch(e){}
   setStatus(plan.msg);
+  pushLog(plan.msg);
   // 1発ずつ順番にアニメーション
   animationLock = true;
   var idx = 0;
@@ -3833,7 +3879,7 @@ function resolveAmbushInstant(victim){
   victim.moved = true;
   if(victim.hp === 0 && victim.cargo && victim.cargo.length > 0) victim.cargo = [];
   setStatus(plan.msg);
-  if(window.plog) try{ plog(plan.msg + ' @('+victim.x+','+victim.y+')'); }catch(e){}
+  pushLog(plan.msg + ' @('+victim.x+','+victim.y+')');
   if(window.AI_DEBUG) try{ console.log('  → AMBUSH! ' + plan.msg); }catch(e){}
   try{ showAmbushEffect(victim, plan.totalDmg, null); }catch(e){}
   return true;
@@ -15839,6 +15885,7 @@ document.getElementById('end-turn-btn').onclick = function(){
   }
 };
 document.getElementById('spec-btn').onclick = openSpec;
+document.getElementById('log-clear').onclick = function(){ gameLog = []; renderLog(); };
 
 // AI速度ボタン
 function updateAiSpeedButtons(){
@@ -17148,6 +17195,7 @@ window.AI_DEBUG = true;
 window.PLAYER_LOG = true;
 // プレイヤー操作ログヘルパー (グローバル)
 window.plog = function(msg){
+  try{ pushLog(msg); }catch(e){}   // 右パネルの履歴にも残す
   if(!window.PLAYER_LOG) return;
   try{ console.log('%c[Player]%c ' + msg, 'color:#185FA5; font-weight:bold;', 'color:inherit;'); }catch(e){}
 };
