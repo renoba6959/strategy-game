@@ -1072,9 +1072,12 @@ var pendingAttackMode = 'normal';
 // ラウンド番号 (全陣営が1巡したら +1。修理待ちユニットの取り出し可否判定などに使う)
 var roundNumber = 0;
 var preMoveX = 0, preMoveY = 0;
-// 移動プレビュー: 緑マスを1回押すと通る経路を表示し、同じマスをもう一度押すと移動する。
+// 移動プレビュー: 緑マスにカーソルを合わせると、そこまで通る経路を表示する。
 // { unitId, x, y, tiles:[{x,y}...] }
 var movePreview = null;
+// 編成の移動範囲は計算が重いので、選択したときに1回だけ作って使い回す
+// { unitId, info }
+var selectedTrainInfo = null;
 var movableSet = {}, attackableSet = {};
 // 敵ユニットクリック時の脅威範囲表示用
 // enemyThreatSet: 攻撃されうるマス (現位置から間接攻撃 + 移動後の直接攻撃範囲)
@@ -12755,16 +12758,8 @@ function onCellClick(x, y){
     var tDrv = trainDriver(tChain, selected);
     if(!tDrv){ setStatus('機関車がいないため、この編成は動かせません'); return; }
     if(!trainAllReady(tChain)){ setStatus('行動済みの車輌があるため、この編成は発車できません'); return; }
-    var tInfo = trainMovableInfo(tChain, tDrv);
-    // 1回目のクリック: 通る経路を表示するだけ (思わぬ経路で敵に接触しないように)
-    if(!(movePreview && movePreview.unitId === selected.id && movePreview.x === x && movePreview.y === y)){
-      var tEntry = tInfo[x+','+y];
-      if(!tEntry) return;
-      movePreview = { unitId: selected.id, x: x, y: y, tiles: trainPathTiles(tEntry, x, y) };
-      setStatus('🚂 編成の経路を表示しました（' + (movePreview.tiles.length - 1) + 'マス）。もう一度同じマスを押すと発車します');
-      render();
-      return;
-    }
+    var tInfo = (selectedTrainInfo && selectedTrainInfo.unitId === selected.id)
+      ? selectedTrainInfo.info : trainMovableInfo(tChain, tDrv);
     movePreview = null;
     var tRes = executeTrainMove(tChain, tDrv, x, y, tInfo);
     if(!tRes) return;
@@ -12806,19 +12801,7 @@ function onCellClick(x, y){
       willEmbark = true;
     }
     if(canMoveHere){
-      // 1回目のクリック: 通る経路を表示するだけ。同じマスをもう一度押すと移動する。
-      // (思わぬ経路を通って伏兵に遭ったり敵に接触するのを防ぐ)
-      // その場から動かない場合と、輸送ユニットへの乗船はプレビュー不要
-      if(!willEmbark && !(x === selected.x && y === selected.y)
-         && !(movePreview && movePreview.unitId === selected.id && movePreview.x === x && movePreview.y === y)){
-        var pvRes = findActualMoveEndpoint(selected, x, y);
-        if(pvRes.path && pvRes.path.length >= 2){
-          movePreview = { unitId: selected.id, x: x, y: y, tiles: pvRes.path };
-          setStatus(TYPE[selected.type].name + ' の経路を表示しました（' + (pvRes.path.length - 1) + 'マス）。もう一度同じマスを押すと移動します');
-          render();
-          return;
-        }
-      }
+      // 経路はカーソルを合わせた時点で表示済み (onCellHover)。クリックで即移動する
       movePreview = null;
       preMoveX = selected.x; preMoveY = selected.y;
       var justMoved = !(x === selected.x && y === selected.y);
@@ -12929,8 +12912,10 @@ function onCellClick(x, y){
       setAdd(movableSet, clicked.x+','+clicked.y);
       var selDrv = trainDriver(selChain, clicked);
       var selReady = (selDrv && trainAllReady(selChain));
+      selectedTrainInfo = null;
       if(selReady){
         var selInfo = trainMovableInfo(selChain, selDrv);
+        selectedTrainInfo = { unitId: clicked.id, info: selInfo };   // ホバー表示で使い回す
         for(var selK in selInfo) setAdd(movableSet, selK);
       }
       // 編成は動くと全車が行動終了になるので、攻撃予告は現在位置からのみ
@@ -12943,6 +12928,8 @@ function onCellClick(x, y){
       return;
     }
     selected = clicked;
+    selectedTrainInfo = null;
+    movePreview = null;
     setClear(enemyThreatSet); setClear(enemyMoveSet); // 敵脅威範囲をクリア
     movableSet = computeMovable(clicked);
     var atkPreview = {};
@@ -13297,6 +13284,10 @@ function computePlayerVisibleCells(){
 function render(){
   syncTrains();   // 撃破などで切れた編成をここで整える
   var board = document.getElementById('board');
+  // 盤面の外へカーソルが出たら移動経路の表示を消す
+  board.onmouseleave = function(){
+    if(movePreview){ movePreview = null; renderRouteOverlay(); }
+  };
   board.innerHTML = '';
   var visSet = computePlayerVisibleCells();
   var isNight = (currentPhase === 'night');
@@ -13545,7 +13536,42 @@ function renderRouteOverlay(){
   board.appendChild(wrap.firstChild);
 }
 
+// カーソルを合わせたマスまでの経路を作る (編成もふつうのユニットも)
+function buildMovePreview(unit, x, y){
+  if(!unit) return null;
+  var chain = trainOf(unit);
+  if(chain){
+    var info = (selectedTrainInfo && selectedTrainInfo.unitId === unit.id) ? selectedTrainInfo.info : null;
+    if(!info){
+      var drv = trainDriver(chain, unit);
+      if(!drv || !trainAllReady(chain)) return null;
+      info = trainMovableInfo(chain, drv);
+      selectedTrainInfo = { unitId: unit.id, info: info };
+    }
+    var entry = info[x+','+y];
+    if(!entry) return null;
+    return { unitId: unit.id, x: x, y: y, tiles: trainPathTiles(entry, x, y) };
+  }
+  var res = findActualMoveEndpoint(unit, x, y);
+  if(!res.path || res.path.length < 2) return null;
+  return { unitId: unit.id, x: x, y: y, tiles: res.path };
+}
+
 function onCellHover(x, y){
+  // 移動先にカーソルを合わせたら、そこまで通る経路を表示する
+  // (盤面全体を描き直すと重いので、経路のオーバーレイだけ描き直す)
+  if(selected && !pendingUnit && !attackMode && !facilityAttackMode){
+    var hk = x+','+y;
+    if(setHas(movableSet, hk) && !(x === selected.x && y === selected.y)){
+      if(!movePreview || movePreview.unitId !== selected.id || movePreview.x !== x || movePreview.y !== y){
+        movePreview = buildMovePreview(selected, x, y);
+        renderRouteOverlay();
+      }
+    } else if(movePreview){
+      movePreview = null;
+      renderRouteOverlay();
+    }
+  }
   // ルート指定中は、積み元からカーソルまでの線を追従させる
   if(routeSetMode && routeSetMode.from){
     routeHoverX = x; routeHoverY = y;
@@ -14217,8 +14243,8 @@ function renderRulesTab(){
     + 'ただし<b>同ラウンド内に乗船→降車</b>はできません(収容→発艦のループ防止)。<br>'
     + '輸送船・輸送機からの降車は従来通り次ターンから行動可能。'
     + '</div>'
-    + '<h4>移動の操作 (2回押し)</h4>'
-    + '緑のマスを<b>1回押すと、そこまで通る経路</b>が琥珀色で表示されます。<b>もう一度同じマスを押すと移動</b>します。別のマスを押せば経路を引き直します。編成 (列車) も同じです。<br>'
+    + '<h4>移動の操作</h4>'
+    + '緑のマスに<b>カーソルを合わせると、そこまで通る経路</b>が琥珀色で表示されます。そのまま<b>クリックすれば移動</b>します。編成 (列車) も同じです。<br>'
     + '思わぬ経路を通って敵に接触したり伏兵に遭うのを避けるためのものです。表示されるのは<b>本来たどる経路</b>で、伏兵を察知して途中で止まる位置は出ません (伏兵の居場所を教えることになるため)。'
     + '<h4>移動後制約</h4>間接武器は移動後使用不可(航空ユニットは例外)。'
     + '<h4>地形防御</h4>地上ユニット: 全地形・施設の防御を享受。海上ユニット: 港系施設の防御のみ享受。航空ユニット: 地形防御一切なし。'
