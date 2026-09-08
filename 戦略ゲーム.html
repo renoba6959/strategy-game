@@ -703,8 +703,8 @@ var TYPE = {
   // ===== 列車系 (移動クラス TRAIN: 線路・鉄橋0.5 / 施設は駅として1 / それ以外は進入不可) =====
   // 線路は地形防御0なので、停車中を叩かれると装甲が高くても脆い。
   // 列車砲・補給貨車は自走できず、機関車の「連結」で牽引してもらう。
-  ARMORED_TRAIN: { name:'装甲列車', cat:'LAND', armorClass:'AV', cost:'TRAIN', move:6, sight:3, armor:4, fuelMax:70, isTrain:true, note:'線路の上だけを走る自走の装甲車両。線路は地形防御0なので停車中は狙われやすい', price:6000, prodTurns:3, weapons:[ W('列車砲塔', [1,1], false, {INF:8, UV:10, AV:9, US:8, AS:6, HE:5, AC:0}, {ammo:3, vsFacility:6}), W('機銃', [1,1], false, {INF:6, UV:4, AV:0, US:4, AS:0, HE:6, AC:0}, {infiniteAmmo:true}) ] },
-  LOCOMOTIVE: { name:'機関車', cat:'LAND', armorClass:'UV', cost:'TRAIN', move:7, sight:2, armor:2, fuelMax:99, isTrain:true, isCoupler:true, note:'非武装。隣接する車輌を「連結」して牽引・推進する。編成は最大5両で、機関車が1両あれば前後どちらへも動ける', price:2500, prodTurns:2, weapons:[] },
+  ARMORED_TRAIN: { name:'装甲列車', cat:'LAND', armorClass:'AV', cost:'TRAIN', move:6, sight:3, armor:4, fuelMax:70, isTrain:true, isCoupler:true, towMax:2, note:'線路の上だけを走る自走の装甲車両。装甲を貼った機関車なので、列車砲や補給貨車を2両まで牽引できる。線路は地形防御0なので停車中は狙われやすい', price:6000, prodTurns:3, weapons:[ W('列車砲塔', [1,1], false, {INF:8, UV:10, AV:9, US:8, AS:6, HE:5, AC:0}, {ammo:3, vsFacility:6}), W('機銃', [1,1], false, {INF:6, UV:4, AV:0, US:4, AS:0, HE:6, AC:0}, {infiniteAmmo:true}) ] },
+  LOCOMOTIVE: { name:'機関車', cat:'LAND', armorClass:'UV', cost:'TRAIN', move:7, sight:2, armor:2, fuelMax:99, isTrain:true, isCoupler:true, towMax:4, note:'非武装。隣接する車輌を「連結」して牽引・推進する。4両まで牽引でき、編成は最大5両。機関車か装甲列車が1両あれば前後どちらへも動ける', price:2500, prodTurns:2, weapons:[] },
   RAIL_GUN: { name:'列車砲', cat:'LAND', armorClass:'UV', cost:'TRAIN', move:0, sight:1, armor:1, fuelMax:30, isTrain:true, isTowed:true, note:'自走できない。機関車に連結してもらって移動する超長射程の間接砲。停車していれば連結したまま撃てる', price:8000, prodTurns:4, weapons:[ W('列車砲', [3,6], true, {INF:14, UV:14, AV:12, US:12, AS:10, HE:0, AC:0}, {ammo:2, vsFacility:14}) ] },
   SUPPLY_CAR: { name:'補給貨車', cat:'LAND', armorClass:'UV', cost:'TRAIN', move:0, sight:1, armor:1, fuelMax:30, isTrain:true, isTowed:true, isSupply:true, supplyTarget:['LAND','HELI'], supplyFuel:true, supplyFuelMax:800, supplyAmmo:true, supplyAmmoMax:60, supplyRange:2, note:'自走できない。機関車に連結して線路で前線へ物資を運ぶ。線路から降りられない代わりに補給範囲は2マス。連結したままでも補給できる。燃料庫800/弾薬庫60', price:2000, prodTurns:2, weapons:[] }
 };
@@ -12090,6 +12090,26 @@ function trainOf(unit){
   return null;
 }
 
+// この編成が牽引できる車輌の数 (機関車4 / 装甲列車2 の合計)
+// 装甲列車は「装甲を貼った機関車」なので牽引できるが、機関車ほどの牽引力は無い
+function trainTowCapacity(members){
+  var cap = 0;
+  for(var i=0; i<members.length; i++){
+    var t = TYPE[members[i].type];
+    if(t && t.isCoupler) cap += (t.towMax || 0);
+  }
+  return cap;
+}
+// このユニットの並びが編成として成立するか (両数の上限と牽引力)
+function trainFits(idList){
+  if(idList.length > TRAIN_MAX_CARS) return false;
+  var members = [];
+  for(var i=0; i<idList.length; i++){ var uu = unitById(idList[i]); if(uu) members.push(uu); }
+  var towed = 0;
+  for(var i=0; i<members.length; i++){ if(!TYPE[members[i].type].isCoupler) towed++; }
+  return towed <= trainTowCapacity(members);
+}
+
 function trainHasLoco(chain){
   if(!chain) return false;
   for(var i=0; i<chain.length; i++){ if(TYPE[chain[i].type].isCoupler) return true; }
@@ -12222,6 +12242,9 @@ function coupleCandidatesAround(unit){
     if(myChain.length >= TRAIN_MAX_CARS) return list;
   }
   var mySize = myChain ? myChain.length : 1;
+  var myIds = [];
+  if(myChain){ for(var mi=0; mi<myChain.length; mi++) myIds.push(myChain[mi].id); }
+  else myIds.push(unit.id);
   var dirs = [[1,0],[-1,0],[0,1],[0,-1]];
   for(var i=0; i<dirs.length; i++){
     var nx = unit.x + dirs[i][0], ny = unit.y + dirs[i][1];
@@ -12235,6 +12258,7 @@ function coupleCandidatesAround(unit){
       if(inMine) continue;
     }
     if(mySize + 1 > TRAIN_MAX_CARS) continue;
+    if(!trainFits(myIds.concat([o.id]))) continue;   // 牽引力が足りない
     list.push(o);
   }
   return list;
@@ -12279,6 +12303,7 @@ function executeCouple(x, y){
   var curU = car;
   var dirs = [[1,0],[-1,0],[0,1],[0,-1]];
   while(curU && ids.length < TRAIN_MAX_CARS){
+    if(!trainFits(ids.concat([curU.id]))) break;   // 牽引力の上限に達したらそこまで
     ids.push(curU.id);
     added.push(curU);
     var nextU = null;
@@ -12290,6 +12315,11 @@ function executeCouple(x, y){
       nextU = o; break;
     }
     curU = nextU;
+  }
+  if(added.length === 0){
+    setStatus('🔗 これ以上は牽引できません（機関車は4両、装甲列車は2両まで）');
+    exitCoupleMode();
+    return;
   }
   // 一列につながっているか確認 (分岐していたら連結しない)
   var comps = _trainComponents(ids);
