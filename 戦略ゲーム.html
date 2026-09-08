@@ -625,6 +625,10 @@ function W(name, range, indirect, atk, opts){
     if(opts.infiniteAmmo) w.infiniteAmmo = true;
     if(opts.vsFacility !== undefined) w.vsFacility = opts.vsFacility;
     if(opts.ammoBucket !== undefined) w.ammoBucket = opts.ammoBucket;
+    // 常に範囲攻撃になる武器 (列車砲)。shotAmmo = 砲撃1回の弾薬、feAmmo = 観測兵つき効力射の弾薬
+    if(opts.areaShot) w.areaShot = true;
+    if(opts.shotAmmo !== undefined) w.shotAmmo = opts.shotAmmo;
+    if(opts.feAmmo !== undefined) w.feAmmo = opts.feAmmo;
   }
   return w;
 }
