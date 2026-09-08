@@ -2388,6 +2388,9 @@ function carrierAt(x, y, owner, target){
 }
 function displayHP(h){ return Math.max(0, Math.ceil(h/10)); }
 function setStatus(msg){ document.getElementById('status').textContent = msg; }
+// 占領したときの「備蓄を鹵獲しました」のお知らせ。performCapture が入れ、
+// doCapture が「占領完了！」の代わりに表示する (何を手に入れたか分かるように)
+var lastCaptureNotice = '';
 function unitAt(x,y){ for(var i=0;i<units.length;i++){ var u=units[i]; if(u.x===x && u.y===y && u.hp>0) return u; } return null; }
 
 // あるユニットの ASW (対潜) 探知範囲を返す。0なら探知不可
@@ -3886,6 +3889,7 @@ function performCapture(unit, cap){
           var msg = fromNeutral
             ? ('📦 ' + terName + 'を占領しました (中立のため備蓄は0です)')
             : ('📦 ' + terName + 'を占領し、備蓄を鹵獲しました: 燃料' + cap.stockFuel + ' ・ 弾薬' + cap.stockAmmo);
+          lastCaptureNotice = msg;
           try{ setStatus(msg); }catch(e){}
           if(window.plog) try{ plog(msg); }catch(e){}
         }
@@ -12584,8 +12588,10 @@ function doCapture(){
   var cap = captures[u.x+','+u.y];
   var ter = TER[M[u.y][u.x]];
   var maxCapHp = ter.capCaptureHp || ter.capHpMax || CAP_MAX;
+  lastCaptureNotice = '';
   performCapture(u, cap);
-  if(cap.owner === u.owner && cap.captureHp === maxCapHp) setStatus('占領完了！');
+  // 占領できたときは、鹵獲した備蓄のお知らせを優先して出す
+  if(cap.owner === u.owner && cap.captureHp === maxCapHp) setStatus(lastCaptureNotice || '占領完了！');
   else setStatus('占領中... 占領HP ' + cap.captureHp + '/' + maxCapHp);
   u.acted = true; pendingUnit = null;
   setClear(attackableSet); hideCommandPanel();
