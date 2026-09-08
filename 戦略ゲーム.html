@@ -13811,6 +13811,7 @@ function renderTerrainTab(){
   html += '・<b>軽キャタ</b>: 軽戦車・駆逐戦車・対空戦車・自走砲(森に進入可)<br>';
   html += '・<b>重キャタ</b>: 中戦車・重戦車・重駆逐戦車・ロケット砲 ※森進入不可<br>';
   html += '・水陸両用戦車は装輪扱いだが川と浅瀬を通行可能<br>';
+  html += '・<b>列車</b>(機関車・装甲列車・列車砲・補給貨車): 線路・鉄橋・海上鉄橋・可動橋のみコスト0.5。施設・都市マスは「駅」としてコスト1。それ以外は進入不可。<b>単線なので味方の上もすり抜けられない</b><br>';
   html += '・航空ユニットは全地形コスト1、地形防御を一切受けない (森・山に隠れず常に視認される)<br>';
   html += '・地上ユニット: 全地形・施設の防御を享受。<br>・海上ユニット: 港系施設の防御のみ享受。';
   html += '</div>';
@@ -13964,7 +13965,15 @@ function renderRulesTab(){
     + '・対施設ダメージ = round(対施設火力 × 表示HP/10) - 施設の地形防御値<br>'
     + '・例: 爆撃機(対施設14)がHP10で首都(地形防御+4)を攻撃 → 14×10/10 - 4 = <b>10ダメ</b><br>'
     + '・施設HPが0になると施設は1段階ダウングレード(廃墟化)<br>'
-    + '・対施設火力を持つ武器は仕様書ユニット表の「対施設」列で確認可能'
+    + '・対施設火力を持つ武器は仕様書ユニット表の「対施設」列で確認可能<br>'
+    + '・<b>線路・鉄橋・海上鉄橋・可動橋・橋も施設攻撃で叩ける</b> (所有者のない構造物なので、射程内なら誰でも対象にできる)'
+    + '</div>'
+    + '<div style="background:#f6f2e8; border-left:3px solid #7A5A10; padding:6px 10px; margin:6px 0; font-size:12px;">'
+    + '<b style="color:#7A5A10;">🛤 線路・橋の耐久 (0〜30)</b><br>'
+    + '線路も橋も一撃では消えず、未完成の段階を挟みます。工兵の「🛠 工事」は<b>工兵の表示HP分</b>だけ耐久を進めます (傷ついた工兵ほど遅い)。<br>'
+    + '・<b>10以上</b> → 線路 / 鉄橋 / 橋 (開通。列車や車両が通れる)<br>'
+    + '・<b>1〜9</b> → 路盤 / 橋脚 / 木組み (未完成。路盤は歩兵・車両が通れるが列車は走れない。橋脚・木組みは川と同じ扱いで歩兵のみ)<br>'
+    + '・<b>0</b> → 橋は川に戻る。<b>線路・鉄橋は路盤・橋脚で止まり、更地にはならない</b> (線路は新規に敷けないため、消すと路線が二度と戻らない)'
     + '</div>'
     + '<div style="background:#e8f5e8; border-left:3px solid #0F6E56; padding:6px 10px; margin:6px 0; font-size:12px;">'
     + '<b style="color:#0F6E56;">🚀 即展開ユニット (quickDeploy)</b><br>'
@@ -13978,7 +13987,16 @@ function renderRulesTab(){
     + '<h4>移動後制約</h4>間接武器は移動後使用不可(航空ユニットは例外)。'
     + '<h4>地形防御</h4>地上ユニット: 全地形・施設の防御を享受。海上ユニット: 港系施設の防御のみ享受。航空ユニット: 地形防御一切なし。'
     + '<h4>反撃</h4>射程内に有効武器を持っていれば反撃(直接・間接どちらでも可)。</br>※間接武器でも射程に入っていれば反撃可能。'
-    + '<h4>ZOC</h4>敵隣接マスで移動停止。'
+    + '<h4>ZOC</h4>敵隣接マスで移動停止 (<b>見えている敵のみ</b>。見えない伏兵には反応せず、隣接した瞬間に発見して停止する)。'
+    + '<h4>伏兵と奇襲</h4>'
+    + '<div style="background:#fff0f0; border-left:3px solid #A32D2D; padding:6px 10px; margin:6px 0; font-size:12px;">'
+    + '<b style="color:#A32D2D;">⚡ 奇襲は「画面で見えるか」と同じルール</b><br>'
+    + '見えていない敵に隣接すると奇襲を受けます。<b>見えるかどうかの判定は表示と完全に同じ</b>で、次のとおりです。<br>'
+    + '・<b>潜航中の潜水艦</b>: 探知範囲内で発見 (潜水艦3マス / 駆逐艦・フリゲート2マス / 対潜哨戒機3マス。探知するユニットがそのターン移動していないこと)。<b>隣接していれば対潜能力が無くても発見</b><br>'
+    + '・<b>森・山のユニット</b>: 隣接するまで見えない。ただしヘリに対しては対空戦車(視界4)・対空ミサイル(視界5)・固定翼機は視界内で発見できる<br>'
+    + '・奇襲されるかどうかは<b>動く前の位置・未移動の状態</b>で判定する (移動後の位置で見ると常に隣接＝発見済みになってしまうため)<br>'
+    + '・一度発見した敵を記憶する仕組みはありません。<b>離れれば見失います</b>'
+    + '</div>'
     + '<h4>占領</h4>歩兵で拠点HP分削る。'
     + '<h4>勝利</h4>敵全滅 OR 全拠点支配。'
     + '</div>';
@@ -14041,17 +14059,54 @@ function renderSupplyTab(){
   html += '<h4 style="margin:14px 0 6px; font-size:14px; color:#5a4a30; border-bottom:1px solid #ccc; padding-bottom:4px;">🏭 補給拠点と補給率</h4>';
 
   html += '<div style="background:#fff5e6; padding:8px 10px; border-radius:4px; font-size:11px; margin-bottom:8px; border-left:3px solid #BA7517;">';
-  html += '<b style="color:#BA7517;">⛽ 燃料・弾薬の施設補給ルール</b>';
-  html += '<div style="margin-top:4px;">占領済み施設の上にいる自軍ユニットは、毎ターン以下の割合で燃料・弾薬が補給されます (端数切り上げ)</div>';
+  html += '<b style="color:#BA7517;">⛽ 施設からの補給は「範囲」で受ける (段階1)</b>';
+  html += '<div style="margin-top:4px;">施設マスの上に乗る必要はありません。自軍が占領している拠点から<b>一定範囲</b>にいれば、毎ターン下の割合で燃料・弾薬が補給されます (端数切り上げ)。1マスの取り合いで渋滞しないための仕様です。</div>';
   html += '<table style="width:100%; font-size:11px; margin-top:4px; border-collapse:collapse;">';
-  html += '<tr style="background:#e6dfca;"><th style="padding:3px 6px; text-align:left;">補給元</th><th style="padding:3px 6px; text-align:center;">対象</th><th style="padding:3px 6px; text-align:center;">補給率/T</th></tr>';
-  html += '<tr><td style="padding:3px 6px;">都市系 (都市/大都市/商業都市/首都)</td><td style="padding:3px 6px; text-align:center;">LAND のみ</td><td style="padding:3px 6px; text-align:center;"><b>20%</b></td></tr>';
-  html += '<tr style="background:#fafaf3;"><td style="padding:3px 6px;">生産施設 (工場/港/空港 系列・全Lv)</td><td style="padding:3px 6px; text-align:center;">対応カテゴリ</td><td style="padding:3px 6px; text-align:center;"><b>50%</b></td></tr>';
-  html += '<tr><td style="padding:3px 6px;">弾薬工廠 (隣接マス or 同マス)</td><td style="padding:3px 6px; text-align:center;">LAND/SEA のみ</td><td style="padding:3px 6px; text-align:center;"><b>100% (即満タン)</b></td></tr>';
-  html += '<tr style="background:#fafaf3;"><td style="padding:3px 6px;">空母系 (搭載中の搭載機)</td><td style="padding:3px 6px; text-align:center;">AIR</td><td style="padding:3px 6px; text-align:center;"><b>100% (即満タン)</b></td></tr>';
-  html += '<tr><td style="padding:3px 6px;">補給ユニット隣接 (補給車/補給艦/給油艦/空中給油機)</td><td style="padding:3px 6px; text-align:center;">対応カテゴリ</td><td style="padding:3px 6px; text-align:center;"><b>100% (即満タン)</b></td></tr>';
+  html += '<tr style="background:#e6dfca;"><th style="padding:3px 6px; text-align:left;">補給元</th><th style="padding:3px 6px; text-align:center;">範囲</th><th style="padding:3px 6px; text-align:left;">対象</th><th style="padding:3px 6px; text-align:center;">補給率/T</th></tr>';
+  html += '<tr><td style="padding:3px 6px;">弾薬工廠</td><td style="padding:3px 6px; text-align:center;"><b>3マス</b></td><td style="padding:3px 6px;">地上・艦船・ヘリ (固定翼は対象外)</td><td style="padding:3px 6px; text-align:center;"><b>100%</b></td></tr>';
+  html += '<tr style="background:#fafaf3;"><td style="padding:3px 6px;">生産施設 (工場系/港系/空港系・全Lv)</td><td style="padding:3px 6px; text-align:center;"><b>2マス</b></td><td style="padding:3px 6px;">カテゴリ一致 (工場=地上/港=艦船/空港=航空)。ヘリは工場系からも可</td><td style="padding:3px 6px; text-align:center;"><b>50%</b></td></tr>';
+  html += '<tr><td style="padding:3px 6px;">都市・大都市・商業都市・首都</td><td style="padding:3px 6px; text-align:center;"><b>2マス</b></td><td style="padding:3px 6px;">地上・ヘリ</td><td style="padding:3px 6px; text-align:center;"><b>20%</b></td></tr>';
+  html += '<tr style="background:#fafaf3;"><td style="padding:3px 6px;">空母系 (搭載中の搭載機)</td><td style="padding:3px 6px; text-align:center;">同マス</td><td style="padding:3px 6px;">航空</td><td style="padding:3px 6px; text-align:center;"><b>100%</b></td></tr>';
+  html += '<tr><td style="padding:3px 6px;">補給ユニット (補給車/補給艦/給油艦/補給貨車/空中給油機)</td><td style="padding:3px 6px; text-align:center;">隣接</td><td style="padding:3px 6px;">それぞれの対象カテゴリ</td><td style="padding:3px 6px; text-align:center;"><b>100%</b></td></tr>';
   html += '</table>';
-  html += '<div style="font-size:10px; color:#888; margin-top:4px;">例: 機動戦闘車(弾薬3) が大都市(20%)に居る → 3×20%=0.6→1発/T、満タンに3T</div>';
+  html += '<div style="font-size:10px; color:#888; margin-top:4px;">・燃料と弾薬は<b>別々に</b>「最も補給量の多い源」を選びます (給油艦と補給艦を両隣に付ければ両方受けられる)。同率なら備蓄を消費しない施設を優先。<br>・例: 機動戦闘車(弾薬3) が都市の圏内(20%) → 3×20%=0.6→1発/T、満タンに3T<br>・<b>HP回復(+2)と施設スロットへの収容は、従来どおり施設マスの上にいるときだけ</b>です</div>';
+  html += '</div>';
+
+  // === 施設の備蓄 (段階2) ===
+  html += '<h4 style="margin:14px 0 6px; font-size:14px; color:#5a4a30; border-bottom:1px solid #ccc; padding-bottom:4px;">📦 施設の備蓄 (段階2)</h4>';
+  html += '<div style="background:#f9f7f0; padding:8px 10px; border-radius:4px; font-size:11px; margin-bottom:8px;">';
+  html += '<b style="color:#5a4a30;">物資は無限ではない</b>';
+  html += '<div style="margin-top:4px;">各拠点は燃料・弾薬の備蓄を持ち、補給するたびに減ります。<b>空になった拠点からは補給できません</b>。生産できる施設だけが毎ターン備蓄を作り、都市系は自力では作れないので運んでもらう必要があります。</div>';
+  html += '<table style="width:100%; font-size:11px; margin-top:4px; border-collapse:collapse;">';
+  html += '<tr style="background:#e6dfca;"><th style="padding:3px 6px; text-align:left;">施設</th><th style="padding:3px 6px; text-align:center;">毎ターンの生産</th><th style="padding:3px 6px; text-align:center;">上限</th><th style="padding:3px 6px; text-align:center;">開始時</th></tr>';
+  html += '<tr><td style="padding:3px 6px;">工場・港・空港 Lv1</td><td style="padding:3px 6px; text-align:center;">燃料+40 / 弾薬+4</td><td style="padding:3px 6px; text-align:center;">200 / 20</td><td style="padding:3px 6px; text-align:center;">満タン</td></tr>';
+  html += '<tr style="background:#fafaf3;"><td style="padding:3px 6px;">同 Lv2</td><td style="padding:3px 6px; text-align:center;">+60 / +6</td><td style="padding:3px 6px; text-align:center;">300 / 30</td><td style="padding:3px 6px; text-align:center;">満タン</td></tr>';
+  html += '<tr><td style="padding:3px 6px;">同 Lv3</td><td style="padding:3px 6px; text-align:center;">+80 / +8</td><td style="padding:3px 6px; text-align:center;">400 / 40</td><td style="padding:3px 6px; text-align:center;">満タン</td></tr>';
+  html += '<tr style="background:#fafaf3;"><td style="padding:3px 6px;">同 Lv4 (兵器廠)</td><td style="padding:3px 6px; text-align:center;">+100 / +10</td><td style="padding:3px 6px; text-align:center;">500 / 50</td><td style="padding:3px 6px; text-align:center;">満タン</td></tr>';
+  html += '<tr><td style="padding:3px 6px;">弾薬工廠</td><td style="padding:3px 6px; text-align:center;">+150 / +20</td><td style="padding:3px 6px; text-align:center;">800 / 80</td><td style="padding:3px 6px; text-align:center;">満タン</td></tr>';
+  html += '<tr style="background:#fafaf3;"><td style="padding:3px 6px;">都市・大都市・商業都市・首都</td><td style="padding:3px 6px; text-align:center;">生産しない</td><td style="padding:3px 6px; text-align:center;">200 / 20</td><td style="padding:3px 6px; text-align:center;">上限の半分 (100 / 10)</td></tr>';
+  html += '</table>';
+  html += '<ul style="margin:6px 0 0 16px; padding:0;">';
+  html += '<li>敵拠点を<b>占領すると備蓄の半分を鹵獲</b>できる</li>';
+  html += '<li>敵拠点の備蓄は<b>偵察機・観測機・索敵機</b>の視界内にあるときだけ見える (それ以外は「不明」)</li>';
+  html += '<li>施設スロットに収容したユニットを取り出すときの補給も、その施設の備蓄から支払う (足りなければ足りるぶんだけ)</li>';
+  html += '</ul>';
+  html += '</div>';
+
+  // === 補給ルート / 兵站 (段階3) ===
+  html += '<h4 style="margin:14px 0 6px; font-size:14px; color:#5a4a30; border-bottom:1px solid #ccc; padding-bottom:4px;">🚚 補給ルート / 兵站 (段階3)</h4>';
+  html += '<div style="background:#f9f7f0; padding:8px 10px; border-radius:4px; font-size:11px; margin-bottom:8px;">';
+  html += '<b style="color:#5a4a30;">補給ユニットに往復させる</b>';
+  html += '<div style="margin-top:4px;">補給ユニットを選んで<b>積み元</b>と<b>降ろし先</b>を指定すると、毎ターン自動で往復して備蓄を運びます。</div>';
+  html += '<ul style="margin:6px 0 0 16px; padding:0;">';
+  html += '<li><b>積み元</b>: 備蓄を作れる自軍の生産施設 (都市は作れないので積み元にできない)</li>';
+  html += '<li><b>降ろし先</b>: 自軍拠点、または任意のマス (<b>駐留地点</b>。そこに留まって周りの味方に補給する)</li>';
+  html += '<li>施設マスの上には乗らず、<b>隣で積み降ろし</b>する (拠点マスを塞がないため)</li>';
+  html += '<li>積み元では<b>備蓄を空にしてでも満載</b>する。在庫が<b>2割以下</b>になったら積み元へ戻る</li>';
+  html += '<li>積み元・降ろし先を敵に取られると、ルートは自動で解除される</li>';
+  html += '<li><b>空中給油機</b>は空港系でしか積み降ろしできない。燃料が減ると最寄りの空港・空母へ帰投し、8割まで戻るとルートを再開する (墜落防止)</li>';
+  html += '<li>自走できない補給ユニット (補給貨車) はルートを持てない — 機関車が運ぶ</li>';
+  html += '</ul>';
   html += '</div>';
 
   // === 補給ユニット一覧 ===
@@ -14067,9 +14122,10 @@ function renderSupplyTab(){
   html += '<tr style="background:#fafaf3;"><td style="padding:3px 6px;">軽空母</td><td style="padding:3px 6px; text-align:center;">海軍</td><td style="padding:3px 6px; text-align:center;">300</td><td style="padding:3px 6px; text-align:center;">15</td><td style="padding:3px 6px;">航空機2機搭載、空母機能</td></tr>';
   html += '<tr><td style="padding:3px 6px;">空母</td><td style="padding:3px 6px; text-align:center;">海軍</td><td style="padding:3px 6px; text-align:center;">500</td><td style="padding:3px 6px; text-align:center;">25</td><td style="padding:3px 6px;">航空機4機搭載</td></tr>';
   html += '<tr style="background:#fafaf3;"><td style="padding:3px 6px;">装甲空母</td><td style="padding:3px 6px; text-align:center;">海軍</td><td style="padding:3px 6px; text-align:center;">400</td><td style="padding:3px 6px; text-align:center;">20</td><td style="padding:3px 6px;">航空機3機搭載、装甲4</td></tr>';
-  html += '<tr><td style="padding:3px 6px;">空中給油機</td><td style="padding:3px 6px; text-align:center;">空軍</td><td style="padding:3px 6px; text-align:center;">200</td><td style="padding:3px 6px; text-align:center;">―</td><td style="padding:3px 6px;">燃料専用、隣接空軍に補給</td></tr>';
+  html += '<tr><td style="padding:3px 6px;">空中給油機</td><td style="padding:3px 6px; text-align:center;">空軍</td><td style="padding:3px 6px; text-align:center;">200</td><td style="padding:3px 6px; text-align:center;">―</td><td style="padding:3px 6px;">燃料専用、隣接空軍に補給。積み降ろしは空港系のみ</td></tr>';
+  html += '<tr style="background:#fafaf3;"><td style="padding:3px 6px;">補給貨車</td><td style="padding:3px 6px; text-align:center;">陸軍(列車)</td><td style="padding:3px 6px; text-align:center;"><b>800</b></td><td style="padding:3px 6px; text-align:center;"><b>60</b></td><td style="padding:3px 6px;">隣接の陸上ユニット・ヘリに補給。自走できず機関車が牽引する。<b>連結したままでも補給できる</b></td></tr>';
   html += '</table>';
-  html += '<div style="font-size:10px; color:#888; margin-top:4px;">※ 弾薬工廠 (施設) は補給庫を消費せず、隣接陸海ユニットに無制限補給 (補給ユニットの弾薬庫も満タンにする)</div>';
+  html += '<div style="font-size:10px; color:#888; margin-top:4px;">※ 補給ユニットの在庫は自軍拠点で補充する (拠点の備蓄から引かれる)。弾薬工廠は補給範囲3マス・補給率100%だが、備蓄 (燃料800/弾薬80) の範囲内で、無限ではない。</div>';
   html += '</div>';
 
   return html;
@@ -14086,6 +14142,7 @@ function renderAITab(){
   // 共通ルール
   html += '<div style="background:#eef4fa; padding:8px 10px; border-radius:4px; font-size:11px; margin-bottom:10px; border-left:3px solid #185FA5;">';
   html += '<b style="color:#5a4a30;">🔧 共通ルール (全フェーズ)</b>';
+  html += '<div style="background:#fff4d6; padding:4px 8px; border-radius:3px; margin:4px 0;"><b>列車系 (機関車・装甲列車・列車砲・補給貨車) は AI の抽選対象外</b>。陸上の生産は決め打ちの候補リストから選ぶため、列車は作らない (当面プレイヤー専用)。</div>';
   html += '<ul style="margin:4px 0 0 16px; padding:0;">';
   html += '<li><b>資金 500G 未満:</b> 生産フェーズ全体をスキップ (現行最安値の歩兵 500G が買えないため)</li>';
   html += '<li><b>資金不足で抽選ユニットを買えない場合:</b> 同カテゴリ内で<b>最大3回再抽選</b>、それでも買えなければそのスロットはパス</li>';
@@ -14458,7 +14515,18 @@ function renderAITab(){
   // 全ユニット共通: HP撤退
   html += '<div style="background:#f9f7f0; padding:8px 10px; border-radius:4px; font-size:11px; margin-bottom:8px;">';
   html += '<b style="color:#5a4a30;">🩹 HP撤退ロジック (全ユニット共通)</b>';
-  html += '<div style="margin-top:4px;"><b>発動条件:</b> HP &lt; 5 になったら撤退モード</div>';
+  html += '<div style="margin-top:4px;"><b>発動条件:</b> 表示HP 5 以下 (内部HP≤50) になったら撤退モード。<b>弾薬または燃料が50%以下</b>でも、施設に下がって補給を受ける</div>';
+  html += '<div style="margin-top:4px;"><b>収容を最優先 (STORE-FIRST):</b></div>';
+  html += '<ul style="margin:2px 0 0 16px; padding:0;">';
+  html += '<li>自軍生産施設のマス上にいて修理・補給が必要なら、<b>まず施設スロットへの収容</b>を試みる (+3HP/T、取り出し時に燃料・弾薬も満タン)</li>';
+  html += '<li>スロットが空いていなければ、従来どおり施設マス上での部分補給に流れる</li>';
+  html += '<li>収容したユニットは<b>HPが満タンになったら自動で取り出される</b>。取り出し時の補給はその施設の備蓄から支払う</li>';
+  html += '</ul>';
+  html += '<div style="margin-top:4px;"><b>味方が道を空ける (make-way):</b></div>';
+  html += '<ul style="margin:2px 0 0 16px; padding:0;">';
+  html += '<li>負傷ユニットの退避路を<b>健全な味方が塞いでいる</b>場合、その味方が脇へどいて道を空ける</li>';
+  html += '<li>退避先を<b>敵</b>が塞いでいる場合は対象外 (敵を撃破してこじ開ける動きは未実装)</li>';
+  html += '</ul>';
   html += '<div style="margin-top:4px;"><b>撤退先 (修理可能マス):</b></div>';
   html += '<ul style="margin:2px 0 0 16px; padding:0;">';
   html += '<li><b>陸軍:</b> 自軍施設 (工場系・港・空港・都市系)</li>';
@@ -14546,6 +14614,7 @@ function renderAITab(){
   html += '<ol style="margin:2px 0 0 18px; padding:0;">';
   html += '<li>HP &lt; 5 → 撤退</li>';
   html += '<li>地続きの<b>廃墟</b> → 再建</li>';
+  html += '<li><b>未開通の工事現場</b> (路盤・橋脚・木組み) → 工事継続。<b>6マス以内</b>のものだけを対象にする (遠方に釣られないため)</li>';
   html += '<li><b>橋建設すべき川</b> → 橋建設</li>';
   html += '<li>地続きの<b>占領目標</b> → 占領</li>';
   html += '<li>海を隔てた廃墟の再建 → 輸送ユニットで渡海して再建</li>';
@@ -14719,8 +14788,15 @@ function renderAITab(){
 
   html += '<div style="margin-top:6px;"><b>自身の帰投:</b></div>';
   html += '<ul style="margin:2px 0 0 16px; padding:0;">';
-  html += '<li>自身の補給庫 (燃料 or 弾薬) が空になったら自軍施設へ帰投</li>';
-  html += '<li>弾薬補給は弾薬工廠隣接が最速 (100% 即満タン)、それ以外は施設マス上で 50%/T</li>';
+  html += '<li>自身の補給庫 (燃料 or 弾薬) が空になったら自軍施設へ帰投して補充する</li>';
+  html += '<li>補充は備蓄を持つ自軍拠点で行う (弾薬工廠が最も潤沢)</li>';
+  html += '</ul>';
+  html += '<div style="margin-top:6px;"><b>補給ルートの自動割当 (段階3):</b></div>';
+  html += '<ul style="margin:2px 0 0 16px; padding:0;">';
+  html += '<li>AI は補給ユニットに<b>ルートを自動で割り当てる</b> (<code>aiAssignSupplyRoutes</code>)。ログ: <code>[AI E] 補給ルート割当: 補給車 工場(x,y) → 都市(x,y)</code></li>';
+  html += '<li>積み元は<b>備蓄を作れる生産施設</b>、降ろし先は<b>備蓄が枯れていて前線に近い拠点</b>を優先する</li>';
+  html += '<li>道を塞がれるなどで運べない状態が続くと、数ターンで別の拠点へ組み直す</li>';
+  html += '<li>ルートを持つ補給ユニットはターン開始時に自動で動くため、主な仕事は「後方の施設間の運搬」と「駐留地点での支援」になる</li>';
   html += '</ul>';
 
   html += '</div>';
@@ -14730,6 +14806,13 @@ function renderAITab(){
   html += '<b style="color:#5a4a30;">🚁 輸送ユニット運用ロジック</b>';
 
   html += '<div style="margin-top:6px;"><b>主体:</b> 運ばれる側 (歩兵系・戦闘ユニット) が「行きたい場所」を決めて輸送ユニットを呼ぶ</div>';
+
+  html += '<div style="margin-top:6px;"><b>渡海作戦の3原則:</b></div>';
+  html += '<ul style="margin:2px 0 0 16px; padding:0;">';
+  html += '<li>運ぶ先は<b>海越え目標に限る</b> (歩いて行ける拠点へは運ばない。以前は直線距離で最寄りを選び、自陣側へ運んでしまっていた)</li>';
+  html += '<li>接岸地点は「<b>そこから積荷が目標まで歩いて行ける海岸マス</b>」の中から選ぶ (<code>_aiTransportLandingPlan</code>)。途中の自陣側の岸では降ろさない</li>';
+  html += '<li>拾いに行く相手は「<b>輸送ユニットが実際に合流できる味方</b>」に限る (内陸や別の島の味方を選んで永久にうろつかない)</li>';
+  html += '</ul>';
 
   html += '<div style="margin-top:6px;"><b>輸送ヘリ運用フロー (歩兵系):</b></div>';
   html += '<ol style="margin:2px 0 0 18px; padding:0;">';
@@ -14904,8 +14987,8 @@ function renderTodoTab(){
     ['首都', 'Phase 3: 首都地形(防御+4、収入+2000)、占領で即敗北'],
     ['施設破壊', 'Phase 4: 自走砲・ロケット砲、施設攻撃、ダウングレード、廃墟化'],
     ['工兵', 'Phase 5: 工兵ユニット、再建・施設修復・橋建設'],
-    ['補給システム', '燃料・弾薬の管理、補給車・補給艦・給油艦・空中給油機による補給。弾薬カウンター(補給車30/補給艦30/軽空母30/装甲空母40/空母50)'],
-    ['弾薬工廠', '大都市から派生する補給特化施設。隣接陸海ユニットに毎ターン補給(航空除外)'],
+    ['補給システム', '燃料・弾薬の管理、補給車・補給艦・給油艦・空中給油機による補給 (各補給庫の数値は「補給」タブ参照)'],
+    ['弾薬工廠', '大都市から派生する補給特化施設。3マス範囲に100%補給 (固定翼は対象外、ヘリは可)。備蓄 燃料800/弾薬80'],
     ['昼夜・索敵範囲システム', 'FoW (戦場の霧)、夜間視界縮小、施設からの光源、伏兵奇襲'],
     ['天候システム', '雲・雨雲のオーバーレイ、風による雲流れ、隠匿効果、射程ペナルティ'],
     ['搭載機', '艦上戦闘機・(爆)・(雷) 3種、空軍基地以上で生産、空母から発艦運用'],
@@ -14931,6 +15014,14 @@ function renderTodoTab(){
     ['山岳猟兵 (MOUNTAIN_TROOP)', '山岳特化歩兵。装甲0・移動4・視界2、火力(対INF5/UV3/HE5)。<b>森のコスト2→1、山のコスト3→2、山にいる時視界+2(計4)</b>。Lv2工場以上で生産。1500G/2T。占領可'],
     ['伏兵検知と移動経路停止', '見えない敵がいるマスは移動範囲に表示(空きマスとして)、ただし実際の移動時は経路上で初めて未発見の敵に隣接したマスでZOC発動して停止。目的地が伏兵マスだった場合は奇襲発動(伏兵から攻撃)。プレイヤー・AI両方に適用'],
     ['同ターン攻撃禁止 (移動発見)', '移動して初めて発見した敵 (森山隠匿・雲雨雲隠匿・潜水艦・ステルス爆撃機すべて) は同ターン攻撃不可。他の自軍ユニットが先に発見していた敵は攻撃可能(連携が活きる)'],
+    ['補給 段階1: 範囲補給', '施設マスの上に乗らなくても、拠点から範囲内にいれば補給を受けられる (弾薬工廠3マス100% / 生産施設2マス50% / 都市系2マス20%)。燃料と弾薬は別々に最も多い補給源を選ぶ'],
+    ['補給 段階2: 施設の備蓄', '各拠点が燃料・弾薬の備蓄を持ち、補給するたびに減る。生産施設だけが毎ターン備蓄を作り、都市系は運んでもらう必要がある。占領で半分を鹵獲。敵拠点の備蓄は偵察機・観測機・索敵機の視界内でのみ見える'],
+    ['補給 段階3: 補給ルート / 兵站', '補給ユニットに積み元と降ろし先を指定すると毎ターン自動往復。駐留地点の指定、在庫2割で帰投、空中給油機の帰投 (墜落防止)。AI も自動でルートを割り当てる'],
+    ['ヘリの地形隠匿 (ポップアップ攻撃)', 'ヘリが森・山に入ると地上ユニット・ヘリからは隣接するまで見えず、地形防御 (森+3/山+4) を得る。対空戦車(視界4)・対空ミサイル(視界5)・固定翼機は視界内で発見でき、固定翼機の攻撃には地形防御が効かない'],
+    ['奇襲判定の一本化', '「画面で見えるか」と「奇襲されるか」を同じルールに統一。潜航中の潜水艦は探知範囲 (潜水艦3/駆逐艦・フリゲート2/対潜哨戒機3) で発見、隣接なら対潜能力がなくても発見。奇襲は動く前の位置で判定する'],
+    ['鉄道 (線路・鉄橋・耐久制)', '線路は新規に敷けず、マップに置かれたものを奪い合う。線路・鉄橋・橋は耐久0〜30で、工兵の工事 (工兵の表示HP分) で開通し、施設攻撃で叩ける。線路・鉄橋は路盤・橋脚で止まり更地にならない'],
+    ['海上鉄橋・可動橋', '島と島を結ぶ高架橋 (マップエディタからのみ配置)。列車0.5・工兵3。桁下を抜けられるのは潜水艦・攻撃型潜水艦・駆潜艇・輸送船・給油艦・補給艦だけで、可動橋だけが全艦船の通れる海峡の関所になる'],
+    ['列車ユニットと編成', '機関車・装甲列車・列車砲・補給貨車の4種。連結すると線路の上に一列に並び (最大5両)、機関車が1両あれば前後どちらへも動ける。並び順は変わらない。単線なので味方の上もすり抜けられない。補給貨車は連結したまま補給でき、列車砲は停車していれば連結したまま撃てる。機関車を失うと貨車は線路に取り残される'],
     ['伏兵検知システム', '見えない敵(森・山・雲・雨雲下、潜水艦・ステルス爆)がいるマスはプレイヤー視点で空きマスとして移動範囲に含む。移動経路で伏兵に隣接した瞬間にZOC発動で停止+発見+行動終了。<b>目的地が伏兵マスだった場合のみ奇襲発動</b>。自分の移動で初めて発見した敵への同ターン攻撃は不可(潜水艦・ステルス機ルールを全伏兵に拡張)']
   ];
   var categories = [
@@ -14941,7 +15032,8 @@ function renderTodoTab(){
         ['難易度設定システム', '簡単/普通/難しい の3段階を選択可能に。<b>燃料・弾薬カウンターが変動</b>(簡単=無制限、普通=現状の2倍、難しい=現状値)。難易度はステージごと or 全体設定で。現状は<b>「難しい」相当</b>でプレイ中。', null],
         ['防御兵器(対空・対地・対艦)', '施設の防御スロットに設置する防御兵器シリーズ。設置にはコスト+ターン消費、撤去可能、施設HPと独立した自身のHPを持つ。<br>・<b>近接対空機銃</b>(射程1、対空HE:4 AC:2、HP20)<br>・<b>高射砲</b>(射程1-2、対空HE:6 AC:4、HP20)<br>・<b>沿岸砲</b>(射程1-3、対艦、港系のみ)<br>・<b>要塞砲</b>(射程1-4、対地・対艦、砦系のみ)<br>・<b>対地迎撃施設</b>(対歩・対UV・対AV、都市/生産施設/首都に設置)<br>射程内に敵が入ると自動迎撃(移動経路の各マスで判定)。', '防御スロット枠 (実装済み)'],
         ['砦系施設', '<b>砦跡</b>(防御スロット2)→<b>砦</b>(4)→<b>要塞</b>(6)→<b>トーチカ</b>(8) の4段階。生産・収入なしの防御特化施設。要塞砲などの設置で要塞拠点化。詳細仕様は別途議論。', '防御兵器'],
-        ['歩兵系新規 (兵員輸送トラック・機械化歩兵)', '<b>兵員輸送トラック</b>(重歩兵を1ユニット載せられる輸送車)<br><b>機械化歩兵</b>(兵員輸送車+歩兵、輸送機能と占領能力を併せ持つ)<br>※砲兵・重砲兵・観測兵・空挺降下兵・山岳猟兵は実装済み', null],
+        ['歩兵系新規 (兵員輸送トラック・機械化歩兵)', '<b>兵員輸送トラック</b>(重歩兵を1ユニット載せられる輸送車)<br><b>機械化歩兵</b>(装甲と足を持つ占領できる歩兵。既存の歩兵・APCとの住み分けが論点)<br>※砲兵・重砲兵・観測兵・空挺降下兵・山岳猟兵は実装済み。<b>鉄道の次はこれ</b>', null],
+        ['AI: 列車の運用', 'AI は現在まったく列車を作らない。入れるなら「線路と繋がっている工場でしか作らない」「機関車で牽引して前線へ運ぶ」「敵の線路を叩いて孤立させる」の3つが必要。まずプレイヤー側の手触りを見てから。', '列車ユニットと編成 (実装済み)'],
         ['AI: 未索敵エリア偵察派遣', 'FoWで未視認のエリアへユニットを派遣して索敵を広げる思考。Phase 4として実装予定。', 'AI: 渡海作戦の実行 (実装済み)'],
         ['AI: 戦略的攻略', '敵首都・敵生産施設を狙ったユニット派遣、戦線突破の判断。Phase 5として実装予定。', 'AI: 未索敵エリア偵察派遣'],
         ['AI: 渡海作戦の高度化', '輸送船の最適ルート探索、敵の射程を避ける航路、護衛艦との連携、輸送ヘリ・輸送機による空輸の活用。Phase 6で段階的に実装。', 'AI: 渡海作戦の実行 (実装済み)'],
@@ -14961,7 +15053,9 @@ function renderTodoTab(){
       items: [
         ['AIの全体強化', '長射程ユニットの後方運用、艦隊連携、回復のための後退判断、地形利用の高度化など。', null],
         ['ステージのバランス見直し', '実プレイでの戦術的バランス、配置の偏りの修正。', null],
-        ['数値バランスの実プレイ調整', '遊んで気になるユニットの強弱、地形効果の実用度の見直し。生産価格・ターン数も。', null]
+        ['数値バランスの実プレイ調整', '遊んで気になるユニットの強弱、地形効果の実用度の見直し。生産価格・ターン数も。', null],
+        ['線路の詰まり具合の調整', '列車は味方の上もすり抜けられない。線路が1本のマップだと、味方の工兵や歩兵が線路に立っただけで編成が完全に止まる。実際に遊んで頻発するようなら「味方だけは徐行して通過」に戻すか、線路を複線にする。', '列車ユニットと編成 (実装済み)'],
+        ['補給範囲2マスが強すぎないか', '補給範囲を1マスに戻す、または距離で補給率を落とす案。実プレイの感触を見てから判断する。', '補給 段階1: 範囲補給 (実装済み)']
       ]
     },
     {
