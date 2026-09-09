@@ -3782,10 +3782,15 @@ function performFireForEffect(att, defOrTarget, justMoved, wide){
   var useRing2 = !!(wide && bestW.areaShot);
   // 中央のユニット (居れば 120% ダメージ)
   var hits = [];
+  // 列車砲のように「常に範囲攻撃」の武器は固定倍率 (中心100% / 隣接80% / 外周60%)。
+  // 施設へのダメージと同じ倍率にして、砲弾1発の効き方を揃えるため。
+  var isAreaShotW = !!bestW.areaShot;
   var centerUnit = unitAt(defX, defY);
   if(centerUnit && centerUnit.hp > 0){
     var fakeTarget = centerUnit;
-    var eAtk = effectiveAtkW(att, bestW, fakeTarget, 'fire_for_effect');
+    var eAtk = isAreaShotW
+      ? effectiveAtkW(att, bestW, fakeTarget, 'normal')
+      : effectiveAtkW(att, bestW, fakeTarget, 'fire_for_effect');
     var armor = TYPE[fakeTarget.type].armor;
     var terrainDef = getTerrainDefFor(fakeTarget, att);
     var dmg = Math.max(0, eAtk - armor - terrainDef);
@@ -3810,8 +3815,12 @@ function performFireForEffect(att, defOrTarget, justMoved, wide){
     var baseAtk = bestW.atk[cat] || 0;
     if(baseAtk === 0) continue;
     // 観測兵ボーナス (周囲ダメージにも適用)
-    var mult = getObserverMultiplier(att, bestW, fakeT, 'observed');
-    if(mult !== 1.0) baseAtk = Math.floor(baseAtk * mult);
+    if(isAreaShotW){
+      baseAtk = Math.floor(baseAtk * 0.8);          // 列車砲: 隣接は80%
+    } else {
+      var mult = getObserverMultiplier(att, bestW, fakeT, 'observed');
+      if(mult !== 1.0) baseAtk = Math.floor(baseAtk * mult);
+    }
     eAtk = Math.round(baseAtk * att.hp / HP_MAX);
     var armor = TYPE[fakeT.type].armor;
     var terrainDef = getTerrainDefFor(fakeT, att);
@@ -3833,9 +3842,13 @@ function performFireForEffect(att, defOrTarget, justMoved, wide){
       var cat2 = getArmorClass(u2);
       var base2 = bestW.atk[cat2] || 0;
       if(base2 === 0) continue;
-      var mult2 = getObserverMultiplier(att, bestW, u2, 'observed');
-      if(mult2 !== 1.0) base2 = Math.floor(base2 * mult2);
-      base2 = Math.floor(base2 * 0.8);               // 外周は80%
+      if(isAreaShotW){
+        base2 = Math.floor(base2 * 0.6);             // 列車砲: 外周は60%
+      } else {
+        var mult2 = getObserverMultiplier(att, bestW, u2, 'observed');
+        if(mult2 !== 1.0) base2 = Math.floor(base2 * mult2);
+        base2 = Math.floor(base2 * 0.8);             // 外周は80%
+      }
       var eAtk2 = Math.round(base2 * att.hp / HP_MAX);
       var dmg2 = Math.max(0, eAtk2 - TYPE[u2.type].armor - getTerrainDefFor(u2, att));
       u2.hp = Math.max(0, u2.hp - dmg2 * 10);
@@ -14741,12 +14754,15 @@ function renderRulesTab(){
     + '<div style="background:#f6f2e8; border-left:3px solid #7A5A10; padding:6px 10px; margin:6px 0; font-size:12px;">'
     + '<b style="color:#7A5A10;">🚂 列車砲の砲撃</b><br>'
     + '列車砲は<b>撃つときは必ず範囲攻撃</b>になります。単体を狙う撃ち方はありません。<br>'
-    + '・<b>砲撃</b> (観測兵なしでも可): 着弾点と<b>上下左右の5マス</b>。中央120% / 上下左右100%。<b>弾薬5</b><br>'
-    + '・<b>効力射</b> (観測兵が視界内にいるとき): <b>マンハッタン距離2の13マス</b>。中央120% / 隣接100% / 外周80%。<b>弾薬10</b><br>'
+    + '・<b>砲撃</b> (観測兵なしでも可): 着弾点と<b>上下左右の5マス</b>。<b>弾薬5</b><br>'
+    + '・<b>効力射</b> (観測兵が視界内にいるとき): <b>マンハッタン距離2の13マス</b>。<b>弾薬10</b><br>'
+    + '・威力は<b>着弾点からの距離だけ</b>で決まり、ユニットでも施設でも同じ倍率です:<br>'
+    + '　<b>中央100% / 上下左右の4マス80% / 効力射の外周8マス60%</b><br>'
+    + '　例: 対装甲車両14なら 14 / 11 / 8、対施設20なら 20 / 16 / 12 (ここから装甲・地形防御を引きます)<br>'
+    + '・効力射で増えるのは<b>当たる範囲だけ</b>で、威力は上がりません。観測兵の+20%は列車砲には乗りません<br>'
     + '・観測兵の効力射は他のユニットでは「弾薬2消費」ですが、列車砲は<b>弾薬2倍消費</b> (5→10) という扱いです<br>'
     + '・弾数は10発なので、砲撃なら2回、効力射なら1回で撃ち切ります。補給貨車を連結しておくと続けて撃てます<br>'
     + '・<b>着弾範囲にある施設・線路・鉄橋・橋も一緒に壊れます</b>。砲弾は同じものなので、そこに何があっても巻き込みます<br>'
-    + '　対施設ダメージは<b>中央100% / 隣接4マス80% / 効力射の外周8マス60%</b>（対施設20なら 20 / 16 / 12。ここから施設の地形防御を引きます）<br>'
     + '　<b>所属は問いません</b>。自軍・中立の施設や線路も同じように壊れるので、自陣の線路を巻き込まないよう着弾点を選んでください<br>'
     + '・そのため列車砲には「<b>施設攻撃</b>」のコマンドが出ません。施設を叩くときも<b>砲撃</b>で着弾点を指定します'
     + '</div>'
