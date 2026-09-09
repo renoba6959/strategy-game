@@ -3785,13 +3785,19 @@ function performFireForEffect(att, defOrTarget, justMoved, wide){
   // 列車砲の「砲撃」(観測兵なし) は固定倍率 (中心100% / 隣接80%)。
   // 施設へのダメージと同じ倍率にして、砲弾1発の効き方を揃えるため。
   // 効力射 (観測兵つき) は他の間接砲と同じく観測兵ボーナスが乗る。
-  var isAreaShotW = !!bestW.areaShot && !wide;
+  // 倍率は「着弾点からの距離」だけで決まる。ユニットでも施設でも同じ。
+  //   効力射 (観測兵つき): 中心120% / 上下左右100% / 外周80%
+  //     観測兵ボーナスは「中心が120%になる」ことそのもの。ここでさらに ×1.2 を掛けない
+  //   砲撃 (列車砲・観測兵なし): 中心100% / 上下左右80%
+  var isPlainAreaShot = !!bestW.areaShot && !wide;
+  var ratioCenter = isPlainAreaShot ? 1.0 : 1.2;
+  var ratioAdj    = isPlainAreaShot ? 0.8 : 1.0;
+  var ratioRing   = 0.8;                            // 外周は効力射のみ
   var centerUnit = unitAt(defX, defY);
   if(centerUnit && centerUnit.hp > 0){
     var fakeTarget = centerUnit;
-    var eAtk = isAreaShotW
-      ? effectiveAtkW(att, bestW, fakeTarget, 'normal')
-      : effectiveAtkW(att, bestW, fakeTarget, 'fire_for_effect');
+    var baseC = bestW.atk[getArmorClass(fakeTarget)] || 0;
+    var eAtk = Math.round(Math.floor(baseC * ratioCenter) * att.hp / HP_MAX);
     var armor = TYPE[fakeTarget.type].armor;
     var terrainDef = getTerrainDefFor(fakeTarget, att);
     var dmg = Math.max(0, eAtk - armor - terrainDef);
@@ -3809,20 +3815,12 @@ function performFireForEffect(att, defOrTarget, justMoved, wide){
     // 攻撃カテゴリチェック: 効力射の周囲ダメージは陸海ユニット限定 (空中ユニットには当たらない)
     var uCat = TYPE[u.type].cat;
     if(uCat !== 'LAND' && uCat !== 'SEA') continue;
-    // 100% ダメージ計算 (観測兵ボーナス含む、HP連動)
     var fakeT = u;
-    var eAtk = 0;
     var cat = getArmorClass(fakeT);
     var baseAtk = bestW.atk[cat] || 0;
     if(baseAtk === 0) continue;
-    // 観測兵ボーナス (周囲ダメージにも適用)
-    if(isAreaShotW){
-      baseAtk = Math.floor(baseAtk * 0.8);          // 列車砲: 隣接は80%
-    } else {
-      var mult = getObserverMultiplier(att, bestW, fakeT, 'observed');
-      if(mult !== 1.0) baseAtk = Math.floor(baseAtk * mult);
-    }
-    eAtk = Math.round(baseAtk * att.hp / HP_MAX);
+    baseAtk = Math.floor(baseAtk * ratioAdj);
+    var eAtk = Math.round(baseAtk * att.hp / HP_MAX);
     var armor = TYPE[fakeT.type].armor;
     var terrainDef = getTerrainDefFor(fakeT, att);
     var dmg = Math.max(0, eAtk - armor - terrainDef);
@@ -3843,9 +3841,7 @@ function performFireForEffect(att, defOrTarget, justMoved, wide){
       var cat2 = getArmorClass(u2);
       var base2 = bestW.atk[cat2] || 0;
       if(base2 === 0) continue;
-      var mult2 = getObserverMultiplier(att, bestW, u2, 'observed');
-      if(mult2 !== 1.0) base2 = Math.floor(base2 * mult2);
-      base2 = Math.floor(base2 * 0.8);               // 外周は80%
+      base2 = Math.floor(base2 * ratioRing);         // 外周は80%
       var eAtk2 = Math.round(base2 * att.hp / HP_MAX);
       var dmg2 = Math.max(0, eAtk2 - TYPE[u2.type].armor - getTerrainDefFor(u2, att));
       u2.hp = Math.max(0, u2.hp - dmg2 * 10);
@@ -3858,10 +3854,10 @@ function performFireForEffect(att, defOrTarget, justMoved, wide){
   // 対施設火力に対する倍率: 中央100% / 隣接4マス80% / 効力射の外周8マス60%
   // 所属は問わない (自軍・中立の施設も壊れる)。廃墟は対象外。
   var facHits = [];
-  if(bestW.vsFacility && bestW.vsFacility > 0){
-    var facZones = [{ tiles: [[0,0]], ratio: 1.0 },
-                    { tiles: [[1,0],[-1,0],[0,1],[0,-1]], ratio: 0.8 }];
-    if(useRing2) facZones.push({ tiles: [[2,0],[-2,0],[0,2],[0,-2],[1,1],[1,-1],[-1,1],[-1,-1]], ratio: 0.6 });
+  if(bestW.areaShot && bestW.vsFacility && bestW.vsFacility > 0){
+    var facZones = [{ tiles: [[0,0]], ratio: ratioCenter },
+                    { tiles: [[1,0],[-1,0],[0,1],[0,-1]], ratio: ratioAdj }];
+    if(useRing2) facZones.push({ tiles: [[2,0],[-2,0],[0,2],[0,-2],[1,1],[1,-1],[-1,1],[-1,-1]], ratio: ratioRing });
     for(var fz=0; fz<facZones.length; fz++){
       var zone = facZones[fz];
       var baseF = Math.floor(bestW.vsFacility * zone.ratio);
@@ -14754,12 +14750,12 @@ function renderRulesTab(){
     + '・<b>砲撃</b> (観測兵なしでも可): 着弾点と<b>上下左右の5マス</b>。<b>弾薬5</b><br>'
     + '・<b>効力射</b> (観測兵が視界内にいるとき): <b>マンハッタン距離2の13マス</b>。<b>弾薬10</b><br>'
     + '・威力は<b>着弾点からの距離だけ</b>で決まり、ユニットでも施設でも同じ倍率です:<br>'
-    + '　<b>中央100% / 上下左右の4マス80% / 効力射の外周8マス60%</b><br>'
-    + '　例: 対装甲車両14なら 14 / 11 / 8、対施設20なら 20 / 16 / 12 (ここから装甲・地形防御を引きます)<br>'
-    + '・効力射で増えるのは<b>当たる範囲だけ</b>で、威力は上がりません。観測兵の+20%は列車砲には乗りません<br>'
+    + '　<b>砲撃</b> … 中央100% / 上下左右80%<br>'
+    + '　<b>効力射</b> … 中央120% / 上下左右100% / 外周80%（観測兵が付くぶん一段強い）<br>'
+    + '　例 (対装甲車両14 / 対施設20): 砲撃 = 14・11 / 20・16、効力射 = 16・14・11 / 24・20・16。ここから装甲・地形防御を引きます<br>'
     + '・観測兵の効力射は他のユニットでは「弾薬2消費」ですが、列車砲は<b>弾薬2倍消費</b> (5→10) という扱いです<br>'
     + '・弾数は10発なので、砲撃なら2回、効力射なら1回で撃ち切ります。補給貨車を連結しておくと続けて撃てます<br>'
-    + '・<b>着弾範囲にある施設・線路・鉄橋・橋も一緒に壊れます</b>。砲弾は同じものなので、そこに何があっても巻き込みます<br>'
+    + '・<b>着弾範囲にある施設・線路・鉄橋・橋も一緒に壊れます</b>。砲弾は同じものなので、そこに何があっても巻き込みます (列車砲だけの性質で、砲兵などの効力射は従来どおりユニットにしか当たりません)<br>'
     + '　<b>所属は問いません</b>。自軍・中立の施設や線路も同じように壊れるので、自陣の線路を巻き込まないよう着弾点を選んでください<br>'
     + '・そのため列車砲には「<b>施設攻撃</b>」のコマンドが出ません。施設を叩くときも<b>砲撃</b>で着弾点を指定します'
     + '</div>'
