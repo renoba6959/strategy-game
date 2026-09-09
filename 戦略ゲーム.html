@@ -3843,9 +3843,42 @@ function performFireForEffect(att, defOrTarget, justMoved, wide){
       if(u2.hp === 0 && u2.cargo && u2.cargo.length > 0) u2.cargo = [];
     }
   }
+  // ===== 着弾範囲の施設・線路・橋も巻き込む =====
+  // 砲弾は同じものなので、ユニットだけでなく構造物も炸裂点の範囲で壊れる。
+  // 対施設火力に対する倍率: 中央100% / 隣接4マス80% / 効力射の外周8マス60%
+  // 所属は問わない (自軍・中立の施設も壊れる)。廃墟は対象外。
+  var facHits = [];
+  if(bestW.vsFacility && bestW.vsFacility > 0){
+    var facZones = [{ tiles: [[0,0]], ratio: 1.0 },
+                    { tiles: [[1,0],[-1,0],[0,1],[0,-1]], ratio: 0.8 }];
+    if(useRing2) facZones.push({ tiles: [[2,0],[-2,0],[0,2],[0,-2],[1,1],[1,-1],[-1,1],[-1,-1]], ratio: 0.6 });
+    for(var fz=0; fz<facZones.length; fz++){
+      var zone = facZones[fz];
+      var baseF = Math.floor(bestW.vsFacility * zone.ratio);
+      var effF = Math.round(baseF * att.hp / HP_MAX);
+      for(var ft=0; ft<zone.tiles.length; ft++){
+        var fx = defX + zone.tiles[ft][0], fy = defY + zone.tiles[ft][1];
+        if(!inBounds(fx, fy)) continue;
+        var terF = TER[M[fy][fx]];
+        if(!terF) continue;
+        var dmgF = Math.max(0, effF - (terF.def || 0));
+        if(dmgF <= 0) continue;
+        // 線路・鉄橋・橋は耐久を削る (所有者がないので誰の物でも同じ)
+        if(terF.buildHpMax){
+          var resR = damageRailAt(fx, fy, dmgF);
+          if(resR) facHits.push({ x: fx, y: fy, name: terF.name, dmg: dmgF, rail: true, stage: resR.stage });
+          continue;
+        }
+        if(terF.isRuins) continue;            // 廃墟は叩いても意味がない
+        if(!captures[fx+','+fy]) continue;    // 施設でないマスは何も起きない
+        var resF = damageFacilityAt(fx, fy, dmgF);
+        if(resF) facHits.push({ x: fx, y: fy, name: terF.name, dmg: dmgF, rail: false, downgraded: resF.downgraded, ruined: resF.ruined, newTerName: resF.newTerName });
+      }
+    }
+  }
   // 中央が居なくても効力射は成立 (空マス着弾)
   // 表示用 r1 は中央のヒット情報があれば中央、なければダミー
-  var r1Display = { dmg: 0, weapon: bestW, weaponIdx: bestIdx, bonus: 0, observerMult: 1.0, attackMode: 'fire_for_effect', fireForEffect: true, hits: hits, defX: defX, defY: defY };
+  var r1Display = { dmg: 0, weapon: bestW, weaponIdx: bestIdx, bonus: 0, observerMult: 1.0, attackMode: 'fire_for_effect', fireForEffect: true, hits: hits, facHits: facHits, defX: defX, defY: defY };
   if(hits.length > 0 && hits[0].role === 'center'){
     r1Display.dmg = hits[0].dmg;
   }
@@ -11377,6 +11410,9 @@ function showCommandPanel(unit, justMoved){
   for(var wi=0; wi<unitWeapons.length; wi++){
     if(unitWeapons[wi].vsFacility && unitWeapons[wi].vsFacility > 0){ hasVsFacWeapon = true; break; }
   }
+  // 常に範囲攻撃になる武器 (列車砲) は「攻撃」の砲撃に一本化する。
+  // 砲撃の着弾範囲で施設・線路・橋も壊れるので、単発の施設攻撃は要らない
+  if(areaShotWeaponIndex(unit) >= 0) hasVsFacWeapon = false;
   if(hasVsFacWeapon){
     // 直接武器なら justMoved=true でも撃てる、間接武器なら justMoved=false 必須
     // computeFacilityAttackable 内で射程チェックするため、ここではフラグだけ確認
@@ -11795,6 +11831,37 @@ function exitFacilityAttackMode(){
   if(pendingUnit) showCommandPanel(pendingUnit, pendingJustMoved);
 }
 
+// 施設に対施設ダメージを与える。0 になったら1段階ダウングレード (廃墟化)。
+// 戻り値: { hp, downgraded, ruined, newTerName } / 施設が無ければ null
+function damageFacilityAt(x, y, dmg){
+  var capObj = captures[x+','+y];
+  if(!capObj) return null;
+  capObj.hp = Math.max(0, capObj.hp - dmg);
+  var out = { hp: capObj.hp, downgraded: false, ruined: false, newTerName: '' };
+  if(capObj.hp > 0) return out;
+  var oldTer = M[y][x];
+  var newTer = DOWNGRADE_MAP[oldTer];
+  if(!newTer) return out;
+  M[y][x] = newTer;
+  capObj.terKey = newTer;
+  var newTerObj = TER[newTer];
+  out.downgraded = true;
+  out.newTerName = newTerObj.name;
+  if(newTerObj.isRuins){
+    // 廃墟: 所有者は中立、施設HPは0 (再建で回復)、占領HPは満タン
+    capObj.owner = 'N';
+    capObj.cargo = [];
+    production = production.filter(function(p){ return !(p.x === x && p.y === y); });
+    capObj.hp = 0;
+    capObj.captureHp = newTerObj.capCaptureHp || newTerObj.capHpMax || CAP_MAX;
+    out.ruined = true;
+  } else {
+    capObj.hp = newTerObj.capHpMax || CAP_MAX;
+    capObj.captureHp = newTerObj.capCaptureHp || newTerObj.capHpMax || CAP_MAX;
+  }
+  return out;
+}
+
 function executeFacilityAttack(x, y){
   if(!pendingUnit) return;
   var capObj = captures[x+','+y];
@@ -11825,36 +11892,16 @@ function executeFacilityAttack(x, y){
   if(!bestW){ exitFacilityAttackMode(); return; }
   // 弾薬消費
   if(bestIdx >= 0) consumeAmmoForAttack(pendingUnit, bestIdx);
-  // 施設HPを削る
-  capObj.hp = Math.max(0, capObj.hp - bestDmg);
+  // 施設HPを削る (ダウングレード処理も含む)
+  var facRes = damageFacilityAt(x, y, bestDmg);
   setStatus(TYPE[pendingUnit.type].name + '['+bestW.name+'] → 施設に '+bestDmg+'ダメ (施設HP '+capObj.hp+')');
   // ログ (プレイヤーのみ)
   if(pendingUnit.owner === 'P' && window.plog){
     var terN = TER[M[y][x]];
     plog('施設攻撃 ' + TYPE[pendingUnit.type].name + '@('+pendingUnit.x+','+pendingUnit.y+') → ' + (terN?terN.name:'?') + '@('+x+','+y+') ['+bestW.name+'] '+bestDmg+'ダメ (施設HP'+capObj.hp+')');
   }
-  // 施設HP0でダウングレード
-  if(capObj.hp <= 0){
-    var oldTer = M[y][x];
-    var newTer = DOWNGRADE_MAP[oldTer];
-    if(newTer){
-      M[y][x] = newTer;
-      capObj.terKey = newTer;
-      // 廃墟になった場合は所有者中立化、施設HPは0、占領HPは満タン
-      var newTerObj = TER[newTer];
-      if(newTerObj.isRuins){
-        capObj.owner = 'N';
-        capObj.cargo = [];
-        // 廃墟関連の生産も破棄
-        production = production.filter(function(p){ return !(p.x === x && p.y === y); });
-        capObj.hp = 0; // 施設HPは0 (再建で回復させる)
-        capObj.captureHp = newTerObj.capCaptureHp || newTerObj.capHpMax || CAP_MAX; // 占領HPは満タン
-      } else {
-        capObj.hp = newTerObj.capHpMax || CAP_MAX;
-        capObj.captureHp = newTerObj.capCaptureHp || newTerObj.capHpMax || CAP_MAX;
-      }
-      setStatus(setStatus_msg = TYPE[pendingUnit.type].name + '[' + bestW.name + '] → 施設破壊!' + (newTerObj.isRuins ? ' (廃墟化)' : ' (' + newTerObj.name + 'にダウングレード)'));
-    }
+  if(facRes && facRes.downgraded){
+    setStatus(TYPE[pendingUnit.type].name + '[' + bestW.name + '] → 施設破壊!' + (facRes.ruined ? ' (廃墟化)' : ' (' + facRes.newTerName + 'にダウングレード)'));
   }
   pendingUnit.acted = true;
   pendingUnit = null;
@@ -12978,17 +13025,29 @@ function onCellClick(x, y){
             return TYPE[h.unit.type].name+'@('+h.unit.x+','+h.unit.y+')-'+h.dmg+(h.role==='center'?'[中央]':'[周囲]');
           }).join(', ');
         }
+        if(r.r1 && r.r1.facHits && r.r1.facHits.length > 0){
+          var facInfo = r.r1.facHits.map(function(f){
+            return f.name+'@('+f.x+','+f.y+')-'+f.dmg + (f.downgraded ? '[破壊]' : '');
+          }).join(', ');
+          hitsInfo = hitsInfo ? (hitsInfo + ' / ' + facInfo) : facInfo;
+        }
         plog('攻撃 ' + atkInfo + ' / ' + hitsInfo);
       }
       // ステータス表示
       if(r && r.r1){
         var hitCount = (r.r1.hits ? r.r1.hits.length : 0);
+        var facCount = (r.r1.facHits ? r.r1.facHits.length : 0);
+        var parts = [];
         if(hitCount > 0){
           var totalDmg = r.r1.hits.reduce(function(s,h){ return s + h.dmg; }, 0);
-          setStatus('💥 ' + ffeLabel + '! '+hitCount+'ユニットに合計 ' + totalDmg + 'ダメ');
-        } else {
-          setStatus('💥 ' + ffeLabel + '! 命中なし (空マス)');
+          parts.push(hitCount + 'ユニットに合計 ' + totalDmg + 'ダメ');
         }
+        if(facCount > 0){
+          var totalFac = r.r1.facHits.reduce(function(s,f){ return s + f.dmg; }, 0);
+          var broke = r.r1.facHits.filter(function(f){ return f.downgraded; }).length;
+          parts.push(facCount + 'か所の施設・線路に合計 ' + totalFac + 'ダメ' + (broke > 0 ? '（' + broke + 'か所を破壊）' : ''));
+        }
+        setStatus(parts.length > 0 ? ('💥 ' + ffeLabel + '! ' + parts.join(' / ')) : ('💥 ' + ffeLabel + '! 命中なし (空マス)'));
       }
       if(pendingUnit.hp > 0) pendingUnit.acted = true;
       pendingUnit = null; attackMode = false; pendingAttackMode = 'normal';
@@ -14545,7 +14604,8 @@ function renderRulesTab(){
     + '・例: 爆撃機(対施設14)がHP10で首都(地形防御+4)を攻撃 → 14×10/10 - 4 = <b>10ダメ</b><br>'
     + '・施設HPが0になると施設は1段階ダウングレード(廃墟化)<br>'
     + '・対施設火力を持つ武器は仕様書ユニット表の「対施設」列で確認可能<br>'
-    + '・<b>線路・鉄橋・海上鉄橋・可動橋・橋も施設攻撃で叩ける</b> (所有者のない構造物なので、射程内なら誰でも対象にできる)'
+    + '・<b>線路・鉄橋・海上鉄橋・可動橋・橋も施設攻撃で叩ける</b> (所有者のない構造物なので、射程内なら誰でも対象にできる)<br>'
+    + '・<b>例外: 列車砲</b>は施設攻撃のコマンドを持ちません。砲撃・効力射の着弾範囲にある施設・線路がまとめて壊れます (下の「列車砲の砲撃」を参照)'
     + '</div>'
     + '<div style="background:#f6f2e8; border-left:3px solid #7A5A10; padding:6px 10px; margin:6px 0; font-size:12px;">'
     + '<b style="color:#7A5A10;">🛤 線路・橋の耐久 (0〜30)</b><br>'
@@ -14585,7 +14645,11 @@ function renderRulesTab(){
     + '・<b>砲撃</b> (観測兵なしでも可): 着弾点と<b>上下左右の5マス</b>。中央120% / 上下左右100%。<b>弾薬5</b><br>'
     + '・<b>効力射</b> (観測兵が視界内にいるとき): <b>マンハッタン距離2の13マス</b>。中央120% / 隣接100% / 外周80%。<b>弾薬10</b><br>'
     + '・観測兵の効力射は他のユニットでは「弾薬2消費」ですが、列車砲は<b>弾薬2倍消費</b> (5→10) という扱いです<br>'
-    + '・弾数は10発なので、砲撃なら2回、効力射なら1回で撃ち切ります。補給貨車を連結しておくと続けて撃てます'
+    + '・弾数は10発なので、砲撃なら2回、効力射なら1回で撃ち切ります。補給貨車を連結しておくと続けて撃てます<br>'
+    + '・<b>着弾範囲にある施設・線路・鉄橋・橋も一緒に壊れます</b>。砲弾は同じものなので、そこに何があっても巻き込みます<br>'
+    + '　対施設ダメージは<b>中央100% / 隣接4マス80% / 効力射の外周8マス60%</b>（対施設20なら 20 / 16 / 12。ここから施設の地形防御を引きます）<br>'
+    + '　<b>所属は問いません</b>。自軍・中立の施設や線路も同じように壊れるので、自陣の線路を巻き込まないよう着弾点を選んでください<br>'
+    + '・そのため列車砲には「<b>施設攻撃</b>」のコマンドが出ません。施設を叩くときも<b>砲撃</b>で着弾点を指定します'
     + '</div>'
     + '<h4>移動後制約</h4>間接武器は移動後使用不可(航空ユニットは例外)。'
     + '<h4>地形防御</h4>地上ユニット: 全地形・施設の防御を享受。海上ユニット: 港系施設の防御のみ享受。航空ユニット: 地形防御一切なし。'
