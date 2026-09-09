@@ -6160,6 +6160,83 @@ function _aiPickAirUnit(facility, aiFaction, counts, mapInfo, fundsAvailable){
 //   'produce': 新規生産 のみ
 //   'all' (旧仕様): 取り出し + 発艦 + 新規生産 全部 (後方互換のため残す)
 // 仕様書セクション12「最後に生産」: aiTurn 冒頭で 'takeout'、行動後に 'produce' を呼ぶ
+// AI: 生産で使い切らずに残しておく資金 (維持費の取り置き)
+// 生産は最後に走って残金を全部使うため、そのままだと翌ターンの修理・再建が
+// 「そのターンの収入だけ」でやりくりする羽目になる。次に確実にかかるぶんを見積もって残す。
+//   ・次のターン開始時にかかる修理費 (施設マス上+2 / 施設スロット内+3 / 空母内)
+//   ・工兵の再建費 (廃墟が残っているときだけ。表示HP×150、多くても2両ぶん)
+//   ・工兵の施設修復費 (損傷した自軍施設があるときだけ。1回250G)
+// ただし生産が完全に止まらないよう、所持金の70%を上限にする。
+var AI_RESERVE_MAX_RATIO = 0.7;
+function _aiRepairCostFor(u, healAmount){
+  if(!u || u.hp === undefined || u.hp >= HP_MAX) return 0;
+  var recover = Math.min(healAmount, Math.ceil((HP_MAX - u.hp) / 10));
+  if(recover <= 0) return 0;
+  var price = (TYPE[u.type] && TYPE[u.type].price) || 0;
+  return recover * Math.floor(price / 10 / 2);
+}
+function _aiRepairCostRecursive(u, healAmount){
+  var c = _aiRepairCostFor(u, healAmount);
+  if(u && u.cargo){
+    for(var i=0; i<u.cargo.length; i++) c += _aiRepairCostRecursive(u.cargo[i], healAmount);
+  }
+  return c;
+}
+function _aiUpkeepReserve(aiFaction){
+  var reserve = 0;
+  // (a) 次のターン開始時の修理費
+  for(var i=0; i<units.length; i++){
+    var u = units[i];
+    if(u.owner !== aiFaction || u.hp <= 0) continue;
+    var terU = TER[M[u.y][u.x]];
+    var capU = captures[u.x+','+u.y];
+    if(terU && terU.heal && capU && capU.owner === aiFaction){
+      if(!terU.healCat || terU.healCat === TYPE[u.type].cat) reserve += _aiRepairCostFor(u, 2);
+    }
+    // 空母系に積んでいる航空ユニット
+    var ct = TYPE[u.type];
+    if(ct && ct.carrierHeal && u.cargo){
+      for(var ci=0; ci<u.cargo.length; ci++) reserve += _aiRepairCostRecursive(u.cargo[ci], ct.carrierHeal);
+    }
+  }
+  // 施設スロットに収容しているユニット (+3)
+  var hasDamagedFacility = false;
+  for(var k in captures){
+    var cap = captures[k];
+    if(cap.owner !== aiFaction) continue;
+    var xy = k.split(',');
+    var cx = parseInt(xy[0]), cy = parseInt(xy[1]);
+    var terF = TER[M[cy][cx]];
+    if(!terF) continue;
+    if(terF.slots && cap.cargo && !cap.upgrading){
+      for(var ci2=0; ci2<cap.cargo.length; ci2++) reserve += _aiRepairCostRecursive(cap.cargo[ci2], 3);
+    }
+    if(!terF.isRuins && (cap.hp || 0) < (terF.capHpMax || CAP_MAX)) hasDamagedFacility = true;
+  }
+  // (b) 工兵の再建費 / 施設修復費
+  var engCosts = [];
+  for(var i2=0; i2<units.length; i2++){
+    var e = units[i2];
+    if(e.owner !== aiFaction || e.hp <= 0) continue;
+    if(!TYPE[e.type].isEngineer) continue;
+    engCosts.push(displayHP(e.hp) * 150);
+  }
+  if(engCosts.length > 0){
+    var ruinsLeft = false;
+    var capsR = _aiCaptureTargets(aiFaction);
+    for(var ri=0; ri<capsR.length; ri++){ if(capsR[ri].isRuins){ ruinsLeft = true; break; } }
+    if(ruinsLeft){
+      engCosts.sort(function(a, b){ return b - a; });
+      for(var ei=0; ei<Math.min(2, engCosts.length); ei++) reserve += engCosts[ei];
+    }
+    if(hasDamagedFacility) reserve += 250 * Math.min(2, engCosts.length);   // 施設修復 (1回 +5HP = 250G)
+  }
+  // 生産が止まらないよう上限を掛ける
+  var cap70 = Math.floor((funds[aiFaction] || 0) * AI_RESERVE_MAX_RATIO);
+  if(reserve > cap70) reserve = cap70;
+  return Math.max(0, reserve);
+}
+
 function aiProduceAndTakeOut(aiFaction, phase){
   if(!aiFaction) aiFaction = 'E'; // 互換: 引数なしなら旧仕様
   if(!phase) phase = 'all'; // 引数なしなら従来通り (全部)
@@ -6541,7 +6618,18 @@ function aiProduceAndTakeOut(aiFaction, phase){
   }
   if(window.AI_DEBUG) try{ console.log('[AI '+aiFaction+'] prodMode='+prodMode+' (reach='+capTargets.length+', unreach='+unreachableTargets.length+', infs='+capUnits.infantry+', engs='+capUnits.engineer+', transports='+transportCount+'/'+transportNeeded+', threats=air'+threats.air+'/sub'+threats.sub+'/armor'+threats.armor+', counters=AA'+counters.antiAir+'/ASW'+counters.antiSub+'/AT'+counters.antiArmor+'/IND'+counters.indirect+', scouts=G'+scoutCounts.ground+'/A'+scoutCounts.air+', unseenLand='+targetVis.unseenLandRatio.toFixed(2)+'/Sea='+targetVis.unseenSeaRatio.toFixed(2)+')'); }catch(e){}
 
+  // 維持費の取り置き: 次のターンの修理費と、工兵の再建・施設修復のぶんは使わない
+  var upkeepReserve = _aiUpkeepReserve(aiFaction);
+  function _spendable(){ return Math.max(0, (funds[aiFaction] || 0) - upkeepReserve); }
+  if(window.AI_DEBUG) try{ console.log('[AI '+aiFaction+'] 生産に使える資金='+_spendable()+' (所持'+(funds[aiFaction]||0)+' − 取り置き'+upkeepReserve+')'); }catch(e){}
+
   // 生産: 自軍占領済み生産施設で空きがあれば適当なユニットを生産
+  // スロットが空いている限り作れるよう、施設をなめる処理を空きスロット数ぶん繰り返す
+  // (1周につき1施設1個。作れるものが無くなった時点で打ち切る)
+  var AI_MAX_SLOTS = 4;
+  var producedInPass = false;
+  for(var prodPass = 0; prodPass < AI_MAX_SLOTS; prodPass++){
+  producedInPass = false;
   for(var k in captures){
     var capObj = captures[k];
     if(capObj.owner !== aiFaction) continue;
@@ -6560,7 +6648,7 @@ function aiProduceAndTakeOut(aiFaction, phase){
     for(var pi=0; pi<ter.produces.length; pi++){
       var key = ter.produces[pi];
       var t = TYPE[key];
-      if(t && !t.planned && (funds[aiFaction]||0) >= t.price) affordable.push(key);
+      if(t && !t.planned && _spendable() >= t.price) affordable.push(key);
     }
     // 全体ユニット数 60 を超える場合は生産しない
     if(totalUnitOverflowed){
@@ -6617,13 +6705,14 @@ function aiProduceAndTakeOut(aiFaction, phase){
       // 抽選ごとの counts は最新を反映 (このループで既に生産予約されたものを含む)
       var landCounts = _aiCountLand(aiFaction);
       var landMapInfo = _aiMapInfo();
-      var pickKey2 = _aiPickLandUnit(virtualFacility, aiFaction, landCounts, landMapInfo, funds[aiFaction] || 0);
+      var pickKey2 = _aiPickLandUnit(virtualFacility, aiFaction, landCounts, landMapInfo, _spendable());
       if(!pickKey2){
         if(window.AI_DEBUG) try{ console.log('  → 新陸軍ロジック: 抽選失敗 '+ter.name+'@('+fx+','+fy+')'); }catch(e){}
         continue;
       }
       var pickT2 = TYPE[pickKey2];
       funds[aiFaction] -= pickT2.price;
+      producedInPass = true;
       var bonus3 = (ter && ter.prodTurnBonus) ? ter.prodTurnBonus : 0;
       var actualTurns3 = Math.max(1, pickT2.prodTurns + bonus3);
       production.push({
@@ -6647,13 +6736,14 @@ function aiProduceAndTakeOut(aiFaction, phase){
       };
       var navyCounts = _aiCountNavy(aiFaction);
       var navyMapInfo = _aiMapInfo();
-      var pickKeyN = _aiPickNavyUnit(virtualFacilityN, aiFaction, navyCounts, navyMapInfo, funds[aiFaction] || 0);
+      var pickKeyN = _aiPickNavyUnit(virtualFacilityN, aiFaction, navyCounts, navyMapInfo, _spendable());
       if(!pickKeyN){
         if(window.AI_DEBUG) try{ console.log('  → 新海軍ロジック: 抽選失敗 '+ter.name+'@('+fx+','+fy+')'); }catch(e){}
         continue;
       }
       var pickTN = TYPE[pickKeyN];
       funds[aiFaction] -= pickTN.price;
+      producedInPass = true;
       var bonusN = (ter && ter.prodTurnBonus) ? ter.prodTurnBonus : 0;
       var actualTurnsN = Math.max(1, pickTN.prodTurns + bonusN);
       production.push({
@@ -6674,13 +6764,14 @@ function aiProduceAndTakeOut(aiFaction, phase){
       };
       var airCounts = _aiCountAir(aiFaction);
       var airMapInfo = _aiMapInfo();
-      var pickKeyA = _aiPickAirUnit(virtualFacilityA, aiFaction, airCounts, airMapInfo, funds[aiFaction] || 0);
+      var pickKeyA = _aiPickAirUnit(virtualFacilityA, aiFaction, airCounts, airMapInfo, _spendable());
       if(!pickKeyA){
         if(window.AI_DEBUG) try{ console.log('  → 新空軍ロジック: 抽選失敗 '+ter.name+'@('+fx+','+fy+')'); }catch(e){}
         continue;
       }
       var pickTA = TYPE[pickKeyA];
       funds[aiFaction] -= pickTA.price;
+      producedInPass = true;
       var bonusA = (ter && ter.prodTurnBonus) ? ter.prodTurnBonus : 0;
       var actualTurnsA = Math.max(1, pickTA.prodTurns + bonusA);
       production.push({
@@ -6940,7 +7031,10 @@ function aiProduceAndTakeOut(aiFaction, phase){
       x: fx, y: fy, type: pickKey, owner: aiFaction,
       remaining: actualTurns2, ready: false
     });
+    producedInPass = true;
     if(window.AI_DEBUG) try{ console.log('  → [生産開始] '+(prodTer2?prodTer2.name:'?')+'@('+fx+','+fy+') で '+pickT.name+' ('+pickT.price+'G, '+actualTurns2+'T) prodMode='+prodMode); }catch(e){}
+  }
+  if(!producedInPass) break;   // この周回で1個も作れなかった → 打ち切り
   }
   // prodMode を返す (アップグレード判断で使用)
   return prodMode;
@@ -6952,6 +7046,10 @@ function aiProduceAndTakeOut(aiFaction, phase){
 // - 生産施設系 (group:'factory'|'airport'|'port'): 資金10000G以上、同group半数制限
 var AI_UPGRADE_PRODUCER_THRESHOLD = 10000; // 生産施設アップグレードの資金閾値
 function aiUpgrade(aiFaction){
+  // アップグレードは生産より先に走るので、ここでも維持費の取り置きを尊重する
+  // (使ってしまうと、翌ターンの修理・再建のために残した意味がなくなる)
+  var upReserve = _aiUpkeepReserve(aiFaction);
+  var upSpendable = Math.max(0, (funds[aiFaction] || 0) - upReserve);
   // === Step 1: 自軍の生産施設をgroup別に集計 (生産系のみ) ===
   // 「生産施設」= ter.slots && ter.produces を持つもの (factory/airport/port系)
   var groupCount = {};              // 自軍の各group保有数 (生産系のみ)
@@ -7012,7 +7110,7 @@ function aiUpgrade(aiFaction){
   // === Step 4: 順番にアップグレードを試す ===
   for(var i=0; i<candidates.length; i++){
     var c = candidates[i];
-    if((funds[aiFaction] || 0) < c.cost) continue; // 資金不足
+    if(upSpendable < c.cost) continue; // 資金不足 (維持費の取り置きを除いた残り)
     if(c.isProducer){
       // 生産系: 同group半数制限を再チェック
       var maxGroupUp = Math.max(1, Math.floor((groupCount[c.group] || 0) / 2));
@@ -7027,6 +7125,7 @@ function aiUpgrade(aiFaction){
     var turns = UPGRADE_TURNS[M[c.y][c.x]] || 3;
     c.capObj.upgrading = { target: target, remaining: turns, cost: c.cost };
     funds[aiFaction] -= c.cost;
+    upSpendable -= c.cost;
     if(c.isProducer){
       groupUpgrading[c.group] = (groupUpgrading[c.group] || 0) + 1;
     }
@@ -14824,6 +14923,8 @@ function renderAITab(){
   html += '<div style="background:#eef4fa; padding:8px 10px; border-radius:4px; font-size:11px; margin-bottom:10px; border-left:3px solid #185FA5;">';
   html += '<b style="color:#5a4a30;">🔧 共通ルール (全フェーズ)</b>';
   html += '<div style="background:#fff4d6; padding:4px 8px; border-radius:3px; margin:4px 0;"><b>列車系 (機関車・装甲列車・列車砲・補給貨車・対空列車) は AI の抽選対象外</b>。陸上の生産は決め打ちの候補リストから選ぶため、列車は作らない (当面プレイヤー専用)。</div>';
+  html += '<div style="background:#eaf3ea; padding:4px 8px; border-radius:3px; margin:4px 0;"><b>スロットが空いている限り生産する</b>。施設を1周なめる処理を空きスロット数ぶん繰り返すので、戦車兵器廠 (スロット4) なら資金が続く限り1ターンに4個まで積める (以前は施設ごとに1個だけだった)。</div>';
+  html += '<div style="background:#eef4fa; padding:4px 8px; border-radius:3px; margin:4px 0;"><b>維持費の取り置き</b>。生産は最後に走って残金を全部使うため、次にかかるぶんを先に確保する: <b>次のターン開始時の修理費</b> (施設マス上+2 / スロット内+3 / 空母内) ＋ <b>工兵の再建費</b> (廃墟が残っているときだけ、表示HP×150 を多くても2両ぶん) ＋ <b>施設修復費</b> (損傷した自軍施設があれば1両あたり250G)。生産が止まらないよう<b>所持金の70%</b>を取り置きの上限にする。アップグレードも同じ取り置きを守る。</div>';
   html += '<ul style="margin:4px 0 0 16px; padding:0;">';
   html += '<li><b>資金 500G 未満:</b> 生産フェーズ全体をスキップ (現行最安値の歩兵 500G が買えないため)</li>';
   html += '<li><b>資金不足で抽選ユニットを買えない場合:</b> 同カテゴリ内で<b>最大3回再抽選</b>、それでも買えなければそのスロットはパス</li>';
