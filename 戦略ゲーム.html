@@ -2409,6 +2409,10 @@ function getSupplySource(unit){
     if(!nt.isSupply) continue;
     if(manhattan(n.x, n.y, unit.x, unit.y) > (nt.supplyRange || 1)) continue;
     if(!_supplyTargetMatches(nt, unit)) continue;
+    // 山・川・海の上にいるヘリには、地上・海上の補給ユニットからも届かない。
+    // 山は数百メートルあり、隣から給油ホースを伸ばせる高さではない。
+    // 空中給油機だけは例外 (自分も飛んでいるので空中で渡せる)。
+    if(isHeli && !heliReachable && nt.cat !== 'AIR') continue;
     // 旧仕様 (supplyFuel未定義) は supplyAmmo の真偽から推定: supplyAmmo=true なら両方、false なら燃料のみ
     var canFuel = (typeof nt.supplyFuel === 'boolean') ? nt.supplyFuel : true;
     var canAmmo = !!nt.supplyAmmo;
@@ -15132,7 +15136,7 @@ function renderSupplyTab(){
   html += '<div style="background:#f0f5fa; border-left:3px solid #185FA5; padding:6px 10px; margin:8px 0; font-size:11px;"><b style="color:#185FA5;">なぜ範囲が施設ごとに違うのか</b><br>'
         + '範囲補給は「<b>盤面に見えない補給要員がそこまで運んでいる</b>」という考え方です。地上や海上ならその人員が動けるので、工場は2マス、弾薬工廠は3マス届きます。港は接岸して受け取るので<b>直上と隣接だけ</b>です。<br>'
         + '<b>固定翼機は飛んでいるので、人員が届きません</b> (人まで飛ぶことになってしまいます)。そのため補給を受けられるのは<b>空港マスの上・空母に搭載中・施設に収容中</b>だけです。例外は<b>空中給油機</b>で、こちらも飛んでいるので空中で給油できます。<br>'
-        + 'ヘリは低空で降りられるので、空港2マス・工場2マス・都市2マス・弾薬工廠3マスと、地上ユニットに準じた扱いです。ただし<b>着陸して受け取る</b>ので、<b>山・川・海の上にいるヘリは範囲補給を受けられません</b> (補給要員が入れないため)。森・浅瀬なら受け取れます。</div>';
+        + 'ヘリは低空で降りられるので、空港2マス・工場2マス・都市2マス・弾薬工廠3マスと、地上ユニットに準じた扱いです。ただし<b>着陸して受け取る</b>ので、<b>山・川・海の上にいるヘリは補給を受けられません</b>。施設の範囲補給だけでなく、<b>隣の補給車・給油艦からも届きません</b> (山は数百メートルあり、隣から給油ホースを伸ばせる高さではないため)。森・浅瀬なら受け取れます。<br>この場合の例外は<b>空中給油機</b>だけで、こちらも飛んでいるので山でも海上でも渡せます。空母に搭載中・施設に収容中も従来どおりです。</div>';
   html += '</div>';
 
   return html;
