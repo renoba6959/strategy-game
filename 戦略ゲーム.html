@@ -11535,6 +11535,12 @@ function showCommandPanel(unit, justMoved){
   var canCap = TYPE[unit.type].canCapture && cap && cap.owner !== unit.owner && !isRuinedTile;
   var atk = computeAttackable(unit, unit.x, unit.y, justMoved);
   var hasAtk = setSize(atk) > 0;
+  // 列車砲のように「常に範囲攻撃」の武器は、射程内に敵ユニットが見えていなくても
+  // 空マスや施設を着弾点にできる。弾薬が足りていれば「攻撃」を出す。
+  // (施設攻撃コマンドを持たないので、ここで出さないと攻撃手段が無くなる)
+  if(!hasAtk && !justMoved && areaShotWeaponIndex(unit) >= 0){
+    hasAtk = setSize(computeAttackableForFireForEffect(unit, unit.x, unit.y, justMoved, false)) > 0;
+  }
   var canSubmerge = TYPE[unit.type].canSubmerge;
   // 仕様: 燃料が1以上ないと潜航できない (ただし浮上は燃料関係なく可能)
   var canSubmergeNow = canSubmerge && (unit.submerged || unit.fuel === undefined || unit.fuel >= 1);
