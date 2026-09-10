@@ -297,6 +297,9 @@ var TER = {
   BRIDGE_RUINED: { name:'木組み', def:0, color:'#9C8460', buildHpMax:30, isIncomplete:true },
   // 線路・鉄橋 (工兵が敷設)。一般の地上ユニットは道路と同じコスト、列車系のみ 0.5
   RAIL:    { name:'線路', def:0, color:'#9A8A72', isRail:true, buildHpMax:30 },
+  // 複線: 工兵が線路をさらに工事して耐久31以上にすると複線になる。
+  // 通行の扱いは線路と同じだが、このマスでは味方の列車どうしがすれ違える (単線の詰まりを解消する)
+  RAIL_DOUBLE: { name:'複線', def:0, color:'#8B7E64', isRail:true, isDoubleRail:true, buildHpMax:60 },
   RAIL_BRIDGE: { name:'鉄橋', def:0, color:'#877559', isRail:true, buildHpMax:30 },
   // 敷設の途中段階であり、破壊の途中段階でもある。レールが載っていないので列車は走れない。
   // 工兵が工事を重ねて耐久10に達すると線路・鉄橋になる
@@ -2766,7 +2769,8 @@ function unitAtVisible(x, y, viewerOwner){
 function inBounds(x,y){ return x>=0 && x<W && y>=0 && y<H; }
 function moveCost(type, terId){
   var t = TYPE[type];
-  var c = COST[t.cost][terId];
+  // 複線は線路とまったく同じコスト (通行の扱いは変えず、すれ違いだけを許す)
+  var c = COST[t.cost][(terId === 'RAIL_DOUBLE') ? 'RAIL' : terId];
   var ter = TER[terId];
   if(ter && ter.isSeaRail){
     // 海上鉄橋の下をくぐれるかは「艦の高さと幅」で決まる。
@@ -2983,7 +2987,9 @@ function computeMovable(unit){
       if(c === Infinity) continue;
       var blocker = unitAt(nx, ny);
       // 列車は単線なので、味方の上もすり抜けられない (編成が並びを保って進むため)
-      if(TYPE[unit.type].cost === 'TRAIN' && blocker && isAlly(blocker.owner, unit.owner)) continue;
+      // ただし複線マスの上だけはすれ違える (止まれるのは空きマスだけ = canLand で判定)
+      if(TYPE[unit.type].cost === 'TRAIN' && blocker && isAlly(blocker.owner, unit.owner)
+         && M[ny][nx] !== 'RAIL_DOUBLE') continue;
       // 見えない敵はブロック対象から外す (プレイヤー視点で空きマス扱い)
       // ただし AI (own) 視点では全部見えてる扱いになるので、ここは viewer の owner に依存
       // 同盟ユニットは通過可能 (ただし着地は別判定)
@@ -3068,8 +3074,9 @@ function findActualMoveEndpoint(unit, targetX, targetY){
       var c = moveCost(unit.type, M[ny][nx]);
       if(c === Infinity) continue;
       var blocker = unitAt(nx, ny);
-      // 列車は単線なので、味方の上もすり抜けられない
-      if(TYPE[unit.type].cost === 'TRAIN' && blocker && isAlly(blocker.owner, unit.owner)) continue;
+      // 列車は単線なので、味方の上もすり抜けられない (複線マスの上だけはすれ違える)
+      if(TYPE[unit.type].cost === 'TRAIN' && blocker && isAlly(blocker.owner, unit.owner)
+         && M[ny][nx] !== 'RAIL_DOUBLE') continue;
       if(blocker && !isAlly(blocker.owner, unit.owner)){
         if(isUnitVisibleTo(blocker, unit.owner)) continue;
       }
@@ -11587,7 +11594,7 @@ function showCommandPanel(unit, justMoved){
       var px = unit.x + pdirs[pi2][0], py = unit.y + pdirs[pi2][1];
       if(!inBounds(px, py)) continue;
       var pt = TER[M[py][px]];
-      if(pt && pt.buildHpMax && getRailHp(px, py) < RAIL_HP_MAX){ canRepairRail = true; break; }
+      if(pt && pt.buildHpMax && getRailHp(px, py) < railBuildMaxAt(px, py)){ canRepairRail = true; break; }
     }
   }
   var panel = document.getElementById('command-panel');
@@ -12126,7 +12133,9 @@ function doRepairFacility(){
 // 路盤(1)を一度で線路(10)にできる。
 // 橋の建設は着手するだけで耐久1。1ターンで完成するのは不自然なので、
 // 工兵が工事を重ねて 10 (通行できる) → 30 (頑丈) と育てていく。
-var RAIL_HP_MAX = 30;      // 耐久の上限 (工兵が工事を重ねて積み上げる)
+var RAIL_HP_MAX = 30;      // 線路・鉄橋・橋の耐久の上限
+var RAIL_DOUBLE_HP = 31;   // これ以上なら複線 (工兵がさらに工事を重ねた状態)
+var RAIL_DOUBLE_MAX = 60;  // 複線の耐久の上限
 var RAIL_BUILD_HP = 1;     // 建設に着手した直後の耐久 (まだ通行できない)
 var RAIL_OK_HP = 10;       // これ以上なら線路として使える
 var RAIL_RUINED_HP = 1;    // 線路が壊れて廃線になったときの耐久
@@ -12134,6 +12143,7 @@ var RAIL_RUINED_HP = 1;    // 線路が壊れて廃線になったときの耐�
 // 完成形 ⇔ 未完成形 の対応。線路・鉄橋・橋の3系統が同じ仕組みで育つ／壊れる
 var BUILD_STAGE = {
   RAIL:               { done: 'RAIL',        undone: 'RAIL_RUINED' },
+  RAIL_DOUBLE:        { done: 'RAIL',        undone: 'RAIL_RUINED' },
   RAIL_RUINED:        { done: 'RAIL',        undone: 'RAIL_RUINED' },
   RAIL_BRIDGE:        { done: 'RAIL_BRIDGE', undone: 'RAIL_BRIDGE_RUINED' },
   RAIL_BRIDGE_RUINED: { done: 'RAIL_BRIDGE', undone: 'RAIL_BRIDGE_RUINED' },
@@ -12148,13 +12158,19 @@ function railHpMaxAt(x, y){
   var t = TER[M[y][x]];
   return (t && t.buildHpMax) ? t.buildHpMax : 0;
 }
+// 工兵が積み上げられる上限。地上の線路系だけは複線まで育てられる (鉄橋・海上鉄橋・橋は不可)
+function railBuildMaxAt(x, y){
+  var mk = M[y][x];
+  if(mk === 'RAIL' || mk === 'RAIL_RUINED' || mk === 'RAIL_DOUBLE') return RAIL_DOUBLE_MAX;
+  return railHpMaxAt(x, y) || RAIL_HP_MAX;
+}
 function getRailHp(x, y){
   var t = TER[M[y][x]];
   if(!t || !t.buildHpMax) return 0;
   var k = x+','+y;
   if(typeof railHp[k] !== 'number'){
     // 記録が無い場合 (マップエディタで置いた線路や橋) は見た目どおりの耐久にする
-    railHp[k] = t.isIncomplete ? RAIL_RUINED_HP : RAIL_HP_MAX;
+    railHp[k] = t.isIncomplete ? RAIL_RUINED_HP : (t.isDoubleRail ? RAIL_DOUBLE_MAX : RAIL_HP_MAX);
   }
   return railHp[k];
 }
@@ -12163,7 +12179,16 @@ function syncRailTerrain(x, y){
   var k = x+','+y;
   var st = BUILD_STAGE[M[y][x]];
   if(!st) return false;
-  var want = (railHp[k] >= RAIL_OK_HP) ? st.done : st.undone;
+  var want;
+  var mk = M[y][x];
+  if(mk === 'RAIL' || mk === 'RAIL_RUINED' || mk === 'RAIL_DOUBLE'){
+    // 地上の線路だけ3段階: 路盤(1〜9) → 線路(10〜30) → 複線(31〜60)
+    if(railHp[k] >= RAIL_DOUBLE_HP)      want = 'RAIL_DOUBLE';
+    else if(railHp[k] >= RAIL_OK_HP)     want = 'RAIL';
+    else                                 want = 'RAIL_RUINED';
+  } else {
+    want = (railHp[k] >= RAIL_OK_HP) ? st.done : st.undone;
+  }
   var changed = (want !== M[y][x]);
   M[y][x] = want;
   return changed;
@@ -12208,7 +12233,7 @@ function repairRailAt(x, y, amount){
   var t = TER[M[y][x]];
   if(!t || !t.buildHpMax) return null;
   var k = x+','+y;
-  railHp[k] = Math.min(RAIL_HP_MAX, getRailHp(x, y) + amount);
+  railHp[k] = Math.min(railBuildMaxAt(x, y), getRailHp(x, y) + amount);
   var promoted = syncRailTerrain(x, y);
   return { hp: railHp[k], promoted: promoted };
 }
@@ -12439,6 +12464,8 @@ function trainMovableInfo(chain, driver){
   var maxMove = Math.min(trainEffectiveMove(chain, driver), fuelLimit);
   var ends = (chain.length >= 2) ? [0, chain.length-1] : [0];
   var dirs = [[1,0],[-1,0],[0,1],[0,-1]];
+  var chainIds = {};
+  for(var ci=0; ci<chain.length; ci++) chainIds[chain[ci].id] = true;
   for(var e=0; e<ends.length; e++){
     var lead = chain[ends[e]];
     var dist = {}, prev = {};
@@ -12459,8 +12486,14 @@ function trainMovableInfo(chain, driver){
         var c = moveCost(lead.type, M[ny][nx]);
         if(c === Infinity) continue;
         // 単線: 味方も自分の編成も障害になる (見えない敵だけは素通り扱い = 伏兵)
+        // 複線マスの上だけは、自分の編成以外の味方をすり抜けられる
         var blocker = unitAt(nx, ny);
-        if(blocker && (isAlly(blocker.owner, lead.owner) || isUnitVisibleTo(blocker, lead.owner))) continue;
+        if(blocker){
+          var passThrough = (M[ny][nx] === 'RAIL_DOUBLE')
+                         && isAlly(blocker.owner, lead.owner)
+                         && !chainIds[blocker.id];
+          if(!passThrough && (isAlly(blocker.owner, lead.owner) || isUnitVisibleTo(blocker, lead.owner))) continue;
+        }
         var nd = d + c;
         if(nd > maxMove) continue;
         var nk = nx+','+ny;
@@ -12472,6 +12505,8 @@ function trainMovableInfo(chain, driver){
     }
     for(var k in dist){
       if(k === sk) continue;
+      // すれ違いで途中の味方をすり抜けた場合、全車輌が空きマスに収まるかを確認する
+      if(!trainEndFits(chain, ends[e], prev, k)) continue;
       if(res[k] === undefined || dist[k] < res[k].dist){
         res[k] = { lead: ends[e], dist: dist[k], prev: prev, from: sk };
       }
@@ -12482,6 +12517,39 @@ function trainMovableInfo(chain, driver){
 
 // 編成を動かす。(destX,destY) は「先頭が止まるマス」
 // 並び順は変えず、各車輌は進行方向で1つ前の車輌がいたマスへ入る。
+// この目的地に止まったとき、編成の各車輌が入るマスを返す (executeTrainMove と同じ並べ方)
+function trainFinalTiles(chain, leadIdx, path, stopAt){
+  var seq = (leadIdx === 0) ? chain.slice() : chain.slice().reverse();
+  var trail = [];
+  for(var pi=stopAt; pi>=0; pi--) trail.push(path[pi]);
+  var oldPos = [];
+  for(var i=0; i<seq.length; i++) oldPos.push({ x: seq[i].x, y: seq[i].y });
+  var full = trail.concat(oldPos.slice(1));
+  var out = [];
+  for(var i=0; i<seq.length; i++) out.push({ unit: seq[i], pos: full[i] });
+  return out;
+}
+// 全車輌が「空きマス、または自分の編成の車輌がいるマス」に収まるか
+function trainEndFits(chain, leadIdx, prev, destKey){
+  var path = [];
+  var k = destKey;
+  while(k){
+    var xy = k.split(',');
+    path.unshift({ x: parseInt(xy[0]), y: parseInt(xy[1]) });
+    k = prev[k];
+  }
+  var ids = {};
+  for(var i=0; i<chain.length; i++) ids[chain[i].id] = true;
+  var placed = trainFinalTiles(chain, leadIdx, path, path.length - 1);
+  for(var i=0; i<placed.length; i++){
+    var pp = placed[i].pos;
+    if(!pp) return false;
+    var b = unitAt(pp.x, pp.y);
+    if(b && !ids[b.id]) return false;
+  }
+  return true;
+}
+
 // 編成の経路 (先頭の出発マス → 目的地) を取り出す
 function trainPathTiles(entry, destX, destY){
   var path = [];
@@ -12507,6 +12575,21 @@ function executeTrainMove(chain, driver, destX, destY, info){
     var hidden = _findAdjacentHiddenEnemy(path[pi].x, path[pi].y, lead.owner, lead.id);
     if(hidden){ stopAt = pi; ambushAt = { x: hidden.x, y: hidden.y }; break; }
   }
+  // 伏兵で手前に止まる場合、複線ですれ違った途中だと味方の上に重なることがある。
+  // 全車輌が収まる位置まで戻す (戻せなければ動かない)
+  var fitIds = {};
+  for(var fi=0; fi<chain.length; fi++) fitIds[chain[fi].id] = true;
+  function _fitsAt(sa){
+    var placed = trainFinalTiles(chain, entry.lead, path, sa);
+    for(var i=0; i<placed.length; i++){
+      var pp = placed[i].pos;
+      if(!pp) return false;
+      var b = unitAt(pp.x, pp.y);
+      if(b && !fitIds[b.id]) return false;
+    }
+    return true;
+  }
+  while(stopAt > 0 && !_fitsAt(stopAt)) stopAt--;
   var trail = [];
   for(var pi2=stopAt; pi2>=0; pi2--) trail.push(path[pi2]);
   var oldPos = [];
@@ -13562,7 +13645,7 @@ var ROAD_CONNECT_TILES = {
 // 線路の描画 (枕木＋2本のレール)。隣接する線路・鉄橋・施設とつながる
 // 線路・鉄橋の描画本体
 // n/sN/e/w = つながっている向き、isBridge = 鉄橋なら川面と鋼の桁を下に敷く
-function railTilesSVG(n, sN, e, w, isBridge, isRuined, isSea, isDraw){
+function railTilesSVG(n, sN, e, w, isBridge, isRuined, isSea, isDraw, isDouble){
   if(!n && !sN && !e && !w){ n = true; sN = true; } // 孤立しているときは縦向きで描く
   var tieCol = '#5A4B36', railCol = '#3A3129';
   if(isRuined){ tieCol = '#6E6A5E'; railCol = '#77705F'; } // 廃線: 錆びて色が抜ける
@@ -13616,12 +13699,16 @@ function railTilesSVG(n, sN, e, w, isBridge, isRuined, isSea, isDraw){
     }
     tieCol = '#4A525C'; // 桁の上なので枕木は暗めの鋼色
   }
-  function seg(isH, from, to){
+  // 複線は、線路2本ぶんを中心から上下 (または左右) に振り分けて描く
+  var offs = isDouble ? [-7, 7] : [0];
+  var tieLen = isDouble ? 9 : 12;
+  function seg(isH, from, to, off){
     // 廃線は枕木を間引き、レールを細く途切れさせて「傷んでいる」ように見せる
     var step = isRuined ? 9 : 5;
+    var tieStart = 10 + off + (isDouble ? 1 : 0);
     for(var i = from + 2; i <= to - 2; i += step){
-      if(isH) parts.push('<rect x="'+i+'" y="10" width="2" height="12" fill="'+tieCol+'"/>');
-      else    parts.push('<rect x="10" y="'+i+'" width="12" height="2" fill="'+tieCol+'"/>');
+      if(isH) parts.push('<rect x="'+i+'" y="'+tieStart+'" width="2" height="'+tieLen+'" fill="'+tieCol+'"/>');
+      else    parts.push('<rect x="'+tieStart+'" y="'+i+'" width="'+tieLen+'" height="2" fill="'+tieCol+'"/>');
     }
     var th = isRuined ? 1.0 : 1.6;
     var op = isRuined ? ' opacity="0.7"' : '';
@@ -13629,26 +13716,29 @@ function railTilesSVG(n, sN, e, w, isBridge, isRuined, isSea, isDraw){
       // 途切れたレール (前半と後半だけ描く)
       var mid = (from + to) / 2;
       if(isH){
-        parts.push('<rect x="'+from+'" y="12.5" width="'+((mid-from)*0.6)+'" height="'+th+'" fill="'+railCol+'"'+op+'/>');
-        parts.push('<rect x="'+(mid+ (to-mid)*0.4)+'" y="17.9" width="'+((to-mid)*0.6)+'" height="'+th+'" fill="'+railCol+'"'+op+'/>');
+        parts.push('<rect x="'+from+'" y="'+(12.5+off)+'" width="'+((mid-from)*0.6)+'" height="'+th+'" fill="'+railCol+'"'+op+'/>');
+        parts.push('<rect x="'+(mid+ (to-mid)*0.4)+'" y="'+(17.9+off)+'" width="'+((to-mid)*0.6)+'" height="'+th+'" fill="'+railCol+'"'+op+'/>');
       } else {
-        parts.push('<rect x="12.5" y="'+from+'" width="'+th+'" height="'+((mid-from)*0.6)+'" fill="'+railCol+'"'+op+'/>');
-        parts.push('<rect x="17.9" y="'+(mid+(to-mid)*0.4)+'" width="'+th+'" height="'+((to-mid)*0.6)+'" fill="'+railCol+'"'+op+'/>');
+        parts.push('<rect x="'+(12.5+off)+'" y="'+from+'" width="'+th+'" height="'+((mid-from)*0.6)+'" fill="'+railCol+'"'+op+'/>');
+        parts.push('<rect x="'+(17.9+off)+'" y="'+(mid+(to-mid)*0.4)+'" width="'+th+'" height="'+((to-mid)*0.6)+'" fill="'+railCol+'"'+op+'/>');
       }
       return;
     }
     if(isH){
-      parts.push('<rect x="'+from+'" y="12.5" width="'+(to-from)+'" height="'+th+'" fill="'+railCol+'"/>');
-      parts.push('<rect x="'+from+'" y="17.9" width="'+(to-from)+'" height="'+th+'" fill="'+railCol+'"/>');
+      parts.push('<rect x="'+from+'" y="'+(12.5+off)+'" width="'+(to-from)+'" height="'+th+'" fill="'+railCol+'"/>');
+      parts.push('<rect x="'+from+'" y="'+(17.9+off)+'" width="'+(to-from)+'" height="'+th+'" fill="'+railCol+'"/>');
     } else {
-      parts.push('<rect x="12.5" y="'+from+'" width="'+th+'" height="'+(to-from)+'" fill="'+railCol+'"/>');
-      parts.push('<rect x="17.9" y="'+from+'" width="'+th+'" height="'+(to-from)+'" fill="'+railCol+'"/>');
+      parts.push('<rect x="'+(12.5+off)+'" y="'+from+'" width="'+th+'" height="'+(to-from)+'" fill="'+railCol+'"/>');
+      parts.push('<rect x="'+(17.9+off)+'" y="'+from+'" width="'+th+'" height="'+(to-from)+'" fill="'+railCol+'"/>');
     }
   }
-  if(w) seg(true, 0, 16);
-  if(e) seg(true, 16, 32);
-  if(n) seg(false, 0, 16);
-  if(sN) seg(false, 16, 32);
+  for(var oi=0; oi<offs.length; oi++){
+    var off = offs[oi];
+    if(w) seg(true, 0, 16, off);
+    if(e) seg(true, 16, 32, off);
+    if(n) seg(false, 0, 16, off);
+    if(sN) seg(false, 16, 32, off);
+  }
   if(isDraw){
     // 旋回台の輪郭はレールの上に重ねて、可動区間だとひと目で分かるようにする
     parts.push('<circle cx="16" cy="16" r="7.2" fill="none" stroke="#2E3640" stroke-width="1.2"/>');
@@ -13669,7 +13759,7 @@ function railSVG(x, y){
   var tk = TER[M[y][x]] || {};
   return railTilesSVG(isRailish(x, y-1), isRailish(x, y+1), isRailish(x+1, y), isRailish(x-1, y),
                       (M[y][x] === 'RAIL_BRIDGE' || M[y][x] === 'RAIL_BRIDGE_RUINED' || !!tk.isSeaRail),
-                      !!tk.isRailRuined, !!tk.isSeaRail, !!tk.isDrawBridge);
+                      !!tk.isRailRuined, !!tk.isSeaRail, !!tk.isDrawBridge, !!tk.isDoubleRail);
 }
 
 function roadSVG(x, y){
@@ -14526,6 +14616,7 @@ function renderTerrainTab(){
     ['橋',   0, '#A88860', { INF:1, WHEEL:1, TRACK_L:1, TRACK_H:1 }, '川に架かる橋。工兵が建設でき、耐久10以上で通行可'],
     ['木組み', 0, '#9C8460', { INF:3, WHEEL:'×', TRACK_L:'×', TRACK_H:'×' }, '橋の未完成・破壊状態。工兵の工事で橋になる。壊しきると川に戻る'],
     ['線路', 0, '#9A8A72', { INF:1, WHEEL:1, TRACK_L:1, TRACK_H:1 }, '列車系のみ移動コスト0.5。単線なので列車は味方の上もすり抜けられない。新規敷設はできず、マップに置かれたものを奪い合う'],
+    ['複線', 0, '#8B7E64', { INF:1, WHEEL:1, TRACK_L:1, TRACK_H:1 }, '工兵が線路をさらに工事して耐久31以上にした状態。コストは線路と同じだが、このマスでは味方の列車どうしがすれ違える'],
     ['路盤', 0, '#8E8878', { INF:1, WHEEL:1, TRACK_L:1, TRACK_H:1 }, '線路が壊れた状態。列車は走れない。工兵の工事(HP分)で線路に戻る'],
     ['鉄橋', 0, '#877559', { INF:1, WHEEL:1, TRACK_L:1, TRACK_H:1 }, '川に架かる線路。列車系のみ0.5'],
     ['橋脚', 0, '#7C7263', { INF:3, WHEEL:'×', TRACK_L:'×', TRACK_H:'×' }, '鉄橋が壊れた状態。列車は走れない。工兵の工事で鉄橋に戻る'],
@@ -14580,7 +14671,7 @@ function renderTerrainTab(){
   html += '・<b>軽キャタ</b>: 軽戦車・駆逐戦車・対空戦車・自走砲(森に進入可)<br>';
   html += '・<b>重キャタ</b>: 中戦車・重戦車・重駆逐戦車・ロケット砲 ※森進入不可<br>';
   html += '・水陸両用戦車は装輪扱いだが川と浅瀬を通行可能<br>';
-  html += '・<b>列車</b>(機関車・装甲列車・列車砲・補給貨車・対空列車): 線路・鉄橋・海上鉄橋・可動橋のみコスト0.5。施設・都市マスは「駅」としてコスト1。それ以外は進入不可。<b>単線なので味方の上もすり抜けられない</b><br>';
+  html += '・<b>列車</b>(機関車・装甲列車・列車砲・補給貨車・対空列車): 線路・複線・鉄橋・海上鉄橋・可動橋のみコスト0.5。施設・都市マスは「駅」としてコスト1。それ以外は進入不可。<b>単線なので味方の上もすり抜けられない</b>（<b>複線マスの上だけはすれ違える</b>）<br>';
   html += '・<b>牽引すると遅くなる</b>: 編成の移動力は「引く車輌の移動力 − 牽いている車輌の重さの合計」(最低1)。重さは列車砲が<b>2</b>、補給貨車と対空列車が<b>1</b>。機関車7が列車砲1両なら5、補給貨車2両なら5<br>';
   html += '・<b>牽引すると燃料も余計に使う</b>: 1マスあたり「1 + 牽いている重さの合計」。機関車が対空列車と補給貨車を牽いて10マス進むと30燃料<br>';
   html += '・航空ユニットは全地形コスト1、地形防御を一切受けない (森・山に隠れず常に視認される)<br>';
@@ -14743,7 +14834,9 @@ function renderRulesTab(){
     + '<div style="background:#f6f2e8; border-left:3px solid #7A5A10; padding:6px 10px; margin:6px 0; font-size:12px;">'
     + '<b style="color:#7A5A10;">🛤 線路・橋の耐久 (0〜30)</b><br>'
     + '線路も橋も一撃では消えず、未完成の段階を挟みます。工兵の「🛠 工事」は<b>工兵の表示HP分</b>だけ耐久を進めます (傷ついた工兵ほど遅い)。<br>'
-    + '・<b>10以上</b> → 線路 / 鉄橋 / 橋 (開通。列車や車両が通れる)<br>'
+    + '地上の線路だけは<b>耐久60まで積める</b>ので、工兵が工事を重ねれば<b>複線</b>にできます (鉄橋・海上鉄橋・橋は30が上限)。<br>'
+    + '・<b>31〜60</b> → <b>複線</b> (地上の線路だけ。工兵がさらに工事を重ねると育つ。<b>ここでは味方の列車どうしがすれ違える</b>)<br>'
+    + '・<b>10〜30</b> → 線路 / 鉄橋 / 橋 (開通。列車や車両が通れる)<br>'
     + '・<b>1〜9</b> → 路盤 / 橋脚 / 木組み (未完成。路盤は歩兵・車両が通れるが列車は走れない。橋脚・木組みは川と同じ扱いで歩兵のみ)<br>'
     + '・<b>0</b> → 橋は川に戻る。<b>線路・鉄橋は路盤・橋脚で止まり、更地にはならない</b> (線路は新規に敷けないため、消すと路線が二度と戻らない)'
     + '</div>'
@@ -14779,6 +14872,7 @@ function renderRulesTab(){
     + '・<b>機関車か装甲列車が1両でも編成にいれば、前後どちらへも動けます</b>。両端に機関車を付けておけば片方をやられても反対側へ逃げられます<br>'
     + '・<b>牽くと遅くなり、燃料も食います</b>。移動力は「引く車輌の移動力 − 牽いている重さの合計」(最低1)、燃料は1マスあたり「1 + 重さの合計」。重さは列車砲が<b>2</b>、補給貨車・対空列車が<b>1</b><br>'
     + '・<b>単線なので味方の上もすり抜けられません</b>。線路に工兵や歩兵が立っているとそこで止まります<br>'
+    + '　ただし<b>複線マスの上だけはすれ違えます</b>。工兵が線路を耐久31以上まで工事すると複線になり、待避線の役割を果たします。止まれるのは空きマスだけなので、複線マスの上で行動を終えることはできません<br>'
     + '・<b>連結したままでも仕事はできます</b>。補給貨車は連結中でも周囲2マスに補給し、対空列車は直射なので走った後でも撃てます。列車砲は間接砲なので<b>停車していたターンだけ</b>撃てます<br>'
     + '・<b>機関車・装甲列車を失うと、残った車輌は線路に取り残されます</b> (自走できないため)。別の機関車を連結しに行くまで動けません'
     + '</div>'
@@ -16797,7 +16891,7 @@ function edRailSVG(x, y){
   var tk = TER[ed.cells[y][x]] || {};
   return railTilesSVG(isRailish(x, y-1), isRailish(x, y+1), isRailish(x+1, y), isRailish(x-1, y),
                       (ed.cells[y][x] === 'RAIL_BRIDGE' || ed.cells[y][x] === 'RAIL_BRIDGE_RUINED' || !!tk.isSeaRail),
-                      !!tk.isRailRuined, !!tk.isSeaRail, !!tk.isDrawBridge);
+                      !!tk.isRailRuined, !!tk.isSeaRail, !!tk.isDrawBridge, !!tk.isDoubleRail);
 }
 
 function edRoadSVG(x, y){
@@ -17069,7 +17163,7 @@ function edRenderPalette(){
   var pal = document.getElementById('ed-palette');
   pal.innerHTML = '';
   if(ed.tool === 'terrain' || ed.tool === 'bucket' || ed.tool === 'rect'){
-    var terKeys = ['PLAIN','FOREST','MOUNTAIN','ROAD','BRIDGE','BRIDGE_RUINED','RAIL','RAIL_BRIDGE','RAIL_RUINED','RAIL_BRIDGE_RUINED','SEA_RAIL','SEA_RAIL_RUINED','SEA_RAIL_DRAW','SEA_RAIL_DRAW_RUINED','CITY','BIG_CITY','COMMERCE_CITY','AMMO_DEPOT','CAPITAL','FACTORY','WHEEL_FACTORY','TRACK_FACTORY','WHEEL_ARSENAL','TRACK_ARSENAL','WHEEL_WORKS','TRACK_WORKS','AIRPORT','AIR_BASE','AIR_ARSENAL','AIR_WORKS','PORT','NAVY_BASE','NAVY_ARSENAL','NAVY_WORKS','SHOAL','REEF','RIVER','SEA','DEEP_SEA','RUINS_CITY','RUINS_FACTORY','RUINS_AIRPORT','RUINS_PORT'];
+    var terKeys = ['PLAIN','FOREST','MOUNTAIN','ROAD','BRIDGE','BRIDGE_RUINED','RAIL','RAIL_DOUBLE','RAIL_BRIDGE','RAIL_RUINED','RAIL_BRIDGE_RUINED','SEA_RAIL','SEA_RAIL_RUINED','SEA_RAIL_DRAW','SEA_RAIL_DRAW_RUINED','CITY','BIG_CITY','COMMERCE_CITY','AMMO_DEPOT','CAPITAL','FACTORY','WHEEL_FACTORY','TRACK_FACTORY','WHEEL_ARSENAL','TRACK_ARSENAL','WHEEL_WORKS','TRACK_WORKS','AIRPORT','AIR_BASE','AIR_ARSENAL','AIR_WORKS','PORT','NAVY_BASE','NAVY_ARSENAL','NAVY_WORKS','SHOAL','REEF','RIVER','SEA','DEEP_SEA','RUINS_CITY','RUINS_FACTORY','RUINS_AIRPORT','RUINS_PORT'];
     var html = '<div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:4px;">';
     for(var i=0; i<terKeys.length; i++){
       var k = terKeys[i];
@@ -17082,7 +17176,7 @@ function edRenderPalette(){
         // 盤面と同じ描画を使う (横向きの一本として見せる)
         html += railTilesSVG(false, false, true, true,
           (k === 'RAIL_BRIDGE' || k === 'RAIL_BRIDGE_RUINED' || !!TER[k].isSeaRail),
-          !!TER[k].isRailRuined, !!TER[k].isSeaRail, !!TER[k].isDrawBridge);
+          !!TER[k].isRailRuined, !!TER[k].isSeaRail, !!TER[k].isDrawBridge, !!TER[k].isDoubleRail);
       } else if(TERRAIN_DECO[k]){
         html += TERRAIN_DECO[k];
       }
