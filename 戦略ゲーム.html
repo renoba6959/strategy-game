@@ -2120,6 +2120,13 @@ function aiAssignSupplyRoutes(aiFaction){
       var f = facs[ti];
       if(taken[f.x+','+f.y]) continue;
       if(!isSupplyRouteFacility(f.x, f.y, aiFaction, u)) continue; // この補給ユニットが使えない拠点
+      // 生産施設 (自分で備蓄を作る拠点) には自動で降ろさない。
+      // 生産施設は物資を出す側で、受け取る側ではない。物資は生産施設 → 都市の一方通行で流す。
+      var toGains = 0;
+      for(var kg=0; kg<kinds.length; kg++){
+        toGains += (kinds[kg] === 'fuel') ? f.st.spec.fuelGain : f.st.spec.ammoGain;
+      }
+      if(toGains > 0) continue;
       var ratio = facilityStockRatio(f, kinds);
       if(ratio >= 0.6) continue;              // 足りているので運ぶ必要がない
       var d = facilityReachDist(reach, f);
@@ -2280,6 +2287,18 @@ function payTakeOutSupply(newU, cg, fx, fy){
 
 // 施設の備蓄から取り出す。実際に取り出せた量を返す
 // pos が null の場合は無制限扱い (在庫の概念を持たない旧仕様の補給ユニットなど)
+// その施設が自分で備蓄を作るか (工場系・港系・空港系・弾薬工廠 = 作る / 都市系・首都 = 作らない)
+// 作る施設からなら、補給ユニットの積載庫を自動で満たしてよい。
+// 作らない施設 (都市など) は、補給車が降ろした物資をそのまま積み直すだけになるので満たさない。
+function facilityMakesStock(pos, kind){
+  if(!pos) return false;
+  var cap = captures[pos.x+','+pos.y];
+  if(!cap) return false;
+  var st = facilityStock(cap, M[pos.y][pos.x]);
+  if(!st.spec) return false;
+  return (kind === 'fuel') ? (st.spec.fuelGain > 0) : (st.spec.ammoGain > 0);
+}
+
 function takeFacilityStock(pos, kind, amount){
   if(amount <= 0) return 0;
   if(!pos) return amount;
@@ -4674,6 +4693,10 @@ function applyTurnStart(owner){
     var src = getSupplySource(u);
     if(!src) continue;
     var t = TYPE[u.type];
+    // 補給ユニットの積載庫は「自分で備蓄を作る施設」からだけ自動で満たす。
+    // 都市など作らない拠点から満たすと、降ろした物資を積み直す堂々巡りになる。
+    var holdFuelOK = !t.isSupply || facilityMakesStock(src.fuelFacility, 'fuel');
+    var holdAmmoOK = !t.isSupply || facilityMakesStock(src.ammoFacility, 'ammo');
     // どんな補給が必要か判定
     var needFuel = (u.fuel < (t.fuelMax || 99));
     var needAmmo = false;
@@ -4684,13 +4707,12 @@ function applyTurnStart(owner){
         if(u.ammo[j] < (w.ammo !== undefined ? w.ammo : 6)){ needAmmo = true; break; }
       }
     }
-    // 空母の弾薬庫が満タンでなければ、それも補給対象 (補給ユニットの積載庫は対象外)
-    if(t.supplyAmmo && typeof t.supplyAmmoMax === 'number' && !t.isSupply){
+    // 空母の弾薬庫・補給ユニットの積載庫が満タンでなければ、それも補給対象
+    if(t.supplyAmmo && typeof t.supplyAmmoMax === 'number' && holdAmmoOK){
       var curCount = (typeof u.supplyAmmoCount === 'number') ? u.supplyAmmoCount : t.supplyAmmoMax;
       if(curCount < t.supplyAmmoMax) needAmmo = true;
     }
-    // 空母の燃料庫が満タンでなければ、それも補給対象 (補給ユニットの積載庫は対象外)
-    if(t.supplyFuel && typeof t.supplyFuelMax === 'number' && !t.isSupply){
+    if(t.supplyFuel && typeof t.supplyFuelMax === 'number' && holdFuelOK){
       var curFuelCount = (typeof u.supplyFuelCount === 'number') ? u.supplyFuelCount : t.supplyFuelMax;
       if(curFuelCount < t.supplyFuelMax) needFuel = true;
     }
@@ -4746,7 +4768,7 @@ function applyTurnStart(owner){
         // 補充を自動でやると、せっかく運んで降ろした物資を次のターンにその施設から
         // 積み直すことになり、物資が行ったり来たりするだけになるため。
         // 積載庫に入れるのは「📦 積む」とルートの積み元だけ (supplyRouteLoad)。
-        if(t.supplyFuel && typeof t.supplyFuelMax === 'number' && !t.isSupply){
+        if(t.supplyFuel && typeof t.supplyFuelMax === 'number' && holdFuelOK){
           var ownFuelCnt = (typeof u.supplyFuelCount === 'number') ? u.supplyFuelCount : t.supplyFuelMax;
           if(ownFuelCnt < t.supplyFuelMax){
             var wantFuelStock = Math.min(t.supplyFuelMax - ownFuelCnt, Math.ceil(t.supplyFuelMax * fRate));
@@ -4839,8 +4861,8 @@ function applyTurnStart(owner){
           var w = t.weapons[j];
           if(u.ammo[j] === undefined) u.ammo[j] = w.infiniteAmmo ? -1 : (w.ammo !== undefined ? w.ammo : 6);
         }
-        // 空母の弾薬庫も rate に応じて補給 (補給ユニットの積載庫は上と同じ理由で対象外)
-        if(t.supplyAmmo && typeof t.supplyAmmoMax === 'number' && !t.isSupply){
+        // 空母の弾薬庫・補給ユニットの積載庫も rate に応じて補給
+        if(t.supplyAmmo && typeof t.supplyAmmoMax === 'number' && holdAmmoOK){
           var ownCnt = (typeof u.supplyAmmoCount === 'number') ? u.supplyAmmoCount : t.supplyAmmoMax;
           if(ownCnt < t.supplyAmmoMax){
             var wantStock = Math.min(t.supplyAmmoMax - ownCnt, Math.ceil(t.supplyAmmoMax * rate));
@@ -15056,7 +15078,11 @@ function renderSupplyTab(){
   html += '</ul>';
   html += '<div style="margin-top:6px; background:#fff4d6; padding:6px 8px; border-radius:3px;"><b>そのターンに降ろされた物資は、同じターンには積み出せません</b><br>拠点を中継点にして補給車を並べると、1ターンのうちに物資が何リンクも先へ飛んでしまうためです。物資は<b>1ターンに1リンクずつ</b>進みます。降ろした物資を近くの味方が受け取るのは今までどおりです。</div>';
   html += '<div style="margin-top:6px; background:#fff4d6; padding:6px 8px; border-radius:3px;"><b>生産した補給ユニットの積載庫は空です</b><br>満タンで出てくると、1台作るたびに物資が備蓄の外から湧いてしまうためです。拠点の隣で「📦 積む」か、補給ルートの積み元で積んでください。(空母は積み込みの操作を持たないので、従来どおり艦内在庫を持って出てきます)</div>';
-  html += '<div style="margin-top:6px; background:#fff4d6; padding:6px 8px; border-radius:3px;"><b>積載庫に物資が入るのは「📦 積む」とルートの積み元だけ</b><br>施設の範囲補給では<b>積載庫は補充されません</b>。自動で補充すると、せっかく運んで降ろした物資をその施設から積み直すことになり、物資が行ったり来たりするだけになるためです。<br>補給ユニット<b>自身</b>の燃料・弾薬 (走るための燃料) は、他のユニットと同じように範囲補給で入ります。</div>';
+  html += '<div style="margin-top:6px; background:#fff4d6; padding:6px 8px; border-radius:3px;"><b>物資は「作る拠点」から「作らない拠点」への一方通行</b><br>'
+        + '<b>工場系・港系・空港系・弾薬工廠</b>は毎ターン備蓄を作る拠点で、<b>物資を出すのが仕事</b>です。範囲内にいる補給ユニットの<b>積載庫も自動で満たします</b>。<br>'
+        + '<b>都市・大都市・商業都市・首都</b>は備蓄を作れない拠点なので、<b>受け取る側</b>です。ここから積載庫が補充されることはありません (運んで降ろした物資を積み直すことになるため)。<br>'
+        + '補給ルートの<b>自動の降ろし先には生産施設を選びません</b>。手動で降ろすことは制限していません。<br>'
+        + '補給ユニット<b>自身</b>の燃料・弾薬 (走るための燃料) は、どの拠点からでも他のユニットと同じように範囲補給で入ります。</div>';
   html += '</div>';
 
   // === 補給ユニット一覧 ===
