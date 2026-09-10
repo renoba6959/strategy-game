@@ -2322,14 +2322,20 @@ function getSupplySource(unit){
   // 自軍が占領している施設・拠点から一定範囲内にいれば補給を受けられる。
   // 「施設マスの上に乗らないと補給できない」仕様だと1マスの取り合いになるため、
   // 範囲を広げている (段階1: 補給範囲の拡大)。
-  //   ・弾薬工廠 : 3マス以内 / 毎ターン100% (航空ユニットは対象外)
-  //   ・生産施設 : 2マス以内 / 毎ターン50%  (工場=地上, 港=艦船, 空港=航空)
-  //   ・都市系/首都: 2マス以内 / 毎ターン20% (地上ユニットのみ)
+  //   ・弾薬工廠 : 3マス以内 / 毎ターン100% (固定翼機は対象外。ヘリは可)
+  //   ・工場系   : 2マス以内 / 毎ターン50%  (地上・ヘリ)
+  //   ・港系     : 1マス以内 / 毎ターン50%  (艦船。直上と隣接だけ = 接岸して受け取る)
+  //   ・空港系   : ヘリは2マス以内、固定翼機は直上のみ / 毎ターン50%
+  //   ・都市系/首都: 2マス以内 / 毎ターン20% (地上ユニットとヘリ)
+  // 範囲補給は「盤面に見えない補給要員がそこまで運んでいる」という考え方。
+  // 固定翼機は飛んでいるので人員が届かない (人まで飛ぶことになる) ため、直上・空母搭載・
+  // 施設収容・空中給油機 (これも飛んでいるので例外) でしか補給を受けられない。
   // 複数の施設が範囲内にある場合は、補給量(rate)が最も大きいものを採用する。
   //   ・ヘリは航空ユニットだが、地上の施設 (工場系・都市系・弾薬工廠) からも補給できる。
   //     補給車 (supplyTarget: LAND+HELI) がヘリに補給できるのと揃えるため。
   //     固定翼機は従来どおり空港系・空母のみ。
-  var FAC_RANGE = 2;    // 生産施設・都市系の補給範囲
+  var FAC_RANGE = 2;    // 工場系・都市系の補給範囲
+  var PORT_RANGE = 1;   // 港系の補給範囲 (直上と隣接。接岸して受け取る)
   var DEPOT_RANGE = 3;  // 弾薬工廠の補給範囲
   var isHeli = isHelicopter(unit);
   // 備蓄(段階2)が残っている施設のみ候補にする。燃料と弾薬で別々に選ぶ
@@ -2347,9 +2353,13 @@ function getSupplySource(unit){
     if(fter.ammoDepot && (cat !== 'AIR' || isHeli) && fd <= DEPOT_RANGE){
       // 弾薬工廠 (固定翼機は対象外: 街中で補給できるのは強すぎるため。ヘリは可)
       r = 1.0;
-    } else if((fter.healCat === cat || (isHeli && fter.healCat === 'LAND')) && fd <= FAC_RANGE){
+    } else if(fter.healCat === cat || (isHeli && fter.healCat === 'LAND')){
       // 生産施設 (カテゴリが一致するもの。ヘリは工場系からも受けられる)
-      r = 0.5;
+      // 届く範囲は施設ごとに違う
+      var reach = FAC_RANGE;
+      if(fter.healCat === 'SEA') reach = PORT_RANGE;                              // 港系: 直上と隣接だけ
+      else if(fter.healCat === 'AIR' && cat === 'AIR' && !isHeli) reach = 0;      // 空港系 → 固定翼機: 直上のみ
+      if(fd <= reach) r = 0.5;
     } else if((cat === 'LAND' || isHeli) && (fter.group === 'city' || fter.group === 'capital') && fd <= FAC_RANGE){
       // 都市・大都市・商業都市・首都 (地上ユニットとヘリ)
       r = 0.2;
@@ -15028,7 +15038,9 @@ function renderSupplyTab(){
   html += '<table style="width:100%; font-size:11px; margin-top:4px; border-collapse:collapse;">';
   html += '<tr style="background:#e6dfca;"><th style="padding:3px 6px; text-align:left;">補給元</th><th style="padding:3px 6px; text-align:center;">範囲</th><th style="padding:3px 6px; text-align:left;">対象</th><th style="padding:3px 6px; text-align:center;">補給率/T</th></tr>';
   html += '<tr><td style="padding:3px 6px;">弾薬工廠</td><td style="padding:3px 6px; text-align:center;"><b>3マス</b></td><td style="padding:3px 6px;">地上・艦船・ヘリ (固定翼は対象外)</td><td style="padding:3px 6px; text-align:center;"><b>100%</b></td></tr>';
-  html += '<tr style="background:#fafaf3;"><td style="padding:3px 6px;">生産施設 (工場系/港系/空港系・全Lv)</td><td style="padding:3px 6px; text-align:center;"><b>2マス</b></td><td style="padding:3px 6px;">カテゴリ一致 (工場=地上/港=艦船/空港=航空)。ヘリは工場系からも可</td><td style="padding:3px 6px; text-align:center;"><b>50%</b></td></tr>';
+  html += '<tr style="background:#fafaf3;"><td style="padding:3px 6px;">工場系 (全Lv)</td><td style="padding:3px 6px; text-align:center;"><b>2マス</b></td><td style="padding:3px 6px;">地上・ヘリ</td><td style="padding:3px 6px; text-align:center;"><b>50%</b></td></tr>';
+  html += '<tr><td style="padding:3px 6px;">港系 (全Lv)</td><td style="padding:3px 6px; text-align:center;"><b>1マス</b></td><td style="padding:3px 6px;">艦船 (直上と隣接。接岸して受け取る)</td><td style="padding:3px 6px; text-align:center;"><b>50%</b></td></tr>';
+  html += '<tr style="background:#fafaf3;"><td style="padding:3px 6px;">空港系 (全Lv)</td><td style="padding:3px 6px; text-align:center;"><b>ヘリ2マス<br>固定翼は直上のみ</b></td><td style="padding:3px 6px;">航空。<b>固定翼機は空港マスの上でしか受けられない</b></td><td style="padding:3px 6px; text-align:center;"><b>50%</b></td></tr>';
   html += '<tr><td style="padding:3px 6px;">都市・大都市・商業都市・首都</td><td style="padding:3px 6px; text-align:center;"><b>2マス</b></td><td style="padding:3px 6px;">地上・ヘリ</td><td style="padding:3px 6px; text-align:center;"><b>20%</b></td></tr>';
   html += '<tr style="background:#fafaf3;"><td style="padding:3px 6px;">空母系 (搭載中の搭載機)</td><td style="padding:3px 6px; text-align:center;">同マス</td><td style="padding:3px 6px;">航空</td><td style="padding:3px 6px; text-align:center;"><b>100%</b></td></tr>';
   html += '<tr><td style="padding:3px 6px;">補給ユニット (補給車/補給艦/給油艦/空中給油機)</td><td style="padding:3px 6px; text-align:center;">隣接</td><td style="padding:3px 6px;">それぞれの対象カテゴリ</td><td style="padding:3px 6px; text-align:center;"><b>100%</b></td></tr>';
@@ -15102,6 +15114,10 @@ function renderSupplyTab(){
   html += '<tr style="background:#fafaf3;"><td style="padding:3px 6px;">補給貨車</td><td style="padding:3px 6px; text-align:center;">陸軍(列車)</td><td style="padding:3px 6px; text-align:center;"><b>800</b></td><td style="padding:3px 6px; text-align:center;"><b>60</b></td><td style="padding:3px 6px;"><b>2マス範囲</b>の陸上ユニット・ヘリに補給 (線路から降りられない見返り)。自走できず機関車が牽引する。<b>連結したままでも補給できる</b></td></tr>';
   html += '</table>';
   html += '<div style="font-size:10px; color:#888; margin-top:4px;">※ 補給ユニットの在庫は自軍拠点で補充する (拠点の備蓄から引かれる)。弾薬工廠は補給範囲3マス・補給率100%だが、備蓄 (燃料800/弾薬80) の範囲内で、無限ではない。</div>';
+  html += '<div style="background:#f0f5fa; border-left:3px solid #185FA5; padding:6px 10px; margin:8px 0; font-size:11px;"><b style="color:#185FA5;">なぜ範囲が施設ごとに違うのか</b><br>'
+        + '範囲補給は「<b>盤面に見えない補給要員がそこまで運んでいる</b>」という考え方です。地上や海上ならその人員が動けるので、工場は2マス、弾薬工廠は3マス届きます。港は接岸して受け取るので<b>直上と隣接だけ</b>です。<br>'
+        + '<b>固定翼機は飛んでいるので、人員が届きません</b> (人まで飛ぶことになってしまいます)。そのため補給を受けられるのは<b>空港マスの上・空母に搭載中・施設に収容中</b>だけです。例外は<b>空中給油機</b>で、こちらも飛んでいるので空中で給油できます。<br>'
+        + 'ヘリは低空で降りられるので、空港2マス・工場2マス・都市2マス・弾薬工廠3マスと、地上ユニットに準じた扱いです。</div>';
   html += '</div>';
 
   return html;
