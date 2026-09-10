@@ -2338,10 +2338,19 @@ function getSupplySource(unit){
   var PORT_RANGE = 1;   // 港系の補給範囲 (直上と隣接。接岸して受け取る)
   var DEPOT_RANGE = 3;  // 弾薬工廠の補給範囲
   var isHeli = isHelicopter(unit);
+  // ヘリは着陸して受け取るので、補給要員 (装輪車両) が入れない地形にいると
+  // 範囲補給を受けられない。山にドラム缶は上げられないし、海上のホバリング中も同じ。
+  var heliReachable = true;
+  if(isHeli){
+    var heliTerKey = M[unit.y][unit.x];
+    var heliWheelCost = COST.WHEEL[heliTerKey];
+    heliReachable = (heliWheelCost !== undefined && heliWheelCost !== Infinity);
+  }
   // 備蓄(段階2)が残っている施設のみ候補にする。燃料と弾薬で別々に選ぶ
   var facFuelRate = 0, facFuelName = null, facFuelPos = null;
   var facAmmoRate = 0, facAmmoName = null, facAmmoPos = null;
   for(var fk in captures){
+    if(isHeli && !heliReachable) break;   // 山・川・海のヘリには補給要員が届かない
     var fcap = captures[fk];
     if(fcap.owner !== unit.owner) continue;
     var fxy = fk.split(',');
@@ -15123,7 +15132,7 @@ function renderSupplyTab(){
   html += '<div style="background:#f0f5fa; border-left:3px solid #185FA5; padding:6px 10px; margin:8px 0; font-size:11px;"><b style="color:#185FA5;">なぜ範囲が施設ごとに違うのか</b><br>'
         + '範囲補給は「<b>盤面に見えない補給要員がそこまで運んでいる</b>」という考え方です。地上や海上ならその人員が動けるので、工場は2マス、弾薬工廠は3マス届きます。港は接岸して受け取るので<b>直上と隣接だけ</b>です。<br>'
         + '<b>固定翼機は飛んでいるので、人員が届きません</b> (人まで飛ぶことになってしまいます)。そのため補給を受けられるのは<b>空港マスの上・空母に搭載中・施設に収容中</b>だけです。例外は<b>空中給油機</b>で、こちらも飛んでいるので空中で給油できます。<br>'
-        + 'ヘリは低空で降りられるので、空港2マス・工場2マス・都市2マス・弾薬工廠3マスと、地上ユニットに準じた扱いです。</div>';
+        + 'ヘリは低空で降りられるので、空港2マス・工場2マス・都市2マス・弾薬工廠3マスと、地上ユニットに準じた扱いです。ただし<b>着陸して受け取る</b>ので、<b>山・川・海の上にいるヘリは範囲補給を受けられません</b> (補給要員が入れないため)。森・浅瀬なら受け取れます。</div>';
   html += '</div>';
 
   return html;
