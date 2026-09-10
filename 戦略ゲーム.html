@@ -13180,6 +13180,19 @@ function doWait(){
 }
 function cancelMove(){
   if(!pendingUnit) return;
+  // 「選択解除」(このユニットは今回動いていない) のときは、位置も行動状態も触らない。
+  // 触ってしまうと、連結相手が以前の移動の分まで巻き戻されて別の場所へ吹き飛び、
+  // しかも moved が消えるので、その機関車がもう一度動けてしまう。
+  if(!pendingJustMoved){
+    pendingUnit = null;
+    setClear(attackableSet); setClear(unloadValidSet);
+    unloadMode = false; unloadCargoIdx = -1; unloadStarted = false;
+    hideCommandPanel();
+    selected = null; setClear(movableSet);
+    setStatus('選択を解除しました');
+    render();
+    return;
+  }
   // 以前はグローバルの preMoveX/preMoveY (プレイヤーが最後に通常移動したときの座標) を
   // 見ていたため、動いていないユニットでこのボタンを押すと
   // 「別のユニットの移動前の位置」へワープしていた。
