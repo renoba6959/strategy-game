@@ -2961,6 +2961,12 @@ function isAdjacentToEnemy(x, y, owner){
 
 function computeMovable(unit){
   var set = {};
+  // 施設から出撃したユニットは、出撃そのものが移動なのでもう動けない。
+  // (プレイヤーもAIもここを通るので、両方まとめて止まる。攻撃は移動済みユニットと同じ扱いで可)
+  if(unit.deployedFromFacility && unit.moved){
+    setAdd(set, unit.x+','+unit.y);
+    return set;
+  }
   setAdd(set, unit.x+','+unit.y);
   var dist = {};
   dist[unit.x+','+unit.y] = 0;
@@ -5063,7 +5069,7 @@ function endTurn(){
   // 天候の進行 (1ラウンドごとに各雲が1マス流れる)
   if(roundEnded) advanceWeather();
   applyTurnStart(turn);
-  for(var i=0; i<units.length; i++){ if(units[i].owner === turn){ units[i].moved = false; units[i].acted = false; } }
+  for(var i=0; i<units.length; i++){ if(units[i].owner === turn){ units[i].moved = false; units[i].acted = false; units[i].deployedFromFacility = false; } }
   // 補給ルート (段階3): AI 陣営はルートを自動で組み直してから往復させる
   if(!isPlayerFaction(turn) || playerIsAI) aiAssignSupplyRoutes(turn);
   runSupplyRoutes(turn);
@@ -6300,6 +6306,7 @@ function aiProduceAndTakeOut(aiFaction, phase){
       newU.preMoveX = p.x; newU.preMoveY = p.y;
       newU.moved = true;    // 出撃は移動なので、このターンはもう動けない
       newU.acted = false;
+      newU.deployedFromFacility = true;
       emptySupplyStockOnBuild(newU);
       units.push(newU);
       production.splice(i, 1);
@@ -11645,7 +11652,7 @@ function showCommandPanel(unit, justMoved){
   addBtn('待機', doWait);
   // 動いていないときも押せるようにする。これを隠すと「待機(=そのターンを捨てる)」しか
   // 出口が無くなるため。動いていなければ選択を解いて元の状態に戻すだけ。
-  addBtn(justMoved ? '移動キャンセル' : '選択解除', cancelMove);
+  addBtn((justMoved && !unit.deployedFromFacility) ? '移動キャンセル' : '選択解除', cancelMove);
   panel.style.visibility = 'visible';
   setClear(attackableSet);
   setStatus(TYPE[unit.type].name + 'のコマンドを選択してください');
@@ -13184,6 +13191,7 @@ function cancelMove(){
   for(var ci=0; ci<cancelList.length; ci++){
     var cu = cancelList[ci];
     if(!cu.moved) continue;   // 動いていない車輌はそのまま
+    if(cu.deployedFromFacility) continue;   // 施設から出撃した車輌は戻さない (施設マスが塞がっている)
     cancelMoved = true;
     if(typeof cu.preMoveX === 'number' && typeof cu.preMoveY === 'number'){
       cu.x = cu.preMoveX; cu.y = cu.preMoveY;
@@ -16464,6 +16472,7 @@ function executeDeploy(x, y){
   newU.preMoveX = p.x; newU.preMoveY = p.y;
   newU.moved = true;      // 出撃は移動なので、このターンはもう動けない (直射なら攻撃は可)
   newU.acted = false;
+  newU.deployedFromFacility = true;   // 戻り先の施設マスは塞がっているので移動キャンセル不可
   emptySupplyStockOnBuild(newU);
   units.push(newU);
   production.splice(deployPendingIdx, 1);
@@ -16472,13 +16481,33 @@ function executeDeploy(x, y){
   if(window.plog) try{ plog('🚩 ' + TYPE[newU.type].name + ' が (' + p.x + ',' + p.y + ') から (' + newU.x + ',' + newU.y + ') へ出撃' + (stopped ? '（伏兵察知で停止）' : '')); }catch(e){}
   setStatus('🚩 ' + TYPE[newU.type].name + 'が出撃しました' + (stopped ? '（伏兵を察知して手前で停止）' : ''));
   exitDeployMode();
+  // 出撃したユニットは「移動を終えた状態」として扱う。
+  // pendingUnit に入れてコマンドパネルを出すことで、もう一度動かせないようにする
+  // (普通に移動したユニットとまったく同じ扱い。攻撃や待機はここから選ぶ)
+  selected = null;
+  setClear(movableSet); setClear(attackableSet);
   // 出た先に伏兵が居れば奇襲を受ける (普通の移動と同じ)
-  performAmbush(newU, function(){
-    units = units.filter(function(uu){ return uu.hp > 0; });
-    render();
-    updateInfoPanel();
-    if(checkWin()) return;
+  var ambushed = performAmbush(newU, function(wasAmbushed){
+    if(wasAmbushed){
+      units = units.filter(function(uu){ return uu.hp > 0; });
+      hideCommandPanel();
+      afterAction();
+    } else if(stopped){
+      newU.acted = true;   // 伏兵察知で手前に止まったら行動終了
+      hideCommandPanel();
+      afterAction();
+    } else {
+      showCommandPanel(newU, true);
+    }
   });
+  if(ambushed){ render(); return; }   // 奇襲アニメに委ねる
+  if(stopped){
+    newU.acted = true;
+    hideCommandPanel();
+    afterAction();
+    return;
+  }
+  showCommandPanel(newU, true);
   render();
   updateInfoPanel();
 }
