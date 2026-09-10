@@ -12811,10 +12811,10 @@ function enterRailRepairMode(){
   for(var di=0; di<dirs.length; di++){
     var nx = pendingUnit.x + dirs[di][0], ny = pendingUnit.y + dirs[di][1];
     if(!inBounds(nx, ny)) continue;
-    var mx = railHpMaxAt(nx, ny);
-    if(mx > 0 && getRailHp(nx, ny) < mx) setAdd(railRepairSet, nx+','+ny);
+    var mx = railBuildMaxAt(nx, ny);
+    if(railHpMaxAt(nx, ny) > 0 && getRailHp(nx, ny) < mx) setAdd(railRepairSet, nx+','+ny);
   }
-  setStatus('🛠 工事する場所を選んでください（進む量は工兵のHP分。耐久' + RAIL_OK_HP + '以上で開通します）');
+  setStatus('🛠 工事する場所を選んでください（進む量は工兵のHP分。耐久' + RAIL_OK_HP + '以上で開通、' + RAIL_DOUBLE_HP + '以上で複線になります）');
   var btnWrap = document.getElementById('command-buttons');
   btnWrap.innerHTML = '';
   var b = document.createElement('button');
@@ -12838,8 +12838,10 @@ function executeRailRepair(x, y){
   var res = repairRailAt(x, y, amount);
   if(!res) return;
   var msg = '🛠 ' + beforeName + 'の工事 +' + amount;
-  if(res.promoted) msg += ' → ' + TER[M[y][x]].name + 'が開通しました';
-  msg += '（耐久 ' + res.hp + '/' + railHpMaxAt(x, y) + '）';
+  if(res.promoted){
+    msg += ' → ' + TER[M[y][x]].name + ((M[y][x] === 'RAIL_DOUBLE') ? 'になりました' : 'が開通しました');
+  }
+  msg += '（耐久 ' + res.hp + '/' + railBuildMaxAt(x, y) + '）';
   setStatus(msg);
   if(window.plog) try{ plog(msg + ' ('+x+','+y+')'); }catch(e){}
   pendingUnit.acted = true;
