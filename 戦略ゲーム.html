@@ -2602,7 +2602,7 @@ function isAmbushHidden(u, viewerOwner, excluderId){
     if(d <= 1) return false; // 隣接は無条件で発見 (すべての隠匿に共通)
     // 潜航中の潜水艦のみ、探知範囲による発見がある (移動していない探知ユニットに限る)
     if(hiddenBySubmerge && !hiddenByStealth){
-      if(vMoved) continue;
+      if(vMoved || v.spawnedThisTurn) continue;   // 施設から出てきたばかりのユニットも探知できない
       var dr = getDetectRange(v);
       if(dr > 0 && d <= dr) return false; // 探知済み → 伏兵ではない
     }
@@ -2722,7 +2722,9 @@ function submarineVisibility(u, viewerOwner, excluderId){
     var v = units[i];
     if(v.owner !== viewerOwner || v.hp <= 0) continue;
     if(excluderId !== undefined && v.id === excluderId) continue;
-    if(v.moved) continue;
+    // 移動したユニットは探知できない。施設から出てきたばかりのユニットも同じ
+    // (出港そのものが行動なので、静かに聴音している状態ではない)
+    if(v.moved || v.spawnedThisTurn) continue;
     var range = getDetectRange(v);
     if(range > 0 && manhattan(v.x, v.y, u.x, u.y) <= range){
       return true;
@@ -5069,7 +5071,7 @@ function endTurn(){
   // 天候の進行 (1ラウンドごとに各雲が1マス流れる)
   if(roundEnded) advanceWeather();
   applyTurnStart(turn);
-  for(var i=0; i<units.length; i++){ if(units[i].owner === turn){ units[i].moved = false; units[i].acted = false; units[i].deployedFromFacility = false; } }
+  for(var i=0; i<units.length; i++){ if(units[i].owner === turn){ units[i].moved = false; units[i].acted = false; units[i].deployedFromFacility = false; units[i].spawnedThisTurn = false; } }
   // 補給ルート (段階3): AI 陣営はルートを自動で組み直してから往復させる
   if(!isPlayerFaction(turn) || playerIsAI) aiAssignSupplyRoutes(turn);
   runSupplyRoutes(turn);
@@ -6307,6 +6309,7 @@ function aiProduceAndTakeOut(aiFaction, phase){
       newU.moved = true;    // 出撃は移動なので、このターンはもう動けない
       newU.acted = false;
       newU.deployedFromFacility = true;
+      newU.spawnedThisTurn = true;   // 出てきたターンは探知できない
       emptySupplyStockOnBuild(newU);
       units.push(newU);
       production.splice(i, 1);
@@ -6322,6 +6325,7 @@ function aiProduceAndTakeOut(aiFaction, phase){
     newU = makeUnit(p.type, aiFaction, spawnX, spawnY);
     newU.acted = false;
     newU.moved = false;
+    newU.spawnedThisTurn = true;   // 出てきたターンは探知できない (出港も行動のうち)
     emptySupplyStockOnBuild(newU);   // 補給ユニットの積載庫は空で出てくる
     units.push(newU);
     production.splice(i, 1);
@@ -6364,6 +6368,7 @@ function aiProduceAndTakeOut(aiFaction, phase){
       rOut.hp = rcg.hp;
       rOut.acted = false;
       rOut.moved = false;
+      rOut.spawnedThisTurn = true;   // 出てきたターンは探知できない
       // 段階2: 取り出し時の燃料・弾薬の補給は施設の備蓄から払う
       payTakeOutSupply(rOut, rcg, rfx, rfy);
       if(rcg.cargo && rcg.cargo.length > 0) rOut.cargo = rcg.cargo.slice();
@@ -14926,6 +14931,7 @@ function renderRulesTab(){
     + '・<b>森・山のユニット</b>: 隣接するまで見えない。ただしヘリに対しては対空戦車(視界4)・対空ミサイル(視界5)・固定翼機は視界内で発見できる<br>'
     + '・奇襲されるかどうかは<b>動く前の位置</b>で判定する (移動後の位置で見ると常に隣接＝発見済みになってしまうため)<br>'
     + '・ただし<b>移動そのものが行動</b>なので、動いたユニットは<b>自分の探知が切れている</b>扱いになる。港で止まって潜水艦を探知しても、そのまま横付けして爆雷を落とすことはできず、逆に奇襲を受ける<br>'
+    + '・<b>施設から出てきたばかりのユニットも探知できません</b>。出港・出撃そのものが行動なので、静かに聴音している状態ではないためです。おかげで<b>港の出口に潜水艦を張り付ける封鎖</b>が成立します<br>'
     + '・<b>潜航中の潜水艦・ステルス爆撃機は普通の視界では見つからない</b>ので、視界が広い艦ほど有利ということはない。叩くには<b>止まったまま探知する僚艦</b>が要る (僚艦が探知していれば、動いてきた艦でも撃てる)<br>'
     + '・一度発見した敵を記憶する仕組みはありません。<b>離れれば見失います</b><br>'
     + '・<b>AIのユニットも同じように奇襲されます</b>。森・山に伏せた自軍ユニットの隣を敵が通れば発動します<br>'
@@ -16459,6 +16465,7 @@ function takeOutProduction(idx){
   var newU = makeUnit(p.type, p.owner, p.x, p.y);
   newU.acted = false;
   newU.moved = false;
+  newU.spawnedThisTurn = true;   // 出てきたターンは探知できない (出港も行動のうち)
   emptySupplyStockOnBuild(newU);   // 補給ユニットの積載庫は空で出てくる
   units.push(newU);
   production.splice(idx, 1);
@@ -16488,6 +16495,7 @@ function executeDeploy(x, y){
   newU.moved = true;      // 出撃は移動なので、このターンはもう動けない (直射なら攻撃は可)
   newU.acted = false;
   newU.deployedFromFacility = true;   // 戻り先の施設マスは塞がっているので移動キャンセル不可
+  newU.spawnedThisTurn = true;        // 出てきたターンは探知できない
   emptySupplyStockOnBuild(newU);
   units.push(newU);
   production.splice(deployPendingIdx, 1);
@@ -16559,6 +16567,7 @@ function takeOutFromFacility(idx){
   newU.hp = cg.hp;
   newU.acted = false;
   newU.moved = false;
+  newU.spawnedThisTurn = true;   // 出てきたターンは探知できない
   // 段階2: 取り出し時の燃料・弾薬の補給は施設の備蓄から払う
   payTakeOutSupply(newU, cg, prodFacilityX, prodFacilityY);
   if(cg.cargo && cg.cargo.length > 0) newU.cargo = cg.cargo.slice();
