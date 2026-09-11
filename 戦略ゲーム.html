@@ -3003,6 +3003,16 @@ function isAdjacentToEnemy(x, y, owner){
   return false;
 }
 
+// 可動橋に列車が乗っているときは橋が下りている。桁下をくぐれない艦 (駆逐艦以上) は通れない。
+// 潜水艦・駆潜艇・補助艦艇 (lowProfile) は桁下を抜けられるので今までどおり通れる。
+function drawBridgeBlocked(unit, x, y){
+  if(M[y][x] !== 'SEA_RAIL_DRAW') return false;
+  var t = TYPE[unit.type];
+  if(t.cat !== 'SEA' || t.lowProfile) return false;
+  var b = unitAt(x, y);
+  return !!(b && TYPE[b.type].cost === 'TRAIN');
+}
+
 function computeMovable(unit){
   var set = {};
   // 施設から出撃したユニットは、出撃そのものが移動なのでもう動けない。
@@ -3035,6 +3045,7 @@ function computeMovable(unit){
       if(!inBounds(nx,ny)) continue;
       var c = moveCost(unit.type, M[ny][nx]);
       if(c === Infinity) continue;
+      if(drawBridgeBlocked(unit, nx, ny)) continue;   // 可動橋に列車が乗っている
       var blocker = unitAt(nx, ny);
       // 列車は単線なので、味方の上もすり抜けられない (編成が並びを保って進むため)
       // ただし複線マスの上だけはすれ違える (止まれるのは空きマスだけ = canLand で判定)
@@ -3123,6 +3134,7 @@ function findActualMoveEndpoint(unit, targetX, targetY){
       if(!inBounds(nx,ny)) continue;
       var c = moveCost(unit.type, M[ny][nx]);
       if(c === Infinity) continue;
+      if(drawBridgeBlocked(unit, nx, ny)) continue;   // 可動橋に列車が乗っている
       var blocker = unitAt(nx, ny);
       // 列車は単線なので、味方の上もすり抜けられない (複線マスの上だけはすれ違える)
       if(TYPE[unit.type].cost === 'TRAIN' && blocker && isAlly(blocker.owner, unit.owner)
@@ -14701,7 +14713,7 @@ function renderTerrainTab(){
     ['橋脚', 0, '#7C7263', { INF:3, WHEEL:'×', TRACK_L:'×', TRACK_H:'×' }, '鉄橋が壊れた状態。列車は走れない。工兵の工事で鉄橋に戻る'],
     ['海上鉄橋', 0, '#5F7E96', { INF:'×', WHEEL:'×', TRACK_L:'×', TRACK_H:'×' }, '島と島を結ぶ高架橋。列車0.5、工兵3。桁下を抜けられるのは潜水艦・駆潜艇・補助艦艇のみ(1)'],
     ['海上橋脚', 0, '#54708A', { INF:'×', WHEEL:'×', TRACK_L:'×', TRACK_H:'×' }, '海上鉄橋が壊れた状態。列車は走れない。艦船の通行条件は海上鉄橋と同じ'],
-    ['可動橋', 0, '#6B88A0', { INF:'×', WHEEL:'×', TRACK_L:'×', TRACK_H:'×' }, '航路が開いた区間。ここだけは全ての艦船が通れる(2)。列車0.5、工兵3'],
+    ['可動橋', 0, '#6B88A0', { INF:'×', WHEEL:'×', TRACK_L:'×', TRACK_H:'×' }, '航路が開いた区間。ここだけは全ての艦船が通れる(2)。ただし列車が乗っている間は橋が下りるので、桁下を抜けられる艦 (潜水艦・駆潜艇・補助艦艇) しか通れない。列車0.5、工兵3'],
     ['可動橋脚', 0, '#5C7690', { INF:'×', WHEEL:'×', TRACK_L:'×', TRACK_H:'×' }, '可動橋が壊れた状態。桁が航路に落ち、主力艦艇も通れなくなる'],
     ['浅瀬', 0, '#B5DDE6', { INF:1, WHEEL:1, TRACK_L:2, TRACK_H:3 }, '輸送船・給油艦・補給艦・補給艦のみ進入可'],
     ['川',   0, '#A8C8DC', { INF:3, WHEEL:'×', TRACK_L:'×', TRACK_H:'×' }, '歩兵のみ通行可。水陸両用戦車は装輪扱いで通行可'],
