@@ -13879,6 +13879,9 @@ function _landColorAt(tx, ty){
   return (t && t.color) ? t.color : TER.PLAIN.color;
 }
 
+// 海際の線 (渚)。浅瀬・海・深海・岩礁で同じ太さ・同じ色にして、海岸線が一本につながって見えるようにする
+var COAST_SAND = '#E8DCBB', COAST_W = 4.5, COAST_WAVE = 1.4;
+
 // 陸に面した辺に沿って帯を描くための共通パス。内側の縁は緩く波打たせる
 function _edgeBandPaths(nL, sL, eL, wL, B, wave){
   var out = [];
@@ -13900,7 +13903,7 @@ function _cornerPaths(cNW, cNE, cSW, cSE, R){
 
 // 浅瀬: 水面は海と同じ色にして、陸に面した側だけ砂浜を描く。
 // 海と地続きの部分が海と同色になるので、海に浮いた別色の四角に見えない。
-function shoalTileSVG(nL, sL, eL, wL, colN, colS, colE, colW, cornerNW, cornerNE, cornerSW, cornerSE){
+function shoalTileSVG(nL, sL, eL, wL, colN, colS, colE, colW, cornerNW, cornerNE, cornerSW, cornerSE, seed){
   var B = 11;                 // 砂浜の幅 (32の約1/3)
   var sand = '#E0CFA4', grain = '#BFA77A', shallow = '#86C3DC';
   var p = [];
@@ -13923,7 +13926,15 @@ function shoalTileSVG(nL, sL, eL, wL, colN, colS, colE, colW, cornerNW, cornerNE
   }
   var corners = _cornerPaths(cornerNW, cornerNE, cornerSW, cornerSE, 13);
   for(var i=0; i<corners.length; i++) p.push('<path d="'+corners[i]+'" fill="'+sand+'" opacity="0.88"/>');
-  // 砂粒: 砂浜のある側に寄せて散らす
+  // 海際の線は、海・深海・岩礁と同じ太さ・同じ色で上に重ねる。
+  // こうすると、浅瀬と海が混ざった海岸線でも縁の太さが変わらず一本につながって見える。
+  var lip = _edgeBandPaths(nL, sL, eL, wL, COAST_W, COAST_WAVE);
+  for(var i=0; i<lip.length; i++) p.push('<path d="'+lip[i]+'" fill="'+COAST_SAND+'" opacity="0.8"/>');
+  var lipC = _cornerPaths(cornerNW, cornerNE, cornerSW, cornerSE, 7);
+  for(var i=0; i<lipC.length; i++) p.push('<path d="'+lipC[i]+'" fill="'+COAST_SAND+'" opacity="0.75"/>');
+  // 砂粒: 砂浜のある側に寄せて散らす。マスごとに位置をずらして同じ模様の繰り返しに見せない
+  var rnd = (function(){ var v = (seed || 0) * 2654435761 % 2147483647; return function(){ v = (v * 1103515245 + 12345) % 2147483647; return (v / 2147483647); }; })();
+  function jit(a){ return [a[0] + (rnd()*4 - 2), a[1] + (rnd()*4 - 2)]; }
   var dots = [];
   if(nL) dots.push([5,3],[12,6],[20,3],[27,7],[16,9],[9,8],[24,9]);
   if(sL) dots.push([5,29],[13,26],[21,29],[28,25],[17,23],[9,24],[25,23]);
@@ -13934,7 +13945,8 @@ function shoalTileSVG(nL, sL, eL, wL, colN, colS, colE, colW, cornerNW, cornerNE
   if(cornerSW) dots.push([4,28],[8,29],[3,24]);
   if(cornerSE) dots.push([28,28],[24,29],[29,24]);
   for(var i=0; i<dots.length; i++){
-    p.push('<circle cx="'+dots[i][0]+'" cy="'+dots[i][1]+'" r="0.9" fill="'+grain+'" opacity="0.75"/>');
+    var d = jit(dots[i]);
+    p.push('<circle cx="'+d[0].toFixed(1)+'" cy="'+d[1].toFixed(1)+'" r="'+(0.7 + rnd()*0.5).toFixed(2)+'" fill="'+grain+'" opacity="0.75"/>');
   }
   return '<svg viewBox="0 0 32 32" width="100%" height="100%" style="position:absolute;inset:0;pointer-events:none;">' + p.join('') + '</svg>';
 }
@@ -13942,11 +13954,10 @@ function shoalTileSVG(nL, sL, eL, wL, colN, colS, colE, colW, cornerNW, cornerNE
 // 海・深海・岩礁の「渚」。陸に面した側に細い砂の縁を描く (ファミコンウォーズの海際のイメージ)
 function coastTileSVG(nL, sL, eL, wL, cornerNW, cornerNE, cornerSW, cornerSE, waveDeco){
   var p = [];
-  var foam = '#E8DCBB';
-  var bands = _edgeBandPaths(nL, sL, eL, wL, 4.5, 1.4);
-  for(var i=0; i<bands.length; i++) p.push('<path d="'+bands[i]+'" fill="'+foam+'" opacity="0.8"/>');
+  var bands = _edgeBandPaths(nL, sL, eL, wL, COAST_W, COAST_WAVE);
+  for(var i=0; i<bands.length; i++) p.push('<path d="'+bands[i]+'" fill="'+COAST_SAND+'" opacity="0.8"/>');
   var corners = _cornerPaths(cornerNW, cornerNE, cornerSW, cornerSE, 7);
-  for(var i=0; i<corners.length; i++) p.push('<path d="'+corners[i]+'" fill="'+foam+'" opacity="0.75"/>');
+  for(var i=0; i<corners.length; i++) p.push('<path d="'+corners[i]+'" fill="'+COAST_SAND+'" opacity="0.75"/>');
   if(waveDeco) p.push(waveDeco);
   return '<svg viewBox="0 0 32 32" width="100%" height="100%" style="position:absolute;inset:0;pointer-events:none;">' + p.join('') + '</svg>';
 }
@@ -13956,7 +13967,8 @@ function shoalSVG(x, y){
   return shoalTileSVG(!nW, !sW, !eW, !wW,
     _landColorAt(x, y-1), _landColorAt(x, y+1), _landColorAt(x+1, y), _landColorAt(x-1, y),
     (nW && wW && !_isWaterAt(x-1, y-1)), (nW && eW && !_isWaterAt(x+1, y-1)),
-    (sW && wW && !_isWaterAt(x-1, y+1)), (sW && eW && !_isWaterAt(x+1, y+1)));
+    (sW && wW && !_isWaterAt(x-1, y+1)), (sW && eW && !_isWaterAt(x+1, y+1)),
+    x * 73856093 ^ y * 19349663);
 }
 // 海・深海・岩礁: 陸に面していれば渚を描き、面していなければ従来の波だけ
 function coastSVG(x, y, terId){
@@ -17226,7 +17238,8 @@ function edShoalSVG(x, y){
   return shoalTileSVG(!nW, !sW, !eW, !wW,
     _edLandColorAt(x, y-1), _edLandColorAt(x, y+1), _edLandColorAt(x+1, y), _edLandColorAt(x-1, y),
     (nW && wW && !_edIsWaterAt(x-1, y-1)), (nW && eW && !_edIsWaterAt(x+1, y-1)),
-    (sW && wW && !_edIsWaterAt(x-1, y+1)), (sW && eW && !_edIsWaterAt(x+1, y+1)));
+    (sW && wW && !_edIsWaterAt(x-1, y+1)), (sW && eW && !_edIsWaterAt(x+1, y+1)),
+    x * 73856093 ^ y * 19349663);
 }
 function edRiverSVG(x, y){
   var nW = _edIsWaterAt(x, y-1), sW = _edIsWaterAt(x, y+1), eW = _edIsWaterAt(x+1, y), wW = _edIsWaterAt(x-1, y);
