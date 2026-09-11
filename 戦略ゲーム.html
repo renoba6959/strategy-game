@@ -354,7 +354,7 @@ var TER = {
   RUINS_PORT:    { name:'廃墟(港)',   def:1, color:'#5e7886', capturable:true, capHpMax:20, capCaptureHp:20, level:0, group:'port', isRuins:true },
   // 首都(特殊・占領で即敗北)
   CAPITAL: { name:'首都', def:4, color:'#E8C870', heal:3, capturable:true, income:2000, capHpMax:50, capCaptureHp:40, level:1, group:'capital', isCapital:true, defenseSlots:4, lightSource:true, sight:3 },
-  SHOAL:   { name:'浅瀬', def:0, color:'#86C3DC' },
+  SHOAL:   { name:'浅瀬', def:0, color:'#4E8CC0' },
   REEF:    { name:'岩礁', def:3, color:'#A8D0DC', sightBlock:true },
   DEEP_SEA:{ name:'深海', def:0, color:'#3A6890' },
   RIVER:   { name:'川',   def:0, color:'#7FA8C8' },
@@ -13879,25 +13879,50 @@ function _landColorAt(tx, ty){
   return (t && t.color) ? t.color : TER.PLAIN.color;
 }
 
-// 浅瀬: 陸に面した辺にマスの約1/3の砂浜を描く。2辺が陸なら角が角らしく見える
+// 陸に面した辺に沿って帯を描くための共通パス。内側の縁は緩く波打たせる
+function _edgeBandPaths(nL, sL, eL, wL, B, wave){
+  var out = [];
+  if(nL) out.push('M0,0 L32,0 L32,'+B+' Q24,'+(B+wave)+' 16,'+B+' T0,'+B+' Z');
+  if(sL) out.push('M0,32 L32,32 L32,'+(32-B)+' Q24,'+(32-B-wave)+' 16,'+(32-B)+' T0,'+(32-B)+' Z');
+  if(wL) out.push('M0,0 L0,32 L'+B+',32 Q'+(B+wave)+',24 '+B+',16 T'+B+',0 Z');
+  if(eL) out.push('M32,0 L32,32 L'+(32-B)+',32 Q'+(32-B-wave)+',24 '+(32-B)+',16 T'+(32-B)+',0 Z');
+  return out;
+}
+// 斜めだけが陸のときの角。角張らせず丸くふくらませる
+function _cornerPaths(cNW, cNE, cSW, cSE, R){
+  var out = [];
+  if(cNW) out.push('M0,0 L'+R+',0 Q'+R+','+R+' 0,'+R+' Z');
+  if(cNE) out.push('M32,0 L'+(32-R)+',0 Q'+(32-R)+','+R+' 32,'+R+' Z');
+  if(cSW) out.push('M0,32 L0,'+(32-R)+' Q'+R+','+(32-R)+' '+R+',32 Z');
+  if(cSE) out.push('M32,32 L32,'+(32-R)+' Q'+(32-R)+','+(32-R)+' '+(32-R)+',32 Z');
+  return out;
+}
+
+// 浅瀬: 水面は海と同じ色にして、陸に面した側だけ砂浜を描く。
+// 海と地続きの部分が海と同色になるので、海に浮いた別色の四角に見えない。
 function shoalTileSVG(nL, sL, eL, wL, colN, colS, colE, colW, cornerNW, cornerNE, cornerSW, cornerSE){
   var B = 11;                 // 砂浜の幅 (32の約1/3)
-  var sand = '#E0CFA4', grain = '#BFA77A';
+  var sand = '#E0CFA4', grain = '#BFA77A', shallow = '#86C3DC';
   var p = [];
-  // 砂浜の内側 (水側) の縁は、直線だと硬いので緩く波打たせる
-  function band(d, col){
-    p.push('<path d="'+d+'" fill="'+sand+'" opacity="0.9"/>');
-    if(col) p.push('<path d="'+d+'" fill="'+col+'" opacity="0.18"/>');
+  // 砂浜のすぐ外側に「浅い水」の帯を置いて、砂 → 浅い水 → 海 とつなぐ
+  var shallowBands = _edgeBandPaths(nL, sL, eL, wL, B + 4.5, 2.4);
+  for(var i=0; i<shallowBands.length; i++) p.push('<path d="'+shallowBands[i]+'" fill="'+shallow+'" opacity="0.75"/>');
+  var shallowCorners = _cornerPaths(cornerNW, cornerNE, cornerSW, cornerSE, 18);
+  for(var i=0; i<shallowCorners.length; i++) p.push('<path d="'+shallowCorners[i]+'" fill="'+shallow+'" opacity="0.7"/>');
+  // 砂浜。隣の陸の色をうっすら混ぜて、地続きに見せる
+  var cols = [];
+  if(nL) cols.push(colN);
+  if(sL) cols.push(colS);
+  if(wL) cols.push(colW);
+  if(eL) cols.push(colE);
+  var bands = _edgeBandPaths(nL, sL, eL, wL, B, 2.2);
+  var bi = 0;
+  for(var i=0; i<bands.length; i++){
+    p.push('<path d="'+bands[i]+'" fill="'+sand+'" opacity="0.92"/>');
+    p.push('<path d="'+bands[i]+'" fill="'+(cols[bi++] || sand)+'" opacity="0.16"/>');
   }
-  if(nL) band('M0,0 L32,0 L32,'+B+' Q24,'+(B+2.2)+' 16,'+B+' T0,'+B+' Z', colN);
-  if(sL) band('M0,32 L32,32 L32,'+(32-B)+' Q24,'+(32-B-2.2)+' 16,'+(32-B)+' T0,'+(32-B)+' Z', colS);
-  if(wL) band('M0,0 L0,32 L'+B+',32 Q'+(B+2.2)+',24 '+B+',16 T'+B+',0 Z', colW);
-  if(eL) band('M32,0 L32,32 L'+(32-B)+',32 Q'+(32-B-2.2)+',24 '+(32-B)+',16 T'+(32-B)+',0 Z', colE);
-  // 斜めだけが陸のとき: その角に丸い砂を置く (角張らせない)
-  if(cornerNW) p.push('<path d="M0,0 L14,0 Q14,14 0,14 Z" fill="'+sand+'" opacity="0.85"/>');
-  if(cornerNE) p.push('<path d="M32,0 L18,0 Q18,14 32,14 Z" fill="'+sand+'" opacity="0.85"/>');
-  if(cornerSW) p.push('<path d="M0,32 L0,18 Q14,18 14,32 Z" fill="'+sand+'" opacity="0.85"/>');
-  if(cornerSE) p.push('<path d="M32,32 L32,18 Q18,18 18,32 Z" fill="'+sand+'" opacity="0.85"/>');
+  var corners = _cornerPaths(cornerNW, cornerNE, cornerSW, cornerSE, 13);
+  for(var i=0; i<corners.length; i++) p.push('<path d="'+corners[i]+'" fill="'+sand+'" opacity="0.88"/>');
   // 砂粒: 砂浜のある側に寄せて散らす
   var dots = [];
   if(nL) dots.push([5,3],[12,6],[20,3],[27,7],[16,9],[9,8],[24,9]);
@@ -13911,16 +13936,35 @@ function shoalTileSVG(nL, sL, eL, wL, colN, colS, colE, colW, cornerNW, cornerNE
   for(var i=0; i<dots.length; i++){
     p.push('<circle cx="'+dots[i][0]+'" cy="'+dots[i][1]+'" r="0.9" fill="'+grain+'" opacity="0.75"/>');
   }
-  // さざ波 (水側)
-  p.push('<path d="M2,20 Q8,18 14,20 T26,20" fill="none" stroke="#4A7A9A" stroke-width="0.8" opacity="0.35"/>');
   return '<svg viewBox="0 0 32 32" width="100%" height="100%" style="position:absolute;inset:0;pointer-events:none;">' + p.join('') + '</svg>';
 }
+
+// 海・深海・岩礁の「渚」。陸に面した側に細い砂の縁を描く (ファミコンウォーズの海際のイメージ)
+function coastTileSVG(nL, sL, eL, wL, cornerNW, cornerNE, cornerSW, cornerSE, waveDeco){
+  var p = [];
+  var foam = '#E8DCBB';
+  var bands = _edgeBandPaths(nL, sL, eL, wL, 4.5, 1.4);
+  for(var i=0; i<bands.length; i++) p.push('<path d="'+bands[i]+'" fill="'+foam+'" opacity="0.8"/>');
+  var corners = _cornerPaths(cornerNW, cornerNE, cornerSW, cornerSE, 7);
+  for(var i=0; i<corners.length; i++) p.push('<path d="'+corners[i]+'" fill="'+foam+'" opacity="0.75"/>');
+  if(waveDeco) p.push(waveDeco);
+  return '<svg viewBox="0 0 32 32" width="100%" height="100%" style="position:absolute;inset:0;pointer-events:none;">' + p.join('') + '</svg>';
+}
+
 function shoalSVG(x, y){
   var nW = _isWaterAt(x, y-1), sW = _isWaterAt(x, y+1), eW = _isWaterAt(x+1, y), wW = _isWaterAt(x-1, y);
   return shoalTileSVG(!nW, !sW, !eW, !wW,
     _landColorAt(x, y-1), _landColorAt(x, y+1), _landColorAt(x+1, y), _landColorAt(x-1, y),
     (nW && wW && !_isWaterAt(x-1, y-1)), (nW && eW && !_isWaterAt(x+1, y-1)),
     (sW && wW && !_isWaterAt(x-1, y+1)), (sW && eW && !_isWaterAt(x+1, y+1)));
+}
+// 海・深海・岩礁: 陸に面していれば渚を描き、面していなければ従来の波だけ
+function coastSVG(x, y, terId){
+  var nW = _isWaterAt(x, y-1), sW = _isWaterAt(x, y+1), eW = _isWaterAt(x+1, y), wW = _isWaterAt(x-1, y);
+  return coastTileSVG(!nW, !sW, !eW, !wW,
+    (nW && wW && !_isWaterAt(x-1, y-1)), (nW && eW && !_isWaterAt(x+1, y-1)),
+    (sW && wW && !_isWaterAt(x-1, y+1)), (sW && eW && !_isWaterAt(x+1, y+1)),
+    TERRAIN_DECO[terId] || '');
 }
 
 // 川: 陸に面した辺に岸を描き、中央だけを水面として残す
@@ -14126,6 +14170,7 @@ function render(){
       else if(TER[terId] && TER[terId].isRail) cell.innerHTML += railSVG(x, y);
       else if(terId === 'SHOAL') cell.innerHTML += shoalSVG(x, y);
       else if(terId === 'RIVER') cell.innerHTML += riverSVG(x, y);
+      else if(terId === 'SEA' || terId === 'DEEP_SEA' || terId === 'REEF') cell.innerHTML += coastSVG(x, y, terId);
       else if(TERRAIN_DECO[terId]) cell.innerHTML += TERRAIN_DECO[terId];
       // 天候オーバーレイ (地形の上、ユニットの下)
       var wkey = getWeatherAt(x, y);
@@ -14824,7 +14869,7 @@ function renderTerrainTab(){
     ['可動橋', 0, '#6B88A0', { INF:'×', WHEEL:'×', TRACK_L:'×', TRACK_H:'×' }, '航路が開いた区間。ここだけは全ての艦船が通れる(2)。ただし列車が乗っている間は橋が下りるので、桁下を抜けられる艦 (潜水艦・駆潜艇・補助艦艇) しか通れない。列車0.5、工兵3', 'SEA_RAIL_DRAW'],
     ['可動橋脚', 0, '#5C7690', { INF:'×', WHEEL:'×', TRACK_L:'×', TRACK_H:'×' }, '可動橋が壊れた状態。桁が航路に落ち、主力艦艇も通れなくなる', 'SEA_RAIL_DRAW_RUINED'],
     ['__G__', '水域'],
-    ['浅瀬', 0, '#86C3DC', { INF:1, WHEEL:1, TRACK_L:2, TRACK_H:3 }, '輸送船・給油艦・補給艦のみ進入可。陸に面した側に<b>砂浜</b>が出る', 'SHOAL'],
+    ['浅瀬', 0, '#4E8CC0', { INF:1, WHEEL:1, TRACK_L:2, TRACK_H:3 }, '輸送船・給油艦・補給艦のみ進入可。陸に面した側に<b>砂浜</b>が出る', 'SHOAL'],
     ['川',   0, '#7FA8C8', { INF:3, WHEEL:'×', TRACK_L:'×', TRACK_H:'×' }, '歩兵のみ通行可。水陸両用戦車は装輪扱いで通行可。陸に面した側に<b>岸</b>が出て、中央だけが水面になる', 'RIVER'],
     ['海',   0, '#4E8CC0', { INF:'×', WHEEL:'×', TRACK_L:'×', TRACK_H:'×' }, '艦船・航空のみ。全ての艦船が通れる', 'SEA'],
     ['深海', 0, '#3A6890', { INF:'×', WHEEL:'×', TRACK_L:'×', TRACK_H:'×' }, '全ての艦船が通れる。<b>潜航中の潜水艦だけ防御+3</b>（深く潜れるため。浮上中や他の艦には効かない）', 'DEEP_SEA'],
@@ -14855,6 +14900,9 @@ function renderTerrainTab(){
     } else if(key === 'RIVER'){
       // 見本は「左右が陸」の縦の流れ
       inner = riverTileSVG(false, false, true, true, TER.PLAIN.color, TER.PLAIN.color, TER.PLAIN.color, TER.PLAIN.color);
+    } else if(key === 'SEA' || key === 'DEEP_SEA' || key === 'REEF'){
+      // 見本は「下が陸」の渚つき
+      inner = coastTileSVG(false, true, false, false, false, false, false, false, TERRAIN_DECO[key] || '');
     } else if(key === 'ROAD'){
       // 道路は盤面では接続グラフィックなので、見本では横一本として描く
       inner = '<svg viewBox="0 0 32 32" width="100%" height="100%" style="position:absolute;inset:0;">'
@@ -17077,6 +17125,7 @@ function edRenderBoard(){
       else if(TER[t] && TER[t].isRail) cell.innerHTML += edRailSVG(x, y);
       else if(t === 'SHOAL') cell.innerHTML += edShoalSVG(x, y);
       else if(t === 'RIVER') cell.innerHTML += edRiverSVG(x, y);
+      else if(t === 'SEA' || t === 'DEEP_SEA' || t === 'REEF') cell.innerHTML += edCoastSVG(x, y, t);
       else if(TERRAIN_DECO[t]) cell.innerHTML += TERRAIN_DECO[t];
       // 天候オーバーレイ
       var wkey = ed.weather[y] && ed.weather[y][x];
@@ -17183,6 +17232,13 @@ function edRiverSVG(x, y){
   var nW = _edIsWaterAt(x, y-1), sW = _edIsWaterAt(x, y+1), eW = _edIsWaterAt(x+1, y), wW = _edIsWaterAt(x-1, y);
   return riverTileSVG(!nW, !sW, !eW, !wW,
     _edLandColorAt(x, y-1), _edLandColorAt(x, y+1), _edLandColorAt(x+1, y), _edLandColorAt(x-1, y));
+}
+function edCoastSVG(x, y, terId){
+  var nW = _edIsWaterAt(x, y-1), sW = _edIsWaterAt(x, y+1), eW = _edIsWaterAt(x+1, y), wW = _edIsWaterAt(x-1, y);
+  return coastTileSVG(!nW, !sW, !eW, !wW,
+    (nW && wW && !_edIsWaterAt(x-1, y-1)), (nW && eW && !_edIsWaterAt(x+1, y-1)),
+    (sW && wW && !_edIsWaterAt(x-1, y+1)), (sW && eW && !_edIsWaterAt(x+1, y+1)),
+    TERRAIN_DECO[terId] || '');
 }
 
 function edRoadSVG(x, y){
@@ -17472,6 +17528,8 @@ function edRenderPalette(){
         html += shoalTileSVG(false, true, false, false, TER.PLAIN.color, TER.PLAIN.color, TER.PLAIN.color, TER.PLAIN.color, false, false, false, false);
       } else if(k === 'RIVER'){
         html += riverTileSVG(false, false, true, true, TER.PLAIN.color, TER.PLAIN.color, TER.PLAIN.color, TER.PLAIN.color);
+      } else if(k === 'SEA' || k === 'DEEP_SEA' || k === 'REEF'){
+        html += coastTileSVG(false, true, false, false, false, false, false, false, TERRAIN_DECO[k] || '');
       } else if(TERRAIN_DECO[k]){
         html += TERRAIN_DECO[k];
       }
