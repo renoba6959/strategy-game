@@ -13980,7 +13980,8 @@ function coastSVG(x, y, terId){
 }
 
 // 川: 陸に面した辺に岸を描き、中央だけを水面として残す
-function riverTileSVG(nL, sL, eL, wL, colN, colS, colE, colW){
+// seaN/S/E/W: その側が「川ではない水 (海・深海・浅瀬・岩礁)」か。河口の見た目に使う
+function riverTileSVG(nL, sL, eL, wL, colN, colS, colE, colW, seaN, seaS, seaE, seaW){
   var K = 7;   // 岸の幅
   var p = [];
   if(nL) p.push('<rect x="0" y="0" width="32" height="'+K+'" fill="'+colN+'"/>');
@@ -13993,6 +13994,29 @@ function riverTileSVG(nL, sL, eL, wL, colN, colS, colE, colW){
   if(sL) p.push('<rect x="0" y="'+(32-K-1.2)+'" width="32" height="1.2" fill="'+edge+'" opacity="0.45"/>');
   if(wL) p.push('<rect x="'+K+'" y="0" width="1.2" height="32" fill="'+edge+'" opacity="0.45"/>');
   if(eL) p.push('<rect x="'+(32-K-1.2)+'" y="0" width="1.2" height="32" fill="'+edge+'" opacity="0.45"/>');
+  // 河口: 海に face している側から、川の水面を海の色へ溶け込ませる。
+  // 色が違うまま突き当たると、河口に段差ができて不自然に見えるため。
+  var seaCol = TER.SEA.color;
+  function mouth(side){
+    var steps = [[13, 0.85], [9, 0.55], [5, 0.3]];   // 端からの幅と濃さ
+    for(var i=0; i<steps.length; i++){
+      var L = steps[i][0], op = steps[i][1];
+      if(side === 'n') p.push('<rect x="0" y="0" width="32" height="'+L+'" fill="'+seaCol+'" opacity="'+op+'"/>');
+      if(side === 's') p.push('<rect x="0" y="'+(32-L)+'" width="32" height="'+L+'" fill="'+seaCol+'" opacity="'+op+'"/>');
+      if(side === 'w') p.push('<rect x="0" y="0" width="'+L+'" height="32" fill="'+seaCol+'" opacity="'+op+'"/>');
+      if(side === 'e') p.push('<rect x="'+(32-L)+'" y="0" width="'+L+'" height="32" fill="'+seaCol+'" opacity="'+op+'"/>');
+    }
+  }
+  var isMouth = !!(seaN || seaS || seaE || seaW);
+  if(seaN) mouth('n');
+  if(seaS) mouth('s');
+  if(seaE) mouth('e');
+  if(seaW) mouth('w');
+  // 河口では、岸の外側に海と同じ砂の縁を重ねて海岸線をつなぐ
+  if(isMouth){
+    var lip = _edgeBandPaths(nL, sL, eL, wL, COAST_W, COAST_WAVE);
+    for(var i=0; i<lip.length; i++) p.push('<path d="'+lip[i]+'" fill="'+COAST_SAND+'" opacity="0.8"/>');
+  }
   // 流れ: 水がつながっている向きに沿って描く (陸ではなく水の側で判断する)
   var waterNS = (nL ? 0 : 1) + (sL ? 0 : 1);
   var waterEW = (eL ? 0 : 1) + (wL ? 0 : 1);
@@ -14006,10 +14030,17 @@ function riverTileSVG(nL, sL, eL, wL, colN, colS, colE, colW){
   }
   return '<svg viewBox="0 0 32 32" width="100%" height="100%" style="position:absolute;inset:0;pointer-events:none;">' + p.join('') + '</svg>';
 }
+// 川ではない水 (海・深海・浅瀬・岩礁・海上鉄橋) か
+function _isOpenSeaAt(tx, ty){
+  if(tx < 0 || tx >= W || ty < 0 || ty >= H) return false;
+  var k = M[ty][tx];
+  return !!WATER_TILES[k] && k !== 'RIVER';
+}
 function riverSVG(x, y){
   var nW = _isWaterAt(x, y-1), sW = _isWaterAt(x, y+1), eW = _isWaterAt(x+1, y), wW = _isWaterAt(x-1, y);
   return riverTileSVG(!nW, !sW, !eW, !wW,
-    _landColorAt(x, y-1), _landColorAt(x, y+1), _landColorAt(x+1, y), _landColorAt(x-1, y));
+    _landColorAt(x, y-1), _landColorAt(x, y+1), _landColorAt(x+1, y), _landColorAt(x-1, y),
+    _isOpenSeaAt(x, y-1), _isOpenSeaAt(x, y+1), _isOpenSeaAt(x+1, y), _isOpenSeaAt(x-1, y));
 }
 
 function roadSVG(x, y){
@@ -17241,10 +17272,16 @@ function edShoalSVG(x, y){
     (sW && wW && !_edIsWaterAt(x-1, y+1)), (sW && eW && !_edIsWaterAt(x+1, y+1)),
     x * 73856093 ^ y * 19349663);
 }
+function _edIsOpenSeaAt(tx, ty){
+  if(tx < 0 || tx >= ed.W || ty < 0 || ty >= ed.H) return false;
+  var k = ed.cells[ty][tx];
+  return !!WATER_TILES[k] && k !== 'RIVER';
+}
 function edRiverSVG(x, y){
   var nW = _edIsWaterAt(x, y-1), sW = _edIsWaterAt(x, y+1), eW = _edIsWaterAt(x+1, y), wW = _edIsWaterAt(x-1, y);
   return riverTileSVG(!nW, !sW, !eW, !wW,
-    _edLandColorAt(x, y-1), _edLandColorAt(x, y+1), _edLandColorAt(x+1, y), _edLandColorAt(x-1, y));
+    _edLandColorAt(x, y-1), _edLandColorAt(x, y+1), _edLandColorAt(x+1, y), _edLandColorAt(x-1, y),
+    _edIsOpenSeaAt(x, y-1), _edIsOpenSeaAt(x, y+1), _edIsOpenSeaAt(x+1, y), _edIsOpenSeaAt(x-1, y));
 }
 function edCoastSVG(x, y, terId){
   var nW = _edIsWaterAt(x, y-1), sW = _edIsWaterAt(x, y+1), eW = _edIsWaterAt(x+1, y), wW = _edIsWaterAt(x-1, y);
