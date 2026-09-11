@@ -14721,7 +14721,9 @@ function renderTerrainTab(){
     ['__G__', '水域'],
     ['浅瀬', 0, '#B5DDE6', { INF:1, WHEEL:1, TRACK_L:2, TRACK_H:3 }, '輸送船・給油艦・補給艦・補給艦のみ進入可', 'SHOAL'],
     ['川',   0, '#A8C8DC', { INF:3, WHEEL:'×', TRACK_L:'×', TRACK_H:'×' }, '歩兵のみ通行可。水陸両用戦車は装輪扱いで通行可', 'RIVER'],
-    ['海',   0, '#7BB0DA', { INF:'×', WHEEL:'×', TRACK_L:'×', TRACK_H:'×' }, '艦船・航空のみ。水深無限', 'SEA']
+    ['海',   0, '#7BB0DA', { INF:'×', WHEEL:'×', TRACK_L:'×', TRACK_H:'×' }, '艦船・航空のみ。全ての艦船が通れる', 'SEA'],
+    ['深海', 0, '#3A6890', { INF:'×', WHEEL:'×', TRACK_L:'×', TRACK_H:'×' }, '全ての艦船が通れる。<b>潜航中の潜水艦だけ防御+3</b>（深く潜れるため。浮上中や他の艦には効かない）', 'DEEP_SEA'],
+    ['岩礁', 3, '#A8D0DC', { INF:'×', WHEEL:'×', TRACK_L:'×', TRACK_H:'×' }, '<b>小型艦・補助艦艇だけ</b>通れる(2)。大型艦(巡洋艦・戦艦・空母)は座礁するため不可。<b>視界遮断・伏兵地形</b>で防御+3', 'REEF']
   ];
   var html = '<div style="font-size:12px; color:#666; margin-bottom:10px;">自然地形。施設(都市・工場など)は「施設」タブを参照。</div>';
   html += '<table style="border-collapse:collapse; font-size:12px; width:100%;">';
