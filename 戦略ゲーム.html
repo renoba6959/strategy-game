@@ -14700,24 +14700,28 @@ function renderUnitsTab(){
 
 function renderTerrainTab(){
   var T = [
-    ['平地', 1, '#C0DD97', { INF:1, WHEEL:1, TRACK_L:2, TRACK_H:2 }, '標準地形'],
-    ['森',   3, '#7FAA5A', { INF:2, WHEEL:2, TRACK_L:3, TRACK_H:'×' }, '視界遮断・伏兵地形。重キャタ進入不可'],
-    ['山',   4, '#A9A29A', { INF:3, WHEEL:'×', TRACK_L:'×', TRACK_H:'×' }, '視界遮断・伏兵地形。歩兵のみ進入可、視界+1'],
-    ['道路', 0, '#D6BB8E', { INF:1, WHEEL:1, TRACK_L:1, TRACK_H:1 }, '全車両が高速移動。施設・道路間で接続グラフィック'],
-    ['橋',   0, '#A88860', { INF:1, WHEEL:1, TRACK_L:1, TRACK_H:1 }, '川に架かる橋。工兵が建設でき、耐久10以上で通行可'],
-    ['木組み', 0, '#9C8460', { INF:3, WHEEL:'×', TRACK_L:'×', TRACK_H:'×' }, '橋の未完成・破壊状態。工兵の工事で橋になる。壊しきると川に戻る'],
-    ['線路', 0, '#9A8A72', { INF:1, WHEEL:1, TRACK_L:1, TRACK_H:1 }, '列車系のみ移動コスト0.5。単線なので列車は味方の上もすり抜けられない。新規敷設はできず、マップに置かれたものを奪い合う'],
-    ['複線', 0, '#8B7E64', { INF:1, WHEEL:1, TRACK_L:1, TRACK_H:1 }, '工兵が線路をさらに工事して耐久31以上にした状態。コストは線路と同じだが、このマスでは味方の列車どうしがすれ違える'],
-    ['路盤', 0, '#8E8878', { INF:1, WHEEL:1, TRACK_L:1, TRACK_H:1 }, '線路が壊れた状態。列車は走れない。工兵の工事(HP分)で線路に戻る'],
-    ['鉄橋', 0, '#877559', { INF:1, WHEEL:1, TRACK_L:1, TRACK_H:1 }, '川に架かる線路。列車系のみ0.5'],
-    ['橋脚', 0, '#7C7263', { INF:3, WHEEL:'×', TRACK_L:'×', TRACK_H:'×' }, '鉄橋が壊れた状態。列車は走れない。工兵の工事で鉄橋に戻る'],
-    ['海上鉄橋', 0, '#5F7E96', { INF:'×', WHEEL:'×', TRACK_L:'×', TRACK_H:'×' }, '島と島を結ぶ高架橋。列車0.5、工兵3。桁下を抜けられるのは潜水艦・駆潜艇・補助艦艇のみ(1)'],
-    ['海上橋脚', 0, '#54708A', { INF:'×', WHEEL:'×', TRACK_L:'×', TRACK_H:'×' }, '海上鉄橋が壊れた状態。列車は走れない。艦船の通行条件は海上鉄橋と同じ'],
-    ['可動橋', 0, '#6B88A0', { INF:'×', WHEEL:'×', TRACK_L:'×', TRACK_H:'×' }, '航路が開いた区間。ここだけは全ての艦船が通れる(2)。ただし列車が乗っている間は橋が下りるので、桁下を抜けられる艦 (潜水艦・駆潜艇・補助艦艇) しか通れない。列車0.5、工兵3'],
-    ['可動橋脚', 0, '#5C7690', { INF:'×', WHEEL:'×', TRACK_L:'×', TRACK_H:'×' }, '可動橋が壊れた状態。桁が航路に落ち、主力艦艇も通れなくなる'],
-    ['浅瀬', 0, '#B5DDE6', { INF:1, WHEEL:1, TRACK_L:2, TRACK_H:3 }, '輸送船・給油艦・補給艦・補給艦のみ進入可'],
-    ['川',   0, '#A8C8DC', { INF:3, WHEEL:'×', TRACK_L:'×', TRACK_H:'×' }, '歩兵のみ通行可。水陸両用戦車は装輪扱いで通行可'],
-    ['海',   0, '#7BB0DA', { INF:'×', WHEEL:'×', TRACK_L:'×', TRACK_H:'×' }, '艦船・航空のみ。水深無限']
+    ['__G__', '陸の自然地形'],
+    ['平地', 1, '#C0DD97', { INF:1, WHEEL:1, TRACK_L:2, TRACK_H:2 }, '標準地形', 'PLAIN'],
+    ['森',   3, '#7FAA5A', { INF:2, WHEEL:2, TRACK_L:3, TRACK_H:'×' }, '視界遮断・伏兵地形。重キャタ進入不可', 'FOREST'],
+    ['山',   4, '#A9A29A', { INF:3, WHEEL:'×', TRACK_L:'×', TRACK_H:'×' }, '視界遮断・伏兵地形。歩兵のみ進入可、視界+1', 'MOUNTAIN'],
+    ['道路', 0, '#D6BB8E', { INF:1, WHEEL:1, TRACK_L:1, TRACK_H:1 }, '全車両が高速移動。施設・道路間で接続グラフィック', 'ROAD'],
+    ['__G__', '橋・線路'],
+    ['橋',   0, '#A88860', { INF:1, WHEEL:1, TRACK_L:1, TRACK_H:1 }, '川に架かる橋。工兵が建設でき、耐久10以上で通行可', 'BRIDGE'],
+    ['木組み', 0, '#9C8460', { INF:3, WHEEL:'×', TRACK_L:'×', TRACK_H:'×' }, '橋の未完成・破壊状態。工兵の工事で橋になる。壊しきると川に戻る', 'BRIDGE_RUINED'],
+    ['線路', 0, '#9A8A72', { INF:1, WHEEL:1, TRACK_L:1, TRACK_H:1 }, '列車系のみ移動コスト0.5。単線なので列車は味方の上もすり抜けられない。新規敷設はできず、マップに置かれたものを奪い合う', 'RAIL'],
+    ['複線', 0, '#8B7E64', { INF:1, WHEEL:1, TRACK_L:1, TRACK_H:1 }, '工兵が線路をさらに工事して耐久31以上にした状態。コストは線路と同じだが、このマスでは味方の列車どうしがすれ違える', 'RAIL_DOUBLE'],
+    ['路盤', 0, '#8E8878', { INF:1, WHEEL:1, TRACK_L:1, TRACK_H:1 }, '線路が壊れた状態。列車は走れない。工兵の工事(HP分)で線路に戻る', 'RAIL_RUINED'],
+    ['鉄橋', 0, '#877559', { INF:1, WHEEL:1, TRACK_L:1, TRACK_H:1 }, '川に架かる線路。列車系のみ0.5', 'RAIL_BRIDGE'],
+    ['橋脚', 0, '#7C7263', { INF:3, WHEEL:'×', TRACK_L:'×', TRACK_H:'×' }, '鉄橋が壊れた状態。列車は走れない。工兵の工事で鉄橋に戻る', 'RAIL_BRIDGE_RUINED'],
+    ['__G__', '海上の線路'],
+    ['海上鉄橋', 0, '#5F7E96', { INF:'×', WHEEL:'×', TRACK_L:'×', TRACK_H:'×' }, '島と島を結ぶ高架橋。列車0.5、工兵3。桁下を抜けられるのは潜水艦・駆潜艇・補助艦艇のみ(1)', 'SEA_RAIL'],
+    ['海上橋脚', 0, '#54708A', { INF:'×', WHEEL:'×', TRACK_L:'×', TRACK_H:'×' }, '海上鉄橋が壊れた状態。列車は走れない。艦船の通行条件は海上鉄橋と同じ', 'SEA_RAIL_RUINED'],
+    ['可動橋', 0, '#6B88A0', { INF:'×', WHEEL:'×', TRACK_L:'×', TRACK_H:'×' }, '航路が開いた区間。ここだけは全ての艦船が通れる(2)。ただし列車が乗っている間は橋が下りるので、桁下を抜けられる艦 (潜水艦・駆潜艇・補助艦艇) しか通れない。列車0.5、工兵3', 'SEA_RAIL_DRAW'],
+    ['可動橋脚', 0, '#5C7690', { INF:'×', WHEEL:'×', TRACK_L:'×', TRACK_H:'×' }, '可動橋が壊れた状態。桁が航路に落ち、主力艦艇も通れなくなる', 'SEA_RAIL_DRAW_RUINED'],
+    ['__G__', '水域'],
+    ['浅瀬', 0, '#B5DDE6', { INF:1, WHEEL:1, TRACK_L:2, TRACK_H:3 }, '輸送船・給油艦・補給艦・補給艦のみ進入可', 'SHOAL'],
+    ['川',   0, '#A8C8DC', { INF:3, WHEEL:'×', TRACK_L:'×', TRACK_H:'×' }, '歩兵のみ通行可。水陸両用戦車は装輪扱いで通行可', 'RIVER'],
+    ['海',   0, '#7BB0DA', { INF:'×', WHEEL:'×', TRACK_L:'×', TRACK_H:'×' }, '艦船・航空のみ。水深無限', 'SEA']
   ];
   var html = '<div style="font-size:12px; color:#666; margin-bottom:10px;">自然地形。施設(都市・工場など)は「施設」タブを参照。</div>';
   html += '<table style="border-collapse:collapse; font-size:12px; width:100%;">';
@@ -14730,10 +14734,33 @@ function renderTerrainTab(){
   html += '<th style="padding:5px 6px;">重キャタ</th>';
   html += '<th style="text-align:left; padding:5px 8px;">備考</th>';
   html += '</tr></thead><tbody>';
+  // 色だけの四角だと線路系が見分けられないので、盤面と同じ絵を小さく描く
+  function terrainSwatch(key, color){
+    var inner = '';
+    var tk = TER[key];
+    if(tk && tk.isRail){
+      inner = railTilesSVG(false, false, true, true,
+        (key === 'RAIL_BRIDGE' || key === 'RAIL_BRIDGE_RUINED' || !!tk.isSeaRail),
+        !!tk.isRailRuined, !!tk.isSeaRail, !!tk.isDrawBridge, !!tk.isDoubleRail);
+    } else if(key === 'ROAD'){
+      // 道路は盤面では接続グラフィックなので、見本では横一本として描く
+      inner = '<svg viewBox="0 0 32 32" width="100%" height="100%" style="position:absolute;inset:0;">'
+            + '<rect x="0" y="11" width="32" height="10" fill="#6e6354" opacity="0.85"/></svg>';
+    } else if(TERRAIN_DECO[key]){
+      inner = TERRAIN_DECO[key];
+    }
+    return '<span style="display:inline-block;width:26px;height:26px;position:relative;overflow:hidden;'
+         + 'background:' + color + ';border:1px solid rgba(0,0,0,0.18);border-radius:3px;'
+         + 'vertical-align:middle;margin-right:7px;">' + inner + '</span>';
+  }
   for(var i=0; i<T.length; i++){
     var t = T[i];
+    if(t[0] === '__G__'){
+      html += '<tr style="background:#efeadf;"><td colspan="7" style="padding:6px 8px; font-weight:600; font-size:11.5px; letter-spacing:.08em; color:#6b5b3e;">' + t[1] + '</td></tr>';
+      continue;
+    }
     html += '<tr style="border-bottom:1px solid #ddd;">';
-    html += '<td style="padding:5px 8px; font-weight:500;"><span style="display:inline-block;width:14px;height:14px;background:'+t[2]+';border-radius:2px;vertical-align:middle;margin-right:4px;"></span>'+t[0]+'</td>';
+    html += '<td style="padding:5px 8px; font-weight:500; white-space:nowrap;">'+terrainSwatch(t[5], t[2])+t[0]+'</td>';
     html += '<td style="padding:5px 6px; text-align:center;">+'+t[1]+'</td>';
     var costs = t[3];
     var costClass = ['INF','WHEEL','TRACK_L','TRACK_H'];
