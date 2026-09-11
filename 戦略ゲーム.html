@@ -357,8 +357,8 @@ var TER = {
   SHOAL:   { name:'浅瀬', def:0, color:'#B5DDE6' },
   REEF:    { name:'岩礁', def:3, color:'#A8D0DC', sightBlock:true },
   DEEP_SEA:{ name:'深海', def:0, color:'#3A6890' },
-  RIVER:   { name:'川',   def:0, color:'#A8C8DC' },
-  SEA:     { name:'海',   def:0, color:'#7BB0DA' }
+  RIVER:   { name:'川',   def:0, color:'#7FA8C8' },
+  SEA:     { name:'海',   def:0, color:'#4E8CC0' }
 };
 
 // ダウングレード経路 (施設HP0で次の段階に)
@@ -559,7 +559,18 @@ var TERRAIN_DECO = {
   PORT: '<svg viewBox="0 0 32 32" width="100%" height="100%" style="position:absolute;inset:0;opacity:0.55;pointer-events:none;"><rect x="3" y="15" width="26" height="3" fill="#5a554f"/><rect x="6" y="9" width="3" height="6" fill="#5a554f"/><rect x="14" y="6" width="3" height="9" fill="#5a554f"/><rect x="22" y="11" width="3" height="4" fill="#5a554f"/></svg>',
   SHOAL: '<svg viewBox="0 0 32 32" width="100%" height="100%" style="position:absolute;inset:0;opacity:0.4;pointer-events:none;"><path d="M2,20 Q8,18 14,20 T26,20" fill="none" stroke="#5a8aaa" stroke-width="0.8"/><path d="M2,24 Q8,22 14,24 T26,24" fill="none" stroke="#5a8aaa" stroke-width="0.8"/></svg>',
   // 岩礁: 海にポツポツと小さな岩がある感じ。波線も少し
-  REEF: '<svg viewBox="0 0 32 32" width="100%" height="100%" style="position:absolute;inset:0;opacity:0.7;pointer-events:none;"><path d="M2,8 Q8,6 14,8 T26,8" fill="none" stroke="#5a8aaa" stroke-width="0.6" opacity="0.6"/><path d="M2,26 Q8,24 14,26 T26,26" fill="none" stroke="#5a8aaa" stroke-width="0.6" opacity="0.6"/><ellipse cx="6" cy="14" rx="2" ry="1.5" fill="#6a6863"/><ellipse cx="6" cy="13.3" rx="1.2" ry="0.8" fill="#8a8883"/><ellipse cx="14" cy="18" rx="2.5" ry="1.8" fill="#6a6863"/><ellipse cx="14" cy="17.2" rx="1.5" ry="0.9" fill="#8a8883"/><ellipse cx="23" cy="13" rx="1.8" ry="1.3" fill="#6a6863"/><ellipse cx="23" cy="12.4" rx="1" ry="0.6" fill="#8a8883"/><ellipse cx="20" cy="22" rx="1.6" ry="1.1" fill="#6a6863"/><ellipse cx="20" cy="21.5" rx="0.9" ry="0.5" fill="#8a8883"/><circle cx="10" cy="22" r="0.7" fill="#6a6863"/><circle cx="26" cy="20" r="0.6" fill="#6a6863"/></svg>',
+  REEF: '<svg viewBox="0 0 32 32" width="100%" height="100%" style="position:absolute;inset:0;pointer-events:none;">'
+      + '<path d="M1,7 Q7,5 13,7 T25,7" fill="none" stroke="#4A7A9A" stroke-width="0.8" opacity="0.5"/>'
+      + '<path d="M3,27 Q9,25 15,27 T27,27" fill="none" stroke="#4A7A9A" stroke-width="0.8" opacity="0.5"/>'
+      // 岩: 白い波飛沫の輪を敷いてから、濃い岩を重ねる (伏兵地形なので盤面で目立たせる)
+      + '<ellipse cx="10" cy="14" rx="6.4" ry="4.4" fill="#FFFFFF" opacity="0.45"/>'
+      + '<ellipse cx="22" cy="21" rx="5.6" ry="3.8" fill="#FFFFFF" opacity="0.4"/>'
+      + '<path d="M4.5,17 L8,9.5 L11,14 L14,8.5 L17,17 Z" fill="#6B675F"/>'
+      + '<path d="M8,9.5 L11,14 L14,8.5 L12.5,8 L10,11 Z" fill="#8C8880"/>'
+      + '<path d="M17,23.5 L20,17.5 L23,21 L26,16.5 L28,23.5 Z" fill="#5E5A53"/>'
+      + '<path d="M20,17.5 L23,21 L26,16.5 L24.5,16 L22,18.5 Z" fill="#827E76"/>'
+      + '</svg>',
+
   RIVER: '<svg viewBox="0 0 32 32" width="100%" height="100%" style="position:absolute;inset:0;opacity:0.6;pointer-events:none;"><path d="M0,8 Q8,10 16,8 T32,10" fill="none" stroke="#5a8aaa" stroke-width="1"/><path d="M0,16 Q8,18 16,16 T32,18" fill="none" stroke="#5a8aaa" stroke-width="1"/><path d="M0,24 Q8,26 16,24 T32,26" fill="none" stroke="#5a8aaa" stroke-width="1"/></svg>',
   // 橋: 水色の川の上に茶色のアーチ橋。両端の橋脚と路面を描画
   BRIDGE_RUINED: '<svg viewBox="0 0 32 32" width="100%" height="100%" style="position:absolute;inset:0;pointer-events:none;"><rect x="0" y="0" width="32" height="32" fill="#5a8aaa" opacity="0.35"/><path d="M0,10 Q8,12 16,10 T32,12" fill="none" stroke="#3a6a8a" stroke-width="0.6" opacity="0.5"/><path d="M0,24 Q8,26 16,24 T32,26" fill="none" stroke="#3a6a8a" stroke-width="0.6" opacity="0.5"/><rect x="4" y="8" width="2" height="18" fill="#8a6a4a"/><rect x="15" y="8" width="2" height="18" fill="#8a6a4a"/><rect x="26" y="8" width="2" height="18" fill="#8a6a4a"/><path d="M5,9 L16,25 M16,9 L27,25" stroke="#8a6a4a" stroke-width="1.2" fill="none" opacity="0.9"/><rect x="0" y="14" width="32" height="1.6" fill="#8a6a4a" opacity="0.85"/></svg>',
@@ -13853,6 +13864,97 @@ function railSVG(x, y){
                       !!tk.isRailRuined, !!tk.isSeaRail, !!tk.isDrawBridge, !!tk.isDoubleRail);
 }
 
+// ===== 浅瀬・川の描画 =====
+// どちらも「隣が陸か水か」で見た目を変える。浅瀬は陸側に砂浜、川は陸側に岸を描く。
+var WATER_TILES = { SEA:true, DEEP_SEA:true, SHOAL:true, REEF:true, RIVER:true,
+                    SEA_RAIL:true, SEA_RAIL_RUINED:true, SEA_RAIL_DRAW:true, SEA_RAIL_DRAW_RUINED:true };
+function _isWaterAt(tx, ty){
+  if(tx < 0 || tx >= W || ty < 0 || ty >= H) return true;   // 盤外は水が続いている扱い
+  return !!WATER_TILES[M[ty][tx]];
+}
+// 陸側のマスの色 (岸を隣の地形に合わせるため)。無ければ平地の色
+function _landColorAt(tx, ty){
+  if(tx < 0 || tx >= W || ty < 0 || ty >= H) return TER.PLAIN.color;
+  var t = TER[M[ty][tx]];
+  return (t && t.color) ? t.color : TER.PLAIN.color;
+}
+
+// 浅瀬: 陸に面した辺にマスの約1/3の砂浜を描く。2辺が陸なら角が角らしく見える
+function shoalTileSVG(nL, sL, eL, wL, colN, colS, colE, colW, cornerNW, cornerNE, cornerSW, cornerSE){
+  var B = 11;                 // 砂浜の幅 (32の約1/3)
+  var sand = '#E0CFA4', grain = '#BFA77A';
+  var p = [];
+  function band(x, y, w, h, col){
+    p.push('<rect x="'+x+'" y="'+y+'" width="'+w+'" height="'+h+'" fill="'+sand+'" opacity="0.9"/>');
+    if(col) p.push('<rect x="'+x+'" y="'+y+'" width="'+w+'" height="'+h+'" fill="'+col+'" opacity="0.18"/>');
+  }
+  if(nL) band(0, 0, 32, B, colN);
+  if(sL) band(0, 32-B, 32, B, colS);
+  if(wL) band(0, 0, B, 32, colW);
+  if(eL) band(32-B, 0, B, 32, colE);
+  // 斜めだけが陸のとき: その角に小さな砂の三角を置く (角っぽく見せる)
+  if(cornerNW) p.push('<path d="M0,0 L13,0 L0,13 Z" fill="'+sand+'" opacity="0.85"/>');
+  if(cornerNE) p.push('<path d="M32,0 L32,13 L19,0 Z" fill="'+sand+'" opacity="0.85"/>');
+  if(cornerSW) p.push('<path d="M0,32 L0,19 L13,32 Z" fill="'+sand+'" opacity="0.85"/>');
+  if(cornerSE) p.push('<path d="M32,32 L19,32 L32,19 Z" fill="'+sand+'" opacity="0.85"/>');
+  // 砂粒: 砂浜のある側に寄せて散らす
+  var dots = [];
+  if(nL) dots.push([5,3],[12,6],[20,3],[27,7],[16,9],[9,8],[24,9]);
+  if(sL) dots.push([5,29],[13,26],[21,29],[28,25],[17,23],[9,24],[25,23]);
+  if(wL) dots.push([3,5],[6,13],[3,21],[7,27],[9,17],[8,9],[9,24]);
+  if(eL) dots.push([29,5],[26,13],[29,21],[25,27],[23,17],[24,9],[23,24]);
+  if(cornerNW) dots.push([4,4],[8,3],[3,8]);
+  if(cornerNE) dots.push([28,4],[24,3],[29,8]);
+  if(cornerSW) dots.push([4,28],[8,29],[3,24]);
+  if(cornerSE) dots.push([28,28],[24,29],[29,24]);
+  for(var i=0; i<dots.length; i++){
+    p.push('<circle cx="'+dots[i][0]+'" cy="'+dots[i][1]+'" r="0.9" fill="'+grain+'" opacity="0.75"/>');
+  }
+  // さざ波 (水側)
+  p.push('<path d="M2,20 Q8,18 14,20 T26,20" fill="none" stroke="#4A7A9A" stroke-width="0.8" opacity="0.35"/>');
+  return '<svg viewBox="0 0 32 32" width="100%" height="100%" style="position:absolute;inset:0;pointer-events:none;">' + p.join('') + '</svg>';
+}
+function shoalSVG(x, y){
+  var nW = _isWaterAt(x, y-1), sW = _isWaterAt(x, y+1), eW = _isWaterAt(x+1, y), wW = _isWaterAt(x-1, y);
+  return shoalTileSVG(!nW, !sW, !eW, !wW,
+    _landColorAt(x, y-1), _landColorAt(x, y+1), _landColorAt(x+1, y), _landColorAt(x-1, y),
+    (nW && wW && !_isWaterAt(x-1, y-1)), (nW && eW && !_isWaterAt(x+1, y-1)),
+    (sW && wW && !_isWaterAt(x-1, y+1)), (sW && eW && !_isWaterAt(x+1, y+1)));
+}
+
+// 川: 陸に面した辺に岸を描き、中央だけを水面として残す
+function riverTileSVG(nL, sL, eL, wL, colN, colS, colE, colW){
+  var K = 7;   // 岸の幅
+  var p = [];
+  if(nL) p.push('<rect x="0" y="0" width="32" height="'+K+'" fill="'+colN+'"/>');
+  if(sL) p.push('<rect x="0" y="'+(32-K)+'" width="32" height="'+K+'" fill="'+colS+'"/>');
+  if(wL) p.push('<rect x="0" y="0" width="'+K+'" height="32" fill="'+colW+'"/>');
+  if(eL) p.push('<rect x="'+(32-K)+'" y="0" width="'+K+'" height="32" fill="'+colE+'"/>');
+  // 岸のふち (濡れた土)
+  var edge = '#6E7F6A';
+  if(nL) p.push('<rect x="0" y="'+K+'" width="32" height="1.2" fill="'+edge+'" opacity="0.45"/>');
+  if(sL) p.push('<rect x="0" y="'+(32-K-1.2)+'" width="32" height="1.2" fill="'+edge+'" opacity="0.45"/>');
+  if(wL) p.push('<rect x="'+K+'" y="0" width="1.2" height="32" fill="'+edge+'" opacity="0.45"/>');
+  if(eL) p.push('<rect x="'+(32-K-1.2)+'" y="0" width="1.2" height="32" fill="'+edge+'" opacity="0.45"/>');
+  // 流れ: 水がつながっている向きに沿って描く (陸ではなく水の側で判断する)
+  var waterNS = (nL ? 0 : 1) + (sL ? 0 : 1);
+  var waterEW = (eL ? 0 : 1) + (wL ? 0 : 1);
+  var horiz = (waterEW > waterNS);
+  if(horiz){
+    p.push('<path d="M0,13 Q8,11.5 16,13 T32,14" fill="none" stroke="#4A7A9A" stroke-width="1.1" opacity="0.55"/>');
+    p.push('<path d="M0,19 Q8,17.5 16,19 T32,20" fill="none" stroke="#4A7A9A" stroke-width="1.1" opacity="0.55"/>');
+  } else {
+    p.push('<path d="M13,0 Q11.5,8 13,16 T14,32" fill="none" stroke="#4A7A9A" stroke-width="1.1" opacity="0.55"/>');
+    p.push('<path d="M19,0 Q17.5,8 19,16 T20,32" fill="none" stroke="#4A7A9A" stroke-width="1.1" opacity="0.55"/>');
+  }
+  return '<svg viewBox="0 0 32 32" width="100%" height="100%" style="position:absolute;inset:0;pointer-events:none;">' + p.join('') + '</svg>';
+}
+function riverSVG(x, y){
+  var nW = _isWaterAt(x, y-1), sW = _isWaterAt(x, y+1), eW = _isWaterAt(x+1, y), wW = _isWaterAt(x-1, y);
+  return riverTileSVG(!nW, !sW, !eW, !wW,
+    _landColorAt(x, y-1), _landColorAt(x, y+1), _landColorAt(x+1, y), _landColorAt(x-1, y));
+}
+
 function roadSVG(x, y){
   // 隣接マスが道路または都市・施設(道路網に接続している地点)かを判定
   function isRoadOrCity(tx, ty){
@@ -14021,6 +14123,8 @@ function render(){
       })(x, y);
       if(terId === 'ROAD') cell.innerHTML += roadSVG(x, y);
       else if(TER[terId] && TER[terId].isRail) cell.innerHTML += railSVG(x, y);
+      else if(terId === 'SHOAL') cell.innerHTML += shoalSVG(x, y);
+      else if(terId === 'RIVER') cell.innerHTML += riverSVG(x, y);
       else if(TERRAIN_DECO[terId]) cell.innerHTML += TERRAIN_DECO[terId];
       // 天候オーバーレイ (地形の上、ユニットの下)
       var wkey = getWeatherAt(x, y);
@@ -14719,9 +14823,9 @@ function renderTerrainTab(){
     ['可動橋', 0, '#6B88A0', { INF:'×', WHEEL:'×', TRACK_L:'×', TRACK_H:'×' }, '航路が開いた区間。ここだけは全ての艦船が通れる(2)。ただし列車が乗っている間は橋が下りるので、桁下を抜けられる艦 (潜水艦・駆潜艇・補助艦艇) しか通れない。列車0.5、工兵3', 'SEA_RAIL_DRAW'],
     ['可動橋脚', 0, '#5C7690', { INF:'×', WHEEL:'×', TRACK_L:'×', TRACK_H:'×' }, '可動橋が壊れた状態。桁が航路に落ち、主力艦艇も通れなくなる', 'SEA_RAIL_DRAW_RUINED'],
     ['__G__', '水域'],
-    ['浅瀬', 0, '#B5DDE6', { INF:1, WHEEL:1, TRACK_L:2, TRACK_H:3 }, '輸送船・給油艦・補給艦・補給艦のみ進入可', 'SHOAL'],
-    ['川',   0, '#A8C8DC', { INF:3, WHEEL:'×', TRACK_L:'×', TRACK_H:'×' }, '歩兵のみ通行可。水陸両用戦車は装輪扱いで通行可', 'RIVER'],
-    ['海',   0, '#7BB0DA', { INF:'×', WHEEL:'×', TRACK_L:'×', TRACK_H:'×' }, '艦船・航空のみ。全ての艦船が通れる', 'SEA'],
+    ['浅瀬', 0, '#B5DDE6', { INF:1, WHEEL:1, TRACK_L:2, TRACK_H:3 }, '輸送船・給油艦・補給艦のみ進入可。陸に面した側に<b>砂浜</b>が出る', 'SHOAL'],
+    ['川',   0, '#7FA8C8', { INF:3, WHEEL:'×', TRACK_L:'×', TRACK_H:'×' }, '歩兵のみ通行可。水陸両用戦車は装輪扱いで通行可。陸に面した側に<b>岸</b>が出て、中央だけが水面になる', 'RIVER'],
+    ['海',   0, '#4E8CC0', { INF:'×', WHEEL:'×', TRACK_L:'×', TRACK_H:'×' }, '艦船・航空のみ。全ての艦船が通れる', 'SEA'],
     ['深海', 0, '#3A6890', { INF:'×', WHEEL:'×', TRACK_L:'×', TRACK_H:'×' }, '全ての艦船が通れる。<b>潜航中の潜水艦だけ防御+3</b>（深く潜れるため。浮上中や他の艦には効かない）', 'DEEP_SEA'],
     ['岩礁', 3, '#A8D0DC', { INF:'×', WHEEL:'×', TRACK_L:'×', TRACK_H:'×' }, '<b>小型艦・補助艦艇だけ</b>通れる(2)。大型艦(巡洋艦・戦艦・空母)は座礁するため不可。<b>視界遮断・伏兵地形</b>で防御+3', 'REEF']
   ];
@@ -14744,6 +14848,12 @@ function renderTerrainTab(){
       inner = railTilesSVG(false, false, true, true,
         (key === 'RAIL_BRIDGE' || key === 'RAIL_BRIDGE_RUINED' || !!tk.isSeaRail),
         !!tk.isRailRuined, !!tk.isSeaRail, !!tk.isDrawBridge, !!tk.isDoubleRail);
+    } else if(key === 'SHOAL'){
+      // 見本は「下が陸」の砂浜つき
+      inner = shoalTileSVG(false, true, false, false, TER.PLAIN.color, TER.PLAIN.color, TER.PLAIN.color, TER.PLAIN.color, false, false, false, false);
+    } else if(key === 'RIVER'){
+      // 見本は「左右が陸」の縦の流れ
+      inner = riverTileSVG(false, false, true, true, TER.PLAIN.color, TER.PLAIN.color, TER.PLAIN.color, TER.PLAIN.color);
     } else if(key === 'ROAD'){
       // 道路は盤面では接続グラフィックなので、見本では横一本として描く
       inner = '<svg viewBox="0 0 32 32" width="100%" height="100%" style="position:absolute;inset:0;">'
@@ -16964,6 +17074,8 @@ function edRenderBoard(){
       // 地形デコ
       if(t === 'ROAD') cell.innerHTML += edRoadSVG(x, y);
       else if(TER[t] && TER[t].isRail) cell.innerHTML += edRailSVG(x, y);
+      else if(t === 'SHOAL') cell.innerHTML += edShoalSVG(x, y);
+      else if(t === 'RIVER') cell.innerHTML += edRiverSVG(x, y);
       else if(TERRAIN_DECO[t]) cell.innerHTML += TERRAIN_DECO[t];
       // 天候オーバーレイ
       var wkey = ed.weather[y] && ed.weather[y][x];
@@ -17047,6 +17159,29 @@ function edRailSVG(x, y){
   return railTilesSVG(isRailish(x, y-1), isRailish(x, y+1), isRailish(x+1, y), isRailish(x-1, y),
                       (ed.cells[y][x] === 'RAIL_BRIDGE' || ed.cells[y][x] === 'RAIL_BRIDGE_RUINED' || !!tk.isSeaRail),
                       !!tk.isRailRuined, !!tk.isSeaRail, !!tk.isDrawBridge, !!tk.isDoubleRail);
+}
+
+// エディタ盤面の浅瀬・川 (ed.cells を見る点だけ本編と違う)
+function _edIsWaterAt(tx, ty){
+  if(tx < 0 || tx >= ed.W || ty < 0 || ty >= ed.H) return true;
+  return !!WATER_TILES[ed.cells[ty][tx]];
+}
+function _edLandColorAt(tx, ty){
+  if(tx < 0 || tx >= ed.W || ty < 0 || ty >= ed.H) return TER.PLAIN.color;
+  var t = TER[ed.cells[ty][tx]];
+  return (t && t.color) ? t.color : TER.PLAIN.color;
+}
+function edShoalSVG(x, y){
+  var nW = _edIsWaterAt(x, y-1), sW = _edIsWaterAt(x, y+1), eW = _edIsWaterAt(x+1, y), wW = _edIsWaterAt(x-1, y);
+  return shoalTileSVG(!nW, !sW, !eW, !wW,
+    _edLandColorAt(x, y-1), _edLandColorAt(x, y+1), _edLandColorAt(x+1, y), _edLandColorAt(x-1, y),
+    (nW && wW && !_edIsWaterAt(x-1, y-1)), (nW && eW && !_edIsWaterAt(x+1, y-1)),
+    (sW && wW && !_edIsWaterAt(x-1, y+1)), (sW && eW && !_edIsWaterAt(x+1, y+1)));
+}
+function edRiverSVG(x, y){
+  var nW = _edIsWaterAt(x, y-1), sW = _edIsWaterAt(x, y+1), eW = _edIsWaterAt(x+1, y), wW = _edIsWaterAt(x-1, y);
+  return riverTileSVG(!nW, !sW, !eW, !wW,
+    _edLandColorAt(x, y-1), _edLandColorAt(x, y+1), _edLandColorAt(x+1, y), _edLandColorAt(x-1, y));
 }
 
 function edRoadSVG(x, y){
@@ -17332,6 +17467,10 @@ function edRenderPalette(){
         html += railTilesSVG(false, false, true, true,
           (k === 'RAIL_BRIDGE' || k === 'RAIL_BRIDGE_RUINED' || !!TER[k].isSeaRail),
           !!TER[k].isRailRuined, !!TER[k].isSeaRail, !!TER[k].isDrawBridge, !!TER[k].isDoubleRail);
+      } else if(k === 'SHOAL'){
+        html += shoalTileSVG(false, true, false, false, TER.PLAIN.color, TER.PLAIN.color, TER.PLAIN.color, TER.PLAIN.color, false, false, false, false);
+      } else if(k === 'RIVER'){
+        html += riverTileSVG(false, false, true, true, TER.PLAIN.color, TER.PLAIN.color, TER.PLAIN.color, TER.PLAIN.color);
       } else if(TERRAIN_DECO[k]){
         html += TERRAIN_DECO[k];
       }
