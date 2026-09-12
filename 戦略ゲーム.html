@@ -60,8 +60,12 @@ button:hover { background: #f0f0f0; }
 <body>
 <h2 style="margin-top:0;">陸海空ユニット移動ゲーム</h2>
 <div id="stage-select" style="margin-bottom: 12px;">
-  <div style="font-size: 13px; color: var(--color-text-secondary); margin-bottom: 6px;">ステージ選択</div>
+  <div style="font-size: 13px; color: var(--color-text-secondary); margin-bottom: 6px;">ステージ選択（フリー対戦）</div>
   <div id="stage-buttons" style="display:flex; flex-wrap:wrap; gap: 6px;"></div>
+</div>
+<div id="campaign-select" style="display:none; margin-bottom: 12px;">
+  <div style="font-size: 13px; color: var(--color-text-secondary); margin-bottom: 6px;">🎖 キャンペーン</div>
+  <div id="campaign-body"></div>
 </div>
 <div style="display: flex; gap: 12px; margin-bottom: 8px; flex-wrap: wrap; align-items: center;">
   <div id="ai-speed-control" style="display:inline-flex; align-items:center; gap:4px; padding:2px 6px; background: var(--color-background-secondary); border-radius: var(--border-radius-md); font-size:11px;" title="AIの行動速度">
@@ -74,7 +78,8 @@ button:hover { background: #f0f0f0; }
   </div>
   <button id="player-ai-toggle" style="padding:2px 8px; border:1px solid #ccc; background:#fff; cursor:pointer; font-size:11px; border-radius:3px;" title="プレイヤー陣営もAIが自動操作するシミュレーションモード">🤖 プレイヤーAI化: OFF</button>
   <button id="reset-btn">リセット</button>
-  <button id="stage-change-btn" title="別のステージを選ぶ">🗺 ステージ変更</button>
+  <button id="campaign-btn" title="キャンペーンを順番に攻略する">🎖 キャンペーン</button>
+  <button id="stage-change-btn" title="別のステージを選ぶ (フリー対戦)">🗺 ステージ変更</button>
   <button id="spec-btn">📖 仕様書</button>
   <button id="editor-btn">🛠 マップエディタ</button>
   <button id="team-config-btn" title="陣営をチームに分けて同盟関係を設定">🤝 チーム設定</button>
@@ -85,6 +90,7 @@ button:hover { background: #f0f0f0; }
 </div>
 <div style="display:flex; align-items:center; gap:12px; margin-bottom:8px; min-height:30px;">
   <span id="stage-info" style="font-size: 12px; color: var(--color-text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"></span>
+  <span id="campaign-next" style="flex:none;"></span>
   <button id="end-turn-btn" style="font-weight:600; flex:none;">ターン終了</button>
   <div id="cap-counter" style="font-size:12px; padding:4px 10px; background: var(--color-background-secondary); border-radius: var(--border-radius-md);"></div>
   <div id="wind-indicator" style="display:none; font-size:12px; padding:4px 10px; background: #E6F1FB; border:1px solid #BAD3EE; border-radius: var(--border-radius-md);" title="現ラウンドの風 / 次ラウンドの予測"></div>
@@ -223,6 +229,15 @@ button:hover { background: #f0f0f0; }
             <button id="ed-import" style="font-size:11px; width:100%; margin-bottom:6px;">📥 インポート</button>
             <textarea id="ed-json" style="width:100%; height:100px; font-size:10px; font-family:monospace; box-sizing:border-box;" placeholder="ここにJSONが表示されます"></textarea>
           </div>
+        </div>
+
+        <!-- キャンペーン (折りたたみ) -->
+        <div style="background:#fff; border-radius:6px; padding:10px 12px; margin-bottom:10px; border:1px solid #ddd;">
+          <div id="ed-camp-head" style="display:flex; justify-content:space-between; align-items:center; cursor:pointer;">
+            <div style="font-size:11px; color:#666;">🎖 キャンペーン</div>
+            <span id="ed-camp-arrow" style="font-size:11px; color:#888;">▼</span>
+          </div>
+          <div id="ed-camp-body" style="display:none; margin-top:6px;"></div>
         </div>
 
         <!-- 自作マップ一覧 (折りたたみ) -->
@@ -2917,6 +2932,9 @@ function setClear(set){ for(var k in set){ delete set[k]; } }
 function loadStage(key){
   var s = STAGES[key];
   currentStage = key; W = s.W; H = s.H;
+  if(!campaignState || campaignStageKey(campaignState.key, campaignState.index) !== key) campaignState = null;
+  var cnEl = document.getElementById('campaign-next');
+  if(cnEl) cnEl.innerHTML = '';
   stageLimits = s.limits || null;   // ステージごとの制限 (施設の上限レベル・生産禁止ユニット)
   railBase = {}; railHp = {};   // 線路の敷設前地形と耐久の記録をリセット
   M = [];
@@ -4723,6 +4741,7 @@ function checkWin(){
   if(aliveOthers === 0){
     gameOver = true;
     setStatus('勝利！全ての敵陣営を打ち破りました');
+    campaignMarkCleared();   // キャンペーン中なら進行を記録し「次の話へ」を出す
     return true;
   }
   return false;
@@ -16969,7 +16988,18 @@ document.getElementById('reset-btn').onclick = function(){ if(currentStage) load
 document.getElementById('stage-change-btn').onclick = function(){
   var el = document.getElementById('stage-select');
   if(!el) return;
+  var cs = document.getElementById('campaign-select');
+  if(cs) cs.style.display = 'none';
   el.style.display = (el.style.display === 'none') ? '' : 'none';
+};
+document.getElementById('campaign-btn').onclick = function(){
+  var el = document.getElementById('campaign-select');
+  if(!el) return;
+  var ss = document.getElementById('stage-select');
+  if(ss) ss.style.display = 'none';
+  var open = (el.style.display === 'none');
+  el.style.display = open ? '' : 'none';
+  if(open) renderCampaignSelect();
 };
 document.getElementById('end-turn-btn').onclick = function(){
   if(turn === 'P' && !gameOver){
@@ -17196,6 +17226,7 @@ function edInit(){
   edRenderBoard();
   edRenderPalette();
   edRenderSavedList();
+  edRenderCampaigns();
 }
 
 function edResize(){
@@ -18211,6 +18242,234 @@ function edSave(){
     document.getElementById('ed-status').textContent = '保存失敗: ブラウザがlocalStorageを使えません (JSONエクスポートで代用してください)';
   }
   edRenderSavedList();
+  edRenderCampaigns();
+}
+
+// ===== キャンペーン =====
+// 保存済みの自作マップを順番に並べて1本の戦役にする。
+// 保存先: mb_campaigns { 戦役名: { name, desc, stages:[マップ名, ...] } }
+// 進行状況: mb_campaign_progress { 戦役名: { cleared: クリア済みの話数 } }
+function campaignsLoad(){
+  try { return JSON.parse(localStorage.getItem('mb_campaigns') || '{}'); } catch(e){ return {}; }
+}
+function campaignsSave(obj){
+  try { localStorage.setItem('mb_campaigns', JSON.stringify(obj)); return true; } catch(e){ return false; }
+}
+function campaignProgress(){
+  try { return JSON.parse(localStorage.getItem('mb_campaign_progress') || '{}'); } catch(e){ return {}; }
+}
+function campaignProgressSave(obj){
+  try { localStorage.setItem('mb_campaign_progress', JSON.stringify(obj)); } catch(e){}
+}
+function userMapsLoad(){
+  try { return JSON.parse(localStorage.getItem('mb_user_maps') || '{}'); } catch(e){ return {}; }
+}
+
+var edCampKey = null;   // エディタで編集中のキャンペーン名
+function edRenderCampaigns(){
+  var body = document.getElementById('ed-camp-body');
+  if(!body) return;
+  var camps = campaignsLoad();
+  var keys = Object.keys(camps);
+  if(keys.length > 0 && (!edCampKey || !camps[edCampKey])) edCampKey = keys[0];
+  if(keys.length === 0) edCampKey = null;
+
+  var h = '<div style="display:flex; gap:4px; margin-bottom:6px;">';
+  h += '<select id="ed-camp-sel" style="flex:1; font-size:11px;">';
+  for(var i=0; i<keys.length; i++){
+    h += '<option value="' + keys[i] + '"' + (keys[i] === edCampKey ? ' selected' : '') + '>' + keys[i] + '</option>';
+  }
+  if(keys.length === 0) h += '<option value="">(まだありません)</option>';
+  h += '</select>';
+  h += '<button id="ed-camp-new" style="font-size:11px;" title="新しい戦役を作る">＋</button>';
+  h += '<button id="ed-camp-del" style="font-size:11px;" title="この戦役を削除">🗑</button>';
+  h += '</div>';
+
+  if(edCampKey && camps[edCampKey]){
+    var c = camps[edCampKey];
+    var stages = c.stages || [];
+    var maps = userMapsLoad();
+    h += '<div style="font-size:10px; color:#888; margin-bottom:4px;">上から順に挑戦します</div>';
+    if(stages.length === 0){
+      h += '<div style="font-size:11px; color:#aaa; padding:4px 0;">まだ空です。下から追加してください</div>';
+    }
+    for(var si=0; si<stages.length; si++){
+      var nm = stages[si];
+      var missing = !maps[nm];
+      h += '<div style="display:flex; align-items:center; gap:3px; font-size:11px; padding:2px 0; border-bottom:1px dotted #eee;">'
+         + '<span style="color:#888; width:22px;">' + (si + 1) + '.</span>'
+         + '<span style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;' + (missing ? 'color:#c00;' : '') + '">'
+         + nm + (missing ? ' (マップが無い)' : '') + '</span>'
+         + '<button data-campup="' + si + '" style="font-size:10px; padding:0 4px;"' + (si === 0 ? ' disabled' : '') + '>↑</button>'
+         + '<button data-campdown="' + si + '" style="font-size:10px; padding:0 4px;"' + (si === stages.length - 1 ? ' disabled' : '') + '>↓</button>'
+         + '<button data-campdel="' + si + '" style="font-size:10px; padding:0 4px;">✕</button>'
+         + '</div>';
+    }
+    // マップ追加
+    var mapKeys = Object.keys(maps);
+    h += '<div style="display:flex; gap:4px; margin-top:6px;">';
+    h += '<select id="ed-camp-add-sel" style="flex:1; font-size:11px;">';
+    for(var mi=0; mi<mapKeys.length; mi++) h += '<option value="' + mapKeys[mi] + '">' + mapKeys[mi] + '</option>';
+    if(mapKeys.length === 0) h += '<option value="">(保存済みマップが無い)</option>';
+    h += '</select><button id="ed-camp-add" style="font-size:11px;"' + (mapKeys.length === 0 ? ' disabled' : '') + '>＋ 追加</button>';
+    h += '</div>';
+    var prog = campaignProgress()[edCampKey];
+    h += '<div style="display:flex; justify-content:space-between; align-items:center; margin-top:6px; font-size:10px; color:#888;">'
+       + '<span>クリア済み: ' + ((prog && prog.cleared) || 0) + ' / ' + stages.length + '</span>'
+       + '<button id="ed-camp-reset" style="font-size:10px;">進行をリセット</button></div>';
+  }
+  body.innerHTML = h;
+
+  var sel = document.getElementById('ed-camp-sel');
+  if(sel) sel.onchange = function(){ edCampKey = this.value; edRenderCampaigns(); };
+  var bNew = document.getElementById('ed-camp-new');
+  if(bNew) bNew.onclick = function(){
+    var nm = prompt('新しいキャンペーンの名前');
+    if(!nm) return;
+    var cs = campaignsLoad();
+    if(cs[nm]){ alert('同じ名前のキャンペーンがあります'); return; }
+    cs[nm] = { name: nm, desc: '', stages: [] };
+    if(!campaignsSave(cs)){ alert('保存に失敗しました (localStorageが使えません)'); return; }
+    edCampKey = nm; edRenderCampaigns(); updateStageButtons();
+  };
+  var bDel = document.getElementById('ed-camp-del');
+  if(bDel) bDel.onclick = function(){
+    if(!edCampKey) return;
+    if(!confirm('「' + edCampKey + '」を削除します。よろしいですか')) return;
+    var cs = campaignsLoad(); delete cs[edCampKey]; campaignsSave(cs);
+    var pr = campaignProgress(); delete pr[edCampKey]; campaignProgressSave(pr);
+    edCampKey = null; edRenderCampaigns(); updateStageButtons();
+  };
+  function withCamp(fn){
+    var cs = campaignsLoad();
+    if(!edCampKey || !cs[edCampKey]) return;
+    fn(cs[edCampKey], cs);
+    campaignsSave(cs);
+    edRenderCampaigns(); updateStageButtons();
+  }
+  var ups = body.querySelectorAll('[data-campup]');
+  for(var ui=0; ui<ups.length; ui++) ups[ui].onclick = function(){
+    var i = parseInt(this.getAttribute('data-campup'), 10);
+    withCamp(function(c){ var t = c.stages[i-1]; c.stages[i-1] = c.stages[i]; c.stages[i] = t; });
+  };
+  var downs = body.querySelectorAll('[data-campdown]');
+  for(var di=0; di<downs.length; di++) downs[di].onclick = function(){
+    var i = parseInt(this.getAttribute('data-campdown'), 10);
+    withCamp(function(c){ var t = c.stages[i+1]; c.stages[i+1] = c.stages[i]; c.stages[i] = t; });
+  };
+  var dels = body.querySelectorAll('[data-campdel]');
+  for(var xi=0; xi<dels.length; xi++) dels[xi].onclick = function(){
+    var i = parseInt(this.getAttribute('data-campdel'), 10);
+    withCamp(function(c){ c.stages.splice(i, 1); });
+  };
+  var bAdd = document.getElementById('ed-camp-add');
+  if(bAdd) bAdd.onclick = function(){
+    var v = document.getElementById('ed-camp-add-sel').value;
+    if(!v) return;
+    withCamp(function(c){ c.stages.push(v); });
+  };
+  var bReset = document.getElementById('ed-camp-reset');
+  if(bReset) bReset.onclick = function(){
+    if(!edCampKey) return;
+    var pr = campaignProgress(); delete pr[edCampKey]; campaignProgressSave(pr);
+    edRenderCampaigns(); updateStageButtons();
+  };
+}
+
+// ===== キャンペーンのプレイ =====
+var campaignState = null;   // { key: 戦役名, index: 何話目(0始まり) }
+function campaignStageKey(key, idx){ return 'camp_' + key + '_' + idx; }
+// キャンペーンの第idx話をロードする
+function loadCampaignStage(key, idx){
+  var camps = campaignsLoad();
+  var c = camps[key];
+  if(!c || !c.stages || !c.stages[idx]) return false;
+  var maps = userMapsLoad();
+  var data = maps[c.stages[idx]];
+  if(!data){ alert('マップ「' + c.stages[idx] + '」が見つかりません（削除された可能性があります）'); return false; }
+  var sk = campaignStageKey(key, idx);
+  STAGES[sk] = data;
+  campaignState = { key: key, index: idx };
+  loadStage(sk);
+  var el = document.getElementById('campaign-select');
+  if(el) el.style.display = 'none';
+  setStatus('🎖 ' + key + ' 第' + (idx + 1) + '話「' + (data.name || c.stages[idx]) + '」');
+  return true;
+}
+// 勝利したときに進行を記録する
+function campaignMarkCleared(){
+  if(!campaignState) return;
+  var pr = campaignProgress();
+  var cur = (pr[campaignState.key] && pr[campaignState.key].cleared) || 0;
+  if(campaignState.index + 1 > cur){
+    pr[campaignState.key] = { cleared: campaignState.index + 1 };
+    campaignProgressSave(pr);
+  }
+  renderCampaignNext();
+}
+// 勝利後に出す「次の話へ」
+function renderCampaignNext(){
+  var el = document.getElementById('campaign-next');
+  if(!el) return;
+  el.innerHTML = '';
+  if(!campaignState || !gameOver) return;
+  var camps = campaignsLoad();
+  var c = camps[campaignState.key];
+  if(!c) return;
+  var next = campaignState.index + 1;
+  var btnStyle = 'font-weight:600; padding:3px 12px; border:none; border-radius:4px; background:#0F6E56; color:#fff; cursor:pointer; font-size:12px;';
+  if(next < c.stages.length){
+    el.innerHTML = '<button id="camp-next-btn" style="' + btnStyle + '">▶ 第' + (next + 1) + '話へ</button>';
+    document.getElementById('camp-next-btn').onclick = function(){ loadCampaignStage(campaignState.key, next); };
+  } else {
+    el.innerHTML = '<span style="font-size:12px; font-weight:600; color:#BA7517;">🎖 ' + campaignState.key + ' 全話クリア！</span>';
+  }
+}
+// キャンペーンの一覧・話選択
+function renderCampaignSelect(){
+  var body = document.getElementById('campaign-body');
+  if(!body) return;
+  var camps = campaignsLoad();
+  var keys = Object.keys(camps);
+  if(keys.length === 0){
+    body.innerHTML = '<div style="font-size:12px; color:#888;">まだキャンペーンがありません。🛠 マップエディタの「🎖 キャンペーン」から作れます。</div>';
+    return;
+  }
+  var prog = campaignProgress();
+  var h = '';
+  for(var i=0; i<keys.length; i++){
+    var k = keys[i], c = camps[k];
+    var cleared = (prog[k] && prog[k].cleared) || 0;
+    var stages = c.stages || [];
+    h += '<div style="margin-bottom:10px; padding:8px 10px; background:#fff; border:1px solid #ddd; border-radius:5px;">';
+    h += '<div style="font-size:13px; font-weight:600; margin-bottom:4px;">🎖 ' + k
+       + ' <span style="font-size:11px; font-weight:400; color:#888;">' + cleared + ' / ' + stages.length + ' 話クリア</span></div>';
+    if(stages.length === 0){
+      h += '<div style="font-size:11px; color:#aaa;">まだ話が登録されていません</div>';
+    } else {
+      h += '<div style="display:flex; flex-wrap:wrap; gap:5px;">';
+      for(var si=0; si<stages.length; si++){
+        var open = (si <= cleared);          // クリア済み + 次の1話まで挑戦できる
+        var done = (si < cleared);
+        var label = '第' + (si + 1) + '話';
+        var style = 'font-size:12px; padding:4px 10px; border-radius:4px; cursor:pointer;';
+        if(!open) style += 'border:1px dashed #ccc; background:#f4f3ef; color:#bbb; cursor:not-allowed;';
+        else if(done) style += 'border:1px solid #0F6E56; background:#E7F3EE; color:#0F6E56;';
+        else style += 'border:1px solid #BA7517; background:#FFF1C2; color:#7a5a10; font-weight:600;';
+        h += '<button ' + (open ? '' : 'disabled ') + 'data-camp="' + k + '" data-campidx="' + si + '" style="' + style + '" title="' + stages[si] + '">'
+           + (done ? '✓ ' : '') + label + '</button>';
+      }
+      h += '</div>';
+    }
+    h += '</div>';
+  }
+  body.innerHTML = h;
+  var btns = body.querySelectorAll('[data-camp]');
+  for(var bi=0; bi<btns.length; bi++){
+    btns[bi].onclick = function(){
+      loadCampaignStage(this.getAttribute('data-camp'), parseInt(this.getAttribute('data-campidx'), 10));
+    };
+  }
 }
 
 function edRenderSavedList(){
@@ -18249,6 +18508,7 @@ function edRenderSavedList(){
       delete saved[b.dataset.key];
       try { localStorage.setItem('mb_user_maps', JSON.stringify(saved)); } catch(e){}
       edRenderSavedList();
+  edRenderCampaigns();
       updateStageButtons();
     };
   });
@@ -18284,7 +18544,7 @@ function edImport(){
 function openEditor(){
   document.getElementById('editor-overlay').style.display = 'block';
   if(ed.cells.length === 0) edInit();
-  else { edRenderBoard(); edRenderPalette(); edRenderSavedList(); edRenderTeams(); edRenderLimits(); }
+  else { edRenderBoard(); edRenderPalette(); edRenderSavedList(); edRenderTeams(); edRenderLimits(); edRenderCampaigns(); }
 }
 function closeEditor(){
   document.getElementById('editor-overlay').style.display = 'none';
@@ -18410,6 +18670,7 @@ document.getElementById('ed-test').onclick = edTestPlay;
   }
   fold('ed-json-head', 'ed-json-body', 'ed-json-arrow');
   fold('ed-saved-head', 'ed-saved-body', 'ed-saved-arrow');
+  fold('ed-camp-head', 'ed-camp-body', 'ed-camp-arrow');
 })();
 document.getElementById('ed-clear').onclick = function(){
   if(!confirm('マップをクリアしますか?')) return;
