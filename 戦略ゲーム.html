@@ -263,6 +263,7 @@ button:hover { background: #f0f0f0; }
         <div style="font-size:12px; color:#666; font-weight:600;">⚖ このステージの制限 (施設の上限レベル・生産できるユニット)</div>
         <span id="ed-limit-toggle" style="font-size:11px; color:#888;">▼ 開く</span>
       </div>
+      <datalist id="ed-lv-ticks"><option value="1"></option><option value="2"></option><option value="3"></option><option value="4"></option></datalist>
       <div id="ed-limit-body" style="margin-top:8px;"></div>
     </div>
   </div>
@@ -17667,6 +17668,19 @@ var ED_GROUP_NOTE = {
   city:'Lv1 都市 / Lv2 大都市 / Lv3 商業都市・弾薬工廠（ユニットは作らない）'
 };
 var ED_LIMIT_COLS = ['factory', 'port', 'airport', 'city'];
+// そのユニットを作れる一番低い施設レベル (Lv表示に使う)
+function minFacilityLevelFor(typeKey, group){
+  var best = null;
+  for(var k in TER){
+    var t = TER[k];
+    if(!t.slots || !t.produces) continue;
+    if(group && t.group !== group) continue;
+    if(t.produces.indexOf(typeKey) < 0) continue;
+    var lv = t.level || 1;
+    if(best === null || lv < best) best = lv;
+  }
+  return best;
+}
 
 function edRenderLimits(){
   var body = document.getElementById('ed-limit-body');
@@ -17701,7 +17715,16 @@ function edRenderLimits(){
           : '')
        + '</div>';
     h += '<div style="display:flex; justify-content:flex-end; font-size:11px; color:#BA7517; font-weight:600;">Lv' + v + 'まで</div>';
-    h += '<input type="range" min="1" max="4" step="1" value="' + v + '" data-uglim="' + g + '" style="width:100%; margin:2px 0;">';
+    h += '<input type="range" min="1" max="4" step="1" value="' + v + '" data-uglim="' + g + '" list="ed-lv-ticks" style="width:100%; margin:2px 0;">';
+    // レベルを直接押せるボタン (スライダーの目盛り代わり)
+    h += '<div style="display:grid; grid-template-columns:repeat(4,1fr); gap:3px; margin-bottom:4px;">';
+    for(var lv=1; lv<=4; lv++){
+      var on = (lv <= v);
+      h += '<button data-lvset="' + g + '" data-lv="' + lv + '" style="font-size:10px; padding:2px 0; cursor:pointer; border-radius:3px; border:1px solid '
+         + (on ? '#BA7517' : '#d8d4cc') + '; background:' + (lv === v ? '#BA7517' : (on ? '#F6E6C8' : '#fff'))
+         + '; color:' + (lv === v ? '#fff' : (on ? '#7a5a10' : '#aaa')) + '; font-weight:' + (lv === v ? '600' : '400') + ';">Lv' + lv + '</button>';
+    }
+    h += '</div>';
     h += '<div style="font-size:9px; color:#aaa; margin-bottom:6px;">' + ED_GROUP_NOTE[g] + '</div>';
     // この施設系で作れるユニット
     for(var i=0; i<ED_UNIT_GROUPS.length; i++){
@@ -17716,10 +17739,13 @@ function edRenderLimits(){
         var reachable = !!reach[key];
         var on = reachable && !ed.limits.banned[key];
         if(on) onCount++;
+        var needLv = minFacilityLevelFor(key, g);
+        var lvTag = (needLv === null) ? ''
+          : '<span style="font-size:9px; color:' + (reachable ? '#9a8a6a' : '#c00') + '; margin-left:2px;">Lv' + needLv + '</span>';
         rows += '<label style="display:flex; align-items:center; gap:3px; font-size:10.5px; white-space:nowrap;'
-              + (reachable ? '' : 'opacity:0.35;') + '" title="' + (reachable ? t.name : 'この上限レベルでは作れません') + '">'
+              + (reachable ? '' : 'opacity:0.45;') + '" title="' + t.name + (needLv !== null ? '（Lv' + needLv + '以上の施設で生産）' : '') + (reachable ? '' : ' ／ いまの上限では作れません') + '">'
               + '<input type="checkbox" data-unit="' + key + '"' + (on ? ' checked' : '') + (reachable ? '' : ' disabled') + '>'
-              + '<span>' + t.name + '</span></label>';
+              + '<span>' + t.name + lvTag + '</span></label>';
       }
       if(shown === 0) continue;
       h += '<div style="margin-bottom:6px;">'
@@ -17736,6 +17762,13 @@ function edRenderLimits(){
   h += '</div>';
   body.innerHTML = h;
 
+  var lvBtns = body.querySelectorAll('[data-lvset]');
+  for(var lb=0; lb<lvBtns.length; lb++){
+    lvBtns[lb].onclick = function(){
+      ed.limits.upgradeMax[this.getAttribute('data-lvset')] = parseInt(this.getAttribute('data-lv'), 10);
+      edRenderLimits();
+    };
+  }
   var sliders = body.querySelectorAll('[data-uglim]');
   for(var si=0; si<sliders.length; si++){
     sliders[si].oninput = function(){
