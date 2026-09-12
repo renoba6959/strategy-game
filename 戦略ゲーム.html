@@ -228,15 +228,6 @@ button:hover { background: #f0f0f0; }
           </div>
         </div>
 
-        <!-- ステージの制限 -->
-        <div style="background:#fff; border-radius:6px; padding:10px 12px; margin-bottom:10px; border:1px solid #ddd;">
-          <div style="display:flex; align-items:center; justify-content:space-between; cursor:pointer;" id="ed-limit-head">
-            <div style="font-size:11px; color:#666;">⚖ このステージの制限</div>
-            <span id="ed-limit-toggle" style="font-size:11px; color:#888;">▼</span>
-          </div>
-          <div id="ed-limit-body" style="margin-top:8px;"></div>
-        </div>
-
         <!-- インポート/エクスポート -->
         <div style="background:#fff; border-radius:6px; padding:10px 12px; margin-bottom:10px; border:1px solid #ddd;">
           <div style="font-size:11px; color:#666; margin-bottom:6px;">JSON共有</div>
@@ -259,6 +250,15 @@ button:hover { background: #f0f0f0; }
           <div id="ed-board" style="display:grid; gap:1px; background:#ccc; padding:1px;"></div>
         </div>
       </div>
+    </div>
+
+    <!-- ステージの制限 (横幅いっぱい) -->
+    <div style="background:#fff; border-radius:6px; padding:10px 14px; margin-top:12px; border:1px solid #ddd;">
+      <div style="display:flex; align-items:center; justify-content:space-between; cursor:pointer;" id="ed-limit-head">
+        <div style="font-size:12px; color:#666; font-weight:600;">⚖ このステージの制限 (施設の上限レベル・生産できるユニット)</div>
+        <span id="ed-limit-toggle" style="font-size:11px; color:#888;">▼ 開く</span>
+      </div>
+      <div id="ed-limit-body" style="margin-top:8px;"></div>
     </div>
   </div>
 </div>
@@ -17638,84 +17638,92 @@ function edApplyRect(x1, y1, x2, y2){
 // 施設ごとの上限レベル (スライダー) と、生産できるユニット (チェックボックス)。
 // 上限レベルを下げると、そのレベルでしか作れないユニットは自動で灰色になる。
 var ED_UNIT_GROUPS = [
-  ['陸 / 歩兵',        ['INFANTRY','AT_INFANTRY','ENGINEER','MOUNTAIN_TROOP','PARATROOPER']],
-  ['陸 / 重歩兵',      ['OBSERVER','ARTILLERY','HEAVY_ARTILLERY']],
-  ['陸 / 装輪車両',    ['SCOUT','AA_MISSILE','APC','SUPPLY_TRUCK','MOBILE_COMBAT','AIRBORNE_TANK','AMPHIB_TANK']],
-  ['陸 / 軽キャタピラ', ['LIGHT_TANK','TANK_DESTROYER','AA_TANK','SPG']],
-  ['陸 / 重キャタピラ', ['MEDIUM_TANK','HEAVY_TANK','HEAVY_TD','MLRS']],
-  ['陸 / 列車',        ['LOCOMOTIVE','ARMORED_TRAIN','RAIL_GUN','SUPPLY_CAR','AA_TRAIN']],
-  ['海 / 戦闘艦',      ['CHASER','FRIGATE','DESTROYER','AA_DESTROYER','LIGHT_CRUISER','HEAVY_CRUISER','BATTLE_CRUISER','BATTLESHIP']],
-  ['海 / 潜水艦',      ['SUBMARINE','ATTACK_SUBMARINE']],
-  ['海 / 輸送・補給艦', ['TRANSPORT_SHIP','OILER','AMMO_SHIP']],
-  ['海 / 空母',        ['LIGHT_CARRIER','CARRIER','ARMORED_CARRIER']],
-  ['空 / 固定翼戦闘機', ['FIGHTER']],
-  ['空 / 攻撃機・爆撃機',['ATTACKER','BOMBER','STEALTH_BOMBER','AC_130']],
-  ['空 / 搭載機',      ['CARRIER_FIGHTER','CARRIER_BOMBER','CARRIER_TORPEDO']],
-  ['空 / ヘリ',        ['TRANSPORT_HELI','LIGHT_HELI','ATK_HELI','AT_HELI']],
-  ['空 / 輸送・支援',  ['TRANSPORT_PLANE','AERIAL_TANKER','RECON_PLANE','SCOUT_PLANE','OBSERVER_PLANE','ASW_PLANE']]
+  ['factory', '歩兵',        ['INFANTRY','AT_INFANTRY','ENGINEER','MOUNTAIN_TROOP','PARATROOPER']],
+  ['factory', '重歩兵',      ['OBSERVER','ARTILLERY','HEAVY_ARTILLERY']],
+  ['factory', '装輪車両',    ['SCOUT','AA_MISSILE','APC','SUPPLY_TRUCK','MOBILE_COMBAT','AIRBORNE_TANK','AMPHIB_TANK']],
+  ['factory', '軽キャタピラ', ['LIGHT_TANK','TANK_DESTROYER','AA_TANK','SPG']],
+  ['factory', '重キャタピラ', ['MEDIUM_TANK','HEAVY_TANK','HEAVY_TD','MLRS']],
+  ['factory', '列車',        ['LOCOMOTIVE','ARMORED_TRAIN','RAIL_GUN','SUPPLY_CAR','AA_TRAIN']],
+  ['port',    '戦闘艦',      ['CHASER','FRIGATE','DESTROYER','AA_DESTROYER','LIGHT_CRUISER','HEAVY_CRUISER','BATTLE_CRUISER','BATTLESHIP']],
+  ['port',    '潜水艦',      ['SUBMARINE','ATTACK_SUBMARINE']],
+  ['port',    '輸送・補給艦', ['TRANSPORT_SHIP','OILER','AMMO_SHIP']],
+  ['port',    '空母',        ['LIGHT_CARRIER','CARRIER','ARMORED_CARRIER']],
+  ['airport', '固定翼戦闘機', ['FIGHTER']],
+  ['airport', '攻撃機・爆撃機',['ATTACKER','BOMBER','STEALTH_BOMBER','AC_130']],
+  ['airport', '搭載機',      ['CARRIER_FIGHTER','CARRIER_BOMBER','CARRIER_TORPEDO']],
+  ['airport', 'ヘリ',        ['TRANSPORT_HELI','LIGHT_HELI','ATK_HELI','AT_HELI']],
+  ['airport', '輸送・支援',  ['TRANSPORT_PLANE','AERIAL_TANKER','RECON_PLANE','SCOUT_PLANE','OBSERVER_PLANE','ASW_PLANE']]
 ];
-var ED_GROUP_LABEL = { factory:'工場系', airport:'空港系', port:'港系', city:'都市系' };
+var ED_GROUP_LABEL = { factory:'🏭 工場系 → 陸', airport:'🛫 空港系 → 空', port:'⚓ 港系 → 海', city:'🏙 都市系' };
 var ED_GROUP_NOTE = {
   factory:'Lv1 工場 / Lv2 装輪・戦車工場 / Lv3 工廠 / Lv4 兵器廠',
   airport:'Lv1 空港 / Lv2 空軍基地 / Lv3 空軍工廠 / Lv4 空軍兵器廠',
   port:'Lv1 港 / Lv2 軍港 / Lv3 海軍工廠 / Lv4 海軍兵器廠',
-  city:'Lv1 都市 / Lv2 大都市 / Lv3 商業都市・弾薬工廠 / Lv4 (なし)'
+  city:'Lv1 都市 / Lv2 大都市 / Lv3 商業都市・弾薬工廠（ユニットは作らない）'
 };
+var ED_LIMIT_COLS = ['factory', 'port', 'airport', 'city'];
+
 function edRenderLimits(){
   var body = document.getElementById('ed-limit-body');
   if(!body) return;
   var tog = document.getElementById('ed-limit-toggle');
-  if(tog) tog.textContent = ed.limitOpen ? '▲' : '▼';
+  if(tog) tog.textContent = ed.limitOpen ? '▲ 閉じる' : '▼ 開く';
   if(!ed.limitOpen){ body.innerHTML = ''; return; }
   if(!ed.limits) ed.limits = { upgradeMax:{factory:4,airport:4,port:4,city:4}, banned:{} };
   if(!ed.limits.upgradeMax) ed.limits.upgradeMax = {factory:4,airport:4,port:4,city:4};
   if(!ed.limits.banned) ed.limits.banned = {};
-  var h = '<div style="font-size:10px; color:#888; margin-bottom:6px;">施設の上限レベルを下げると、そのレベルでしか作れないユニットは自動的に作れなくなります。</div>';
-  for(var gi=0; gi<UPGRADE_GROUPS.length; gi++){
-    var g = UPGRADE_GROUPS[gi];
+  var reach = producibleUnderCaps(ed.limits.upgradeMax);
+
+  var h = '<div style="display:flex; gap:6px; align-items:center; margin-bottom:8px; flex-wrap:wrap;">'
+        + '<span style="font-size:10px; color:#888;">まとめて:</span>'
+        + '<button data-unitall="on" style="font-size:10px;">全部許可</button>'
+        + '<button data-unitall="off" style="font-size:10px;">全部禁止</button>'
+        + '<button data-unitall="land" style="font-size:10px;">陸のみ</button>'
+        + '<button data-unitall="noair" style="font-size:10px;">航空なし</button>'
+        + '<span style="font-size:10px; color:#888; margin-left:6px;">上限レベルを下げると、そのレベルでしか作れないユニットは自動で灰色になります</span>'
+        + '</div>';
+  h += '<div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(240px, 1fr)); gap:10px; align-items:start;">';
+  for(var ci=0; ci<ED_LIMIT_COLS.length; ci++){
+    var g = ED_LIMIT_COLS[ci];
     var v = ed.limits.upgradeMax[g];
     if(typeof v !== 'number') v = 4;
-    h += '<div style="margin-bottom:7px;">'
-       + '<div style="display:flex; justify-content:space-between; font-size:11px;"><span>' + ED_GROUP_LABEL[g] + '</span><b>Lv' + v + 'まで</b></div>'
-       + '<input type="range" min="1" max="4" step="1" value="' + v + '" data-uglim="' + g + '" style="width:100%;">'
-       + '<div style="font-size:9px; color:#aaa;">' + ED_GROUP_NOTE[g] + '</div>'
-       + '</div>';
-  }
-  // 生産できるユニット
-  var reach = producibleUnderCaps(ed.limits.upgradeMax);
-  h += '<div style="border-top:1px solid #eee; margin-top:8px; padding-top:8px;">';
-  h += '<div style="display:flex; gap:4px; margin-bottom:6px;">'
-     + '<button data-unitall="on" style="font-size:10px; flex:1;">全部許可</button>'
-     + '<button data-unitall="off" style="font-size:10px; flex:1;">全部禁止</button>'
-     + '<button data-unitall="land" style="font-size:10px; flex:1;">陸のみ</button>'
-     + '<button data-unitall="noair" style="font-size:10px; flex:1;">航空なし</button>'
-     + '</div>';
-  for(var i=0; i<ED_UNIT_GROUPS.length; i++){
-    var gname = ED_UNIT_GROUPS[i][0], keys = ED_UNIT_GROUPS[i][1];
-    var rows = '', shown = 0, onCount = 0;
-    for(var k=0; k<keys.length; k++){
-      var key = keys[k];
-      var t = TYPE[key];
-      if(!t) continue;
-      shown++;
-      var reachable = !!reach[key];
-      var on = reachable && !ed.limits.banned[key];
-      if(on) onCount++;
-      rows += '<label style="display:flex; align-items:center; gap:4px; font-size:10.5px; padding:1px 0;'
-            + (reachable ? '' : 'opacity:0.4;') + '" title="' + (reachable ? '' : 'この上限レベルでは作れません') + '">'
-            + '<input type="checkbox" data-unit="' + key + '"' + (on ? ' checked' : '') + (reachable ? '' : ' disabled') + '>'
-            + '<span>' + t.name + (reachable ? '' : ' (上限外)') + '</span></label>';
+    h += '<div style="border:1px solid #e6e2d8; border-radius:5px; padding:8px 10px; background:#fcfbf7;">';
+    h += '<div style="display:flex; justify-content:space-between; font-size:11.5px; font-weight:600;"><span>' + ED_GROUP_LABEL[g] + '</span><span style="color:#BA7517;">Lv' + v + 'まで</span></div>';
+    h += '<input type="range" min="1" max="4" step="1" value="' + v + '" data-uglim="' + g + '" style="width:100%; margin:2px 0;">';
+    h += '<div style="font-size:9px; color:#aaa; margin-bottom:6px;">' + ED_GROUP_NOTE[g] + '</div>';
+    // この施設系で作れるユニット
+    for(var i=0; i<ED_UNIT_GROUPS.length; i++){
+      if(ED_UNIT_GROUPS[i][0] !== g) continue;
+      var sub = ED_UNIT_GROUPS[i][1], keys = ED_UNIT_GROUPS[i][2];
+      var rows = '', shown = 0, onCount = 0;
+      for(var k=0; k<keys.length; k++){
+        var key = keys[k];
+        var t = TYPE[key];
+        if(!t) continue;
+        shown++;
+        var reachable = !!reach[key];
+        var on = reachable && !ed.limits.banned[key];
+        if(on) onCount++;
+        rows += '<label style="display:flex; align-items:center; gap:3px; font-size:10.5px; white-space:nowrap;'
+              + (reachable ? '' : 'opacity:0.35;') + '" title="' + (reachable ? t.name : 'この上限レベルでは作れません') + '">'
+              + '<input type="checkbox" data-unit="' + key + '"' + (on ? ' checked' : '') + (reachable ? '' : ' disabled') + '>'
+              + '<span>' + t.name + '</span></label>';
+      }
+      if(shown === 0) continue;
+      h += '<div style="margin-bottom:6px;">'
+         + '<div style="display:flex; justify-content:space-between; align-items:center; font-size:10px; color:#7a6a4a; font-weight:600; border-bottom:1px dotted #ddd; margin-bottom:2px;">'
+         + '<span>' + sub + '</span>'
+         + '<span style="font-weight:400; color:#999;">' + onCount + '/' + shown + ' <button data-groupall="' + i + '" style="font-size:9px; padding:0 4px;">切替</button></span>'
+         + '</div>'
+         + '<div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(104px, 1fr)); gap:0 6px;">' + rows + '</div>'
+         + '</div>';
     }
-    if(shown === 0) continue;
-    h += '<div style="margin-bottom:5px;">'
-       + '<div style="display:flex; justify-content:space-between; font-size:10px; color:#7a6a4a; font-weight:600;">'
-       + '<span>' + gname + '</span>'
-       + '<span><button data-groupall="' + i + '" style="font-size:9px; padding:0 4px;">まとめて切替</button> ' + onCount + '/' + shown + '</span>'
-       + '</div>' + rows + '</div>';
+    if(g === 'city') h += '<div style="font-size:10px; color:#aaa;">都市系はユニットを生産しません。収入と補給だけに効きます。</div>';
+    h += '</div>';
   }
   h += '</div>';
   body.innerHTML = h;
-  // スライダー
+
   var sliders = body.querySelectorAll('[data-uglim]');
   for(var si=0; si<sliders.length; si++){
     sliders[si].oninput = function(){
@@ -17723,7 +17731,6 @@ function edRenderLimits(){
       edRenderLimits();
     };
   }
-  // チェックボックス
   var boxes = body.querySelectorAll('[data-unit]');
   for(var bi=0; bi<boxes.length; bi++){
     boxes[bi].onchange = function(){
@@ -17733,7 +17740,6 @@ function edRenderLimits(){
       edRenderLimits();
     };
   }
-  // まとめ操作
   function setGroup(keys, on){
     for(var i=0; i<keys.length; i++){
       if(on) delete ed.limits.banned[keys[i]];
@@ -17743,10 +17749,10 @@ function edRenderLimits(){
   var groupBtns = body.querySelectorAll('[data-groupall]');
   for(var gb=0; gb<groupBtns.length; gb++){
     groupBtns[gb].onclick = function(){
-      var g = ED_UNIT_GROUPS[parseInt(this.getAttribute('data-groupall'), 10)];
+      var g2 = ED_UNIT_GROUPS[parseInt(this.getAttribute('data-groupall'), 10)];
       var anyOn = false;
-      for(var i=0; i<g[1].length; i++){ if(!ed.limits.banned[g[1][i]]) anyOn = true; }
-      setGroup(g[1], !anyOn);
+      for(var i=0; i<g2[2].length; i++){ if(!ed.limits.banned[g2[2][i]]) anyOn = true; }
+      setGroup(g2[2], !anyOn);
       edRenderLimits();
     };
   }
@@ -17756,12 +17762,10 @@ function edRenderLimits(){
       var mode = this.getAttribute('data-unitall');
       ed.limits.banned = {};
       for(var i=0; i<ED_UNIT_GROUPS.length; i++){
-        var g = ED_UNIT_GROUPS[i];
-        var isAir = g[0].indexOf('空 /') === 0;
-        var isLand = g[0].indexOf('陸 /') === 0;
-        if(mode === 'off') setGroup(g[1], false);
-        else if(mode === 'land' && !isLand) setGroup(g[1], false);
-        else if(mode === 'noair' && isAir) setGroup(g[1], false);
+        var gg = ED_UNIT_GROUPS[i];
+        if(mode === 'off') setGroup(gg[2], false);
+        else if(mode === 'land' && gg[0] !== 'factory') setGroup(gg[2], false);
+        else if(mode === 'noair' && gg[0] === 'airport') setGroup(gg[2], false);
       }
       edRenderLimits();
     };
