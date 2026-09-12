@@ -345,10 +345,13 @@ var TER = {
   SEA_RAIL_DRAW_RUINED: { name:'可動橋脚', def:0, color:'#5C7690', isRail:true, isSeaRail:true, isDrawBridge:true, isRailRuined:true, isIncomplete:true, buildHpMax:30 },
   // 都市系 (3段階直列)
   CITY:    { name:'都市', def:2, color:'#B8B5B0', heal:2, capturable:true, income:1000, capHpMax:20, level:1, group:'city', upgradeTo:['BIG_CITY'], defenseSlots:1, lightSource:true, sight:2 },
-  BIG_CITY: { name:'大都市', def:3, color:'#A8A5A0', heal:2, capturable:true, income:1500, capHpMax:30, level:2, group:'city', upgradeTo:['COMMERCE_CITY','AMMO_DEPOT'], defenseSlots:2, lightSource:true, sight:2 },
-  COMMERCE_CITY: { name:'商業都市', def:2, color:'#C8B570', heal:2, capturable:true, income:2000, capHpMax:20, level:3, group:'city', defenseSlots:3, lightSource:true, sight:2 },
+  BIG_CITY: { name:'中都市', def:3, color:'#A8A5A0', heal:2, capturable:true, income:1500, capHpMax:30, level:2, group:'city', upgradeTo:['COMMERCE_CITY','AMMO_DEPOT'], defenseSlots:2, lightSource:true, sight:2 },
+  COMMERCE_CITY: { name:'大都市', def:2, color:'#C8B570', heal:2, capturable:true, income:2000, capHpMax:20, level:3, group:'city', defenseSlots:3, lightSource:true, sight:2 },
   // 弾薬工廠 (大都市のアップグレード先): 隣接マスの自軍ユニットの燃料・弾薬を毎ターン全回復
   AMMO_DEPOT: { name:'弾薬工廠', def:3, color:'#8A6E4F', heal:2, capturable:true, income:1500, capHpMax:30, level:3, group:'city', ammoDepot:true, defenseSlots:3, lightSource:true, sight:2 },
+  // 補給拠点: 生産はできない補給専門の施設。周囲3マスに100%補給する「配る場所」。
+  // 弾薬工廠 (大量に貯める積み元・範囲は直上と隣接だけ) と役割を分ける。
+  SUPPLY_DEPOT: { name:'補給拠点', def:2, color:'#7FA08A', heal:2, capturable:true, income:500, capHpMax:20, level:1, group:'depot', supplyDepot:true, defenseSlots:1, lightSource:true, sight:2 },
   // 工場系 (2段階分岐)
   FACTORY: { name:'工場', def:2, color:'#9F8E80', heal:3, capturable:true, healCat:'LAND', income:500, capHpMax:20, level:1, group:'factory', slots:1, produces:['INFANTRY','AT_INFANTRY','ENGINEER','SCOUT','APC','SUPPLY_TRUCK','LIGHT_TANK','LOCOMOTIVE','SUPPLY_CAR'], upgradeTo:['WHEEL_FACTORY','TRACK_FACTORY'], defenseSlots:1, lightSource:true, sight:2 },
   // 装輪工場 (レベル2): 装輪系 (機動戦闘車・水陸両用・空挺・MLRS) を追加
@@ -393,6 +396,7 @@ var TER = {
 
 // ダウングレード経路 (施設HP0で次の段階に)
 var DOWNGRADE_MAP = {
+  SUPPLY_DEPOT: 'RUINS_CITY',
   COMMERCE_CITY: 'BIG_CITY',
   AMMO_DEPOT: 'BIG_CITY',
   BIG_CITY: 'CITY',
@@ -580,6 +584,19 @@ var ICONS = {
 };
 
 var TERRAIN_DECO = {
+  SUPPLY_DEPOT: '<svg viewBox="0 0 32 32" width="100%" height="100%" style="position:absolute;inset:0;pointer-events:none;">'
+    + '<rect x="3" y="19" width="26" height="9" fill="#5F7A62" opacity="0.5"/>'
+    + '<rect x="5" y="11" width="7" height="11" rx="1" fill="#C9A24A" stroke="#7A6326" stroke-width="0.7"/>'
+    + '<rect x="5" y="14" width="7" height="1.2" fill="#7A6326" opacity="0.7"/>'
+    + '<rect x="5" y="18" width="7" height="1.2" fill="#7A6326" opacity="0.7"/>'
+    + '<rect x="13.5" y="13" width="7" height="9" rx="1" fill="#A98A5A" stroke="#6E5734" stroke-width="0.7"/>'
+    + '<path d="M13.5,17.5 L20.5,17.5 M17,13 L17,22" stroke="#6E5734" stroke-width="0.7"/>'
+    + '<rect x="22" y="10" width="7" height="12" rx="1" fill="#C9A24A" stroke="#7A6326" stroke-width="0.7"/>'
+    + '<rect x="22" y="13.5" width="7" height="1.2" fill="#7A6326" opacity="0.7"/>'
+    + '<rect x="22" y="18" width="7" height="1.2" fill="#7A6326" opacity="0.7"/>'
+    + '<rect x="10" y="5" width="12" height="4" rx="0.6" fill="#6E7F6A"/>'
+    + '<path d="M12,7 L20,7" stroke="#E8E4D8" stroke-width="1"/>'
+    + '</svg>',
   FOREST: '<svg viewBox="0 0 32 32" width="100%" height="100%" style="position:absolute;inset:0;opacity:0.5;pointer-events:none;"><path d="M8,18 L4,22 L12,22 Z M8,14 L5,18 L11,18 Z M8,11 L6,14 L10,14 Z" fill="#3d5a23"/><path d="M22,20 L17,25 L27,25 Z M22,15 L18,20 L26,20 Z M22,11 L19,15 L25,15 Z" fill="#3d5a23"/></svg>',
   MOUNTAIN: '<svg viewBox="0 0 32 32" width="100%" height="100%" style="position:absolute;inset:0;opacity:0.6;pointer-events:none;"><path d="M5,26 L13,10 L21,26 Z M14,26 L22,14 L28,26 Z" fill="#5a544f" stroke="#3d3a36" stroke-width="0.5"/><path d="M11,16 L13,10 L15,16 Z" fill="#e8e4dd"/></svg>',
   ROAD: '',
@@ -610,7 +627,7 @@ var TERRAIN_DECO = {
   DEEP_SEA: '<svg viewBox="0 0 32 32" width="100%" height="100%" style="position:absolute;inset:0;opacity:0.25;pointer-events:none;"><path d="M2,16 Q10,14 18,16 T30,16" fill="none" stroke="#1a3a5a" stroke-width="0.5"/></svg>',
   // 大都市: 都市より大きな建物
   BIG_CITY: '<svg viewBox="0 0 32 32" width="100%" height="100%" style="position:absolute;inset:0;opacity:0.6;pointer-events:none;"><rect x="3" y="10" width="7" height="18" fill="#4a4540"/><rect x="11" y="6" width="9" height="22" fill="#4a4540"/><rect x="21" y="13" width="7" height="15" fill="#4a4540"/><rect x="5" y="13" width="2" height="2" fill="#fff"/><rect x="13" y="9" width="2" height="2" fill="#fff"/><rect x="16" y="9" width="2" height="2" fill="#fff"/><rect x="13" y="13" width="2" height="2" fill="#fff"/><rect x="16" y="13" width="2" height="2" fill="#fff"/><rect x="13" y="17" width="2" height="2" fill="#fff"/><rect x="16" y="17" width="2" height="2" fill="#fff"/><rect x="23" y="16" width="2" height="2" fill="#fff"/></svg>',
-  // 商業都市: 看板・ネオン風
+  // 大都市 (COMMERCE_CITY): 看板・ネオン風
   COMMERCE_CITY: '<svg viewBox="0 0 32 32" width="100%" height="100%" style="position:absolute;inset:0;opacity:0.6;pointer-events:none;"><rect x="4" y="14" width="6" height="14" fill="#5a4a30"/><rect x="11" y="10" width="8" height="18" fill="#5a4a30"/><rect x="20" y="13" width="7" height="15" fill="#5a4a30"/><rect x="5" y="16" width="4" height="2" fill="#e8c870"/><rect x="13" y="12" width="4" height="2" fill="#e8c870"/><rect x="13" y="16" width="4" height="2" fill="#e8c870"/><rect x="13" y="20" width="4" height="2" fill="#e8c870"/><rect x="22" y="16" width="3" height="2" fill="#e8c870"/></svg>',
   // 弾薬工廠: 倉庫風の建物 + 弾薬箱と砲弾マーク
   AMMO_DEPOT: '<svg viewBox="0 0 32 32" width="100%" height="100%" style="position:absolute;inset:0;opacity:0.7;pointer-events:none;"><rect x="3" y="13" width="26" height="14" fill="#4a3825"/><polygon points="3,13 16,7 29,13" fill="#3a2a18"/><rect x="6" y="17" width="6" height="6" fill="#7a5a3a" stroke="#2a1a08" stroke-width="0.5"/><rect x="14" y="17" width="6" height="6" fill="#7a5a3a" stroke="#2a1a08" stroke-width="0.5"/><line x1="9" y1="17" x2="9" y2="23" stroke="#2a1a08" stroke-width="0.5"/><line x1="6" y1="20" x2="12" y2="20" stroke="#2a1a08" stroke-width="0.5"/><line x1="17" y1="17" x2="17" y2="23" stroke="#2a1a08" stroke-width="0.5"/><line x1="14" y1="20" x2="20" y2="20" stroke="#2a1a08" stroke-width="0.5"/><circle cx="24" cy="20" r="2.5" fill="#d4a850"/><rect x="22" y="18.5" width="4" height="1" fill="#a08030"/></svg>',
@@ -762,7 +779,7 @@ var TYPE = {
 var ARMOR_LABELS = { INF:'歩兵', UV:'非装甲車両', AV:'装甲車両', US:'非装甲艦船', AS:'装甲艦船', HE:'ヘリ', AC:'航空機', SUB:'潜水艦' };
 var CHARS = {
   '.':'PLAIN', 'F':'FOREST', 'M':'MOUNTAIN', 'R':'ROAD',
-  'C':'CITY', 'B':'BIG_CITY', 'K':'COMMERCE_CITY', '@':'AMMO_DEPOT', 'H':'CAPITAL',
+  'C':'CITY', 'B':'BIG_CITY', 'K':'COMMERCE_CITY', '@':'AMMO_DEPOT', 'S':'SUPPLY_DEPOT', 'H':'CAPITAL',
   'X':'FACTORY', 'W':'WHEEL_FACTORY', 'T':'TRACK_FACTORY', 'w':'WHEEL_ARSENAL', 't':'TRACK_ARSENAL', '*':'WHEEL_WORKS', '+':'TRACK_WORKS',
   'A':'AIRPORT', 'a':'AIR_BASE', '&':'AIR_ARSENAL', '=':'AIR_WORKS',
   'P':'PORT', 'p':'NAVY_BASE', '%':'NAVY_ARSENAL', '/':'NAVY_WORKS',
@@ -1727,13 +1744,15 @@ function facilityStockSpec(terKey){
   // fuelInit / ammoInit = ゲーム開始時の備蓄。生産できる施設は満タンで始まる。
   // 弾薬工廠: 補給範囲3マス・補給率100%と消費が激しいぶん、生産量も上位
   if(ter.ammoDepot) return { fuelGain: 150, ammoGain: 20, fuelMax: 800, ammoMax: 80, fuelInit: 800, ammoInit: 80 };
+  // 補給拠点: 配る役なので備蓄は中くらい。前線に置いて使い、枯れたら運んでもらう
+  if(ter.supplyDepot) return { fuelGain: 60, ammoGain: 8, fuelMax: 400, ammoMax: 40, fuelInit: 400, ammoInit: 40 };
   // 生産施設 (工場系・港系・空港系): レベル1〜4に応じて増える。上限は生産量の5ターン分
   if(ter.slots){
     var lv = ter.level || 1;
     var fg = 20 + 20 * lv, ag = 2 + 2 * lv;
     return { fuelGain: fg, ammoGain: ag, fuelMax: fg * 5, ammoMax: ag * 5, fuelInit: fg * 5, ammoInit: ag * 5 };
   }
-  // 都市・大都市・商業都市・首都: 自力では生産しない (貯めておくことはできる)
+  // 都市系・首都: 自力では生産しない (貯めておくことはできる)
   // 開始時は上限の半分だけ。使い切ると運んでもらうしかなく、補給の大切さが分かるようにする
   if(ter.group === 'city' || ter.group === 'capital') return { fuelGain: 0, ammoGain: 0, fuelMax: 200, ammoMax: 20, fuelInit: 100, ammoInit: 10 };
   return null;
@@ -2044,7 +2063,7 @@ function facilityReachDist(reach, f){
 
 // ===== 自動巡回 =====
 // 積み元・降ろし先を固定せず、毎ターン選び直す。
-//   降ろし先 = 備蓄を「自分では作れない」自軍拠点 (都市・大都市・商業都市・首都) のうち
+//   降ろし先 = 備蓄を「自分では作れない」自軍拠点 (都市系・首都) のうち
 //              充足率が最も低いもの。工場などを降ろし先にすると、積んだ拠点に
 //              そのまま降ろす堂々巡りになるので外している
 //   積み元   = 備蓄を作れる自軍施設 (工場系・港系・空港系・弾薬工廠) のうち在庫が多いもの
@@ -2363,7 +2382,8 @@ function getSupplySource(unit){
   // 自軍が占領している施設・拠点から一定範囲内にいれば補給を受けられる。
   // 「施設マスの上に乗らないと補給できない」仕様だと1マスの取り合いになるため、
   // 範囲を広げている (段階1: 補給範囲の拡大)。
-  //   ・弾薬工廠 : 3マス以内 / 毎ターン100% (固定翼機は対象外。ヘリは可)
+  //   ・補給拠点 : 3マス以内 / 毎ターン100% (固定翼機は対象外。ヘリは可)
+  //   ・弾薬工廠 : 直上と隣接のみ / 毎ターン100% (大量に貯める積み元)
   //   ・工場系   : 2マス以内 / 毎ターン50%  (地上・ヘリ)
   //   ・港系     : 1マス以内 / 毎ターン50%  (艦船。直上と隣接だけ = 接岸して受け取る)
   //   ・空港系   : ヘリは2マス以内、固定翼機は直上のみ / 毎ターン50%
@@ -2377,7 +2397,8 @@ function getSupplySource(unit){
   //     固定翼機は従来どおり空港系・空母のみ。
   var FAC_RANGE = 2;    // 工場系・都市系の補給範囲
   var PORT_RANGE = 1;   // 港系の補給範囲 (直上と隣接。接岸して受け取る)
-  var DEPOT_RANGE = 3;  // 弾薬工廠の補給範囲
+  var DEPOT_RANGE = 3;       // 補給拠点の補給範囲 (配る役)
+  var AMMO_DEPOT_RANGE = 1;  // 弾薬工廠の補給範囲 (貯める役。直上と隣接だけ)
   var isHeli = isHelicopter(unit);
   // ヘリは着陸して受け取るので、補給要員 (装輪車両) が入れない地形にいると
   // 範囲補給を受けられない。山にドラム缶は上げられないし、海上のホバリング中も同じ。
@@ -2400,8 +2421,11 @@ function getSupplySource(unit){
     if(!fter) continue;
     var fd = manhattan(fx, fy, unit.x, unit.y);
     var r = 0;
-    if(fter.ammoDepot && (cat !== 'AIR' || isHeli) && fd <= DEPOT_RANGE){
-      // 弾薬工廠 (固定翼機は対象外: 街中で補給できるのは強すぎるため。ヘリは可)
+    if(fter.supplyDepot && (cat !== 'AIR' || isHeli) && fd <= DEPOT_RANGE){
+      // 補給拠点: 前線へ配るための施設。3マス100%
+      r = 1.0;
+    } else if(fter.ammoDepot && (cat !== 'AIR' || isHeli) && fd <= AMMO_DEPOT_RANGE){
+      // 弾薬工廠: 大量に貯める積み元。配る範囲は直上と隣接だけ
       r = 1.0;
     } else if(fter.healCat === cat || (isHeli && fter.healCat === 'LAND')){
       // 生産施設 (カテゴリが一致するもの。ヘリは工場系からも受けられる)
@@ -2410,8 +2434,8 @@ function getSupplySource(unit){
       if(fter.healCat === 'SEA') reach = PORT_RANGE;                              // 港系: 直上と隣接だけ
       else if(fter.healCat === 'AIR' && cat === 'AIR' && !isHeli) reach = 0;      // 空港系 → 固定翼機: 直上のみ
       if(fd <= reach) r = 0.5;
-    } else if((cat === 'LAND' || isHeli) && (fter.group === 'city' || fter.group === 'capital') && fd <= FAC_RANGE){
-      // 都市・大都市・商業都市・首都 (地上ユニットとヘリ)
+    } else if((cat === 'LAND' || isHeli) && !fter.ammoDepot && (fter.group === 'city' || fter.group === 'capital') && fd <= FAC_RANGE){
+      // 都市系・首都 (地上ユニットとヘリ)
       r = 0.2;
     }
     if(r <= 0) continue;
@@ -2904,7 +2928,7 @@ function producibleUnderCaps(upgradeMax){
 function moveCost(type, terId){
   var t = TYPE[type];
   // 複線は線路とまったく同じコスト (通行の扱いは変えず、すれ違いだけを許す)
-  var c = COST[t.cost][(terId === 'RAIL_DOUBLE') ? 'RAIL' : terId];
+  var c = COST[t.cost][(terId === 'RAIL_DOUBLE') ? 'RAIL' : (terId === 'SUPPLY_DEPOT' ? 'CITY' : terId)];
   var ter = TER[terId];
   if(ter && ter.isSeaRail){
     // 海上鉄橋の下をくぐれるかは「艦の高さと幅」で決まる。
@@ -15118,6 +15142,14 @@ function renderFacilitiesTab(){
   html += '<span style="color:#888;">※ 防御兵器そのものは未実装、スロット枠のみ先行実装。占領時にリセット</span>';
   html += '</div>';
 
+  html += '<h4 style="margin:6px 0; font-size:14px; color:#5a4a30;">📦 補給拠点</h4>';
+  html += '<div style="font-size:11px; color:#666; margin-bottom:6px;">生産はできない補給専門の施設。マップエディタから配置します (アップグレードでは作れません)。</div>';
+  html += '<div style="font-size:11px; color:#444; margin-bottom:14px; line-height:1.7; background:#eef4f0; border-left:3px solid #0F6E56; padding:8px 12px; border-radius:0 4px 4px 0;">';
+  html += '<b>周囲3マスに毎ターン100%補給</b> (地上・ヘリ。固定翼機は対象外)。備蓄は燃料400 / 弾薬40、毎ターン +60 / +8。<br>';
+  html += '収入500G、防御+2、防御スロット1、待機修理+2。<br>';
+  html += '<b>弾薬工廠との違い</b>: 弾薬工廠は<b>大量に貯める積み元</b> (燃料800 / 弾薬80、毎ターン +150 / +20) ですが、配る範囲は<b>直上と隣接だけ</b>です。補給拠点は<b>前線へ配る場所</b>で、備蓄は中くらいのかわりに<b>3マス</b>届きます。';
+  html += '</div>';
+
   // 都市系
   html += '<h4 style="margin:6px 0; font-size:14px; color:#5a4a30;">🏛 都市系</h4>';
   html += '<div style="font-size:11px; color:#666; margin-bottom:6px;">収入と防御の供給源。生産はできない。アップグレードで強化。</div>';
@@ -15126,9 +15158,9 @@ function renderFacilitiesTab(){
   html += '<thead><tr style="background:#f5f0e0;"><th style="text-align:left; padding:4px 8px;">施設</th><th style="padding:4px 6px;">防御</th><th style="padding:4px 6px;">HP</th><th style="padding:4px 6px;">収入</th><th style="text-align:left; padding:4px 8px;">特徴・解放</th></tr></thead><tbody>';
   var cityRows = [
     ['首都', '+4', 30, 2000, '占領で<b style="color:#A32D2D;">即敗北</b>。陣営の最重要拠点'],
-    ['都市', '+2', 20, 1000, '基本拠点。アップグレード可: 大都市(+4000G, 4T)'],
-    ['大都市', '+3', 30, 1500, 'アップグレード可: 商業都市(収入特化) <b>or</b> 弾薬工廠(補給特化) (+4000G, 4T)'],
-    ['商業都市', '+2', 20, 2000, '収入特化。これ以上アップグレード不可'],
+    ['都市', '+2', 20, 1000, '基本拠点。アップグレード可: 中都市(+4000G, 4T)'],
+    ['中都市', '+3', 30, 1500, 'アップグレード可: 大都市(収入特化) <b>or</b> 弾薬工廠(備蓄特化) (+4000G, 4T)'],
+    ['大都市', '+2', 20, 2000, '収入特化。これ以上アップグレード不可'],
     ['弾薬工廠', '+3', 30, 1500, '<b>隣接陸海ユニット</b>に毎ターン燃料・弾薬を補給(航空には効果なし)。補給車・補給艦の弾薬庫を満タンに']
   ];
   for(var i=0; i<cityRows.length; i++){
@@ -15201,7 +15233,7 @@ function renderFacilitiesTab(){
   html += '<h4 style="margin:14px 0 6px; font-size:14px; color:#5a4a30;">🏚 廃墟系</h4>';
   html += '<div style="font-size:11px; color:#666; margin-bottom:6px; line-height:1.6;">';
   html += '施設HPが0になると、その施設は<b>廃墟化</b>または<b>1段階ダウングレード</b>します。<br>';
-  html += '・Lv2以上の施設: 1段階ダウン (例: 商業都市→大都市、空軍工廠→空軍基地)<br>';
+  html += '・Lv2以上の施設: 1段階ダウン (例: 大都市→中都市、空軍工廠→空軍基地)<br>';
   html += '・Lv1の施設: 廃墟化 (都市→都市廃墟、工場→工場廃墟、空港→空港廃墟、港→港廃墟)';
   html += '</div>';
   html += '<div style="background:#f9f7f0; padding:8px 10px; border-radius:4px; font-size:11px; line-height:1.7;">';
@@ -15397,11 +15429,12 @@ function renderSupplyTab(){
   html += '<div style="margin-top:4px;">施設マスの上に乗る必要はありません。自軍が占領している拠点から<b>一定範囲</b>にいれば、毎ターン下の割合で燃料・弾薬が補給されます (端数切り上げ)。1マスの取り合いで渋滞しないための仕様です。</div>';
   html += '<table style="width:100%; font-size:11px; margin-top:4px; border-collapse:collapse;">';
   html += '<tr style="background:#e6dfca;"><th style="padding:3px 6px; text-align:left;">補給元</th><th style="padding:3px 6px; text-align:center;">範囲</th><th style="padding:3px 6px; text-align:left;">対象</th><th style="padding:3px 6px; text-align:center;">補給率/T</th></tr>';
-  html += '<tr><td style="padding:3px 6px;">弾薬工廠</td><td style="padding:3px 6px; text-align:center;"><b>3マス</b></td><td style="padding:3px 6px;">地上・艦船・ヘリ (固定翼は対象外)</td><td style="padding:3px 6px; text-align:center;"><b>100%</b></td></tr>';
+  html += '<tr><td style="padding:3px 6px;"><b>補給拠点</b></td><td style="padding:3px 6px; text-align:center;"><b>3マス</b></td><td style="padding:3px 6px;">地上・ヘリ (固定翼は対象外)。生産はできない補給専門の施設</td><td style="padding:3px 6px; text-align:center;"><b>100%</b></td></tr>';
+  html += '<tr><td style="padding:3px 6px;">弾薬工廠</td><td style="padding:3px 6px; text-align:center;"><b>1マス</b></td><td style="padding:3px 6px;">地上・艦船・ヘリ (固定翼は対象外)</td><td style="padding:3px 6px; text-align:center;"><b>100%</b></td></tr>';
   html += '<tr style="background:#fafaf3;"><td style="padding:3px 6px;">工場系 (全Lv)</td><td style="padding:3px 6px; text-align:center;"><b>2マス</b></td><td style="padding:3px 6px;">地上・ヘリ</td><td style="padding:3px 6px; text-align:center;"><b>50%</b></td></tr>';
   html += '<tr><td style="padding:3px 6px;">港系 (全Lv)</td><td style="padding:3px 6px; text-align:center;"><b>1マス</b></td><td style="padding:3px 6px;">艦船 (直上と隣接。接岸して受け取る)</td><td style="padding:3px 6px; text-align:center;"><b>50%</b></td></tr>';
   html += '<tr style="background:#fafaf3;"><td style="padding:3px 6px;">空港系 (全Lv)</td><td style="padding:3px 6px; text-align:center;"><b>ヘリ2マス<br>固定翼は直上のみ</b></td><td style="padding:3px 6px;">航空。<b>固定翼機は空港マスの上でしか受けられない</b></td><td style="padding:3px 6px; text-align:center;"><b>50%</b></td></tr>';
-  html += '<tr><td style="padding:3px 6px;">都市・大都市・商業都市・首都</td><td style="padding:3px 6px; text-align:center;"><b>2マス</b></td><td style="padding:3px 6px;">地上・ヘリ</td><td style="padding:3px 6px; text-align:center;"><b>20%</b></td></tr>';
+  html += '<tr><td style="padding:3px 6px;">都市・中都市・大都市・首都</td><td style="padding:3px 6px; text-align:center;"><b>2マス</b></td><td style="padding:3px 6px;">地上・ヘリ</td><td style="padding:3px 6px; text-align:center;"><b>20%</b></td></tr>';
   html += '<tr style="background:#fafaf3;"><td style="padding:3px 6px;">空母系 (搭載中の搭載機)</td><td style="padding:3px 6px; text-align:center;">同マス</td><td style="padding:3px 6px;">航空</td><td style="padding:3px 6px; text-align:center;"><b>100%</b></td></tr>';
   html += '<tr><td style="padding:3px 6px;">補給ユニット (補給車/補給艦/給油艦/空中給油機)</td><td style="padding:3px 6px; text-align:center;">隣接</td><td style="padding:3px 6px;">それぞれの対象カテゴリ</td><td style="padding:3px 6px; text-align:center;"><b>100%</b></td></tr>';
   html += '</table>';
@@ -15420,7 +15453,7 @@ function renderSupplyTab(){
   html += '<tr><td style="padding:3px 6px;">同 Lv3</td><td style="padding:3px 6px; text-align:center;">+80 / +8</td><td style="padding:3px 6px; text-align:center;">400 / 40</td><td style="padding:3px 6px; text-align:center;">満タン</td></tr>';
   html += '<tr style="background:#fafaf3;"><td style="padding:3px 6px;">同 Lv4 (兵器廠)</td><td style="padding:3px 6px; text-align:center;">+100 / +10</td><td style="padding:3px 6px; text-align:center;">500 / 50</td><td style="padding:3px 6px; text-align:center;">満タン</td></tr>';
   html += '<tr><td style="padding:3px 6px;">弾薬工廠</td><td style="padding:3px 6px; text-align:center;">+150 / +20</td><td style="padding:3px 6px; text-align:center;">800 / 80</td><td style="padding:3px 6px; text-align:center;">満タン</td></tr>';
-  html += '<tr style="background:#fafaf3;"><td style="padding:3px 6px;">都市・大都市・商業都市・首都</td><td style="padding:3px 6px; text-align:center;">生産しない</td><td style="padding:3px 6px; text-align:center;">200 / 20</td><td style="padding:3px 6px; text-align:center;">上限の半分 (100 / 10)</td></tr>';
+  html += '<tr style="background:#fafaf3;"><td style="padding:3px 6px;">都市・中都市・大都市・首都</td><td style="padding:3px 6px; text-align:center;">生産しない</td><td style="padding:3px 6px; text-align:center;">200 / 20</td><td style="padding:3px 6px; text-align:center;">上限の半分 (100 / 10)</td></tr>';
   html += '</table>';
   html += '<ul style="margin:6px 0 0 16px; padding:0;">';
   html += '<li>敵拠点を<b>占領すると備蓄の半分を鹵獲</b>できる</li>';
@@ -15443,7 +15476,7 @@ function renderSupplyTab(){
   html += '<li><b>空中給油機</b>は空港系でしか積み降ろしできない。燃料が減ると最寄りの空港・空母へ帰投し、8割まで戻るとルートを再開する (墜落防止)</li>';
   html += '<li>自走できない補給ユニット (補給貨車) はルートを持てない — 機関車が運ぶ</li>';
   html += '<li><b>🔄 自動巡回</b>: 積み元・降ろし先を指定せず、<b>備蓄の乏しい拠点へ自動で運ぶ</b>。毎ターン行き先を選び直すので、拠点を取られても設定し直さなくてよい<br>'
-        + '　・降ろし先は<b>都市・大都市・商業都市・首都</b>（備蓄を自分では作れない拠点）だけ。工場などを降ろし先にすると、積んだ拠点にそのまま降ろす堂々巡りになるため<br>'
+        + '　・降ろし先は<b>都市・中都市・大都市・首都</b>（備蓄を自分では作れない拠点）だけ。工場などを降ろし先にすると、積んだ拠点にそのまま降ろす堂々巡りになるため<br>'
         + '　・積み元は<b>備蓄を作れる施設</b>（工場系・港系・空港系・弾薬工廠）で、在庫が多く近いもの<br>'
         + '　・在庫が2割以下になったら積みに戻る。前線に据え置きたいときは従来どおり<b>駐留地点</b>を指定する</li>';
   html += '<li>ルートを設定した補給ユニットを選ぶと、<b>実際に通るマス</b>が盤面に表示される (往路は濃く、復路は薄く)。道が無くて到達できない場合は<b>赤い破線</b>になる</li>';
@@ -15452,7 +15485,7 @@ function renderSupplyTab(){
   html += '<div style="margin-top:6px; background:#fff4d6; padding:6px 8px; border-radius:3px;"><b>生産した補給ユニットの積載庫は空です</b><br>満タンで出てくると、1台作るたびに物資が備蓄の外から湧いてしまうためです。拠点の隣で「📦 積む」か、補給ルートの積み元で積んでください。(空母は積み込みの操作を持たないので、従来どおり艦内在庫を持って出てきます)</div>';
   html += '<div style="margin-top:6px; background:#fff4d6; padding:6px 8px; border-radius:3px;"><b>物資は「作る拠点」から「作らない拠点」への一方通行</b><br>'
         + '<b>工場系・港系・空港系・弾薬工廠</b>は毎ターン備蓄を作る拠点で、<b>物資を出すのが仕事</b>です。範囲内にいる補給ユニットの<b>積載庫も自動で満たします</b>。<br>'
-        + '<b>都市・大都市・商業都市・首都</b>は備蓄を作れない拠点なので、<b>受け取る側</b>です。ここから積載庫が補充されることはありません (運んで降ろした物資を積み直すことになるため)。<br>'
+        + '<b>都市・中都市・大都市・首都</b>は備蓄を作れない拠点なので、<b>受け取る側</b>です。ここから積載庫が補充されることはありません (運んで降ろした物資を積み直すことになるため)。<br>'
         + '補給ルートの<b>自動の降ろし先には生産施設を選びません</b>。手動で降ろすことは制限していません。<br>'
         + '補給ユニット<b>自身</b>の燃料・弾薬 (走るための燃料) は、どの拠点からでも他のユニットと同じように範囲補給で入ります。</div>';
   html += '</div>';
@@ -16343,7 +16376,8 @@ function renderTodoTab(){
     ['施設破壊', 'Phase 4: 自走砲・ロケット砲、施設攻撃、ダウングレード、廃墟化'],
     ['工兵', 'Phase 5: 工兵ユニット、再建・施設修復・橋建設'],
     ['補給システム', '燃料・弾薬の管理、補給車・補給艦・給油艦・空中給油機による補給 (各補給庫の数値は「補給」タブ参照)'],
-    ['弾薬工廠', '大都市から派生する補給特化施設。3マス範囲に100%補給 (固定翼は対象外、ヘリは可)。備蓄 燃料800/弾薬80'],
+    ['弾薬工廠', '中都市から派生する備蓄特化施設。備蓄 燃料800/弾薬80 と大量だが、配る範囲は直上と隣接だけ'],
+    ['補給拠点', '生産しない補給専門の施設 (エディタから配置)。3マス範囲に100%補給。備蓄 燃料400/弾薬40'],
     ['昼夜・索敵範囲システム', 'FoW (戦場の霧)、夜間視界縮小、施設からの光源、伏兵奇襲'],
     ['天候システム', '雲・雨雲のオーバーレイ、風による雲流れ、隠匿効果、射程ペナルティ'],
     ['搭載機', '艦上戦闘機・(爆)・(雷) 3種、空軍基地以上で生産、空母から発艦運用'],
@@ -17696,7 +17730,7 @@ var ED_GROUP_NOTE = {
   factory:'Lv1 工場 / Lv2 装輪・戦車工場 / Lv3 工廠 / Lv4 兵器廠',
   airport:'Lv1 空港 / Lv2 空軍基地 / Lv3 空軍工廠 / Lv4 空軍兵器廠',
   port:'Lv1 港 / Lv2 軍港 / Lv3 海軍工廠 / Lv4 海軍兵器廠',
-  city:'Lv1 都市 / Lv2 大都市 / Lv3 商業都市・弾薬工廠（ユニットは作らない）'
+  city:'Lv1 都市 / Lv2 中都市 / Lv3 大都市・弾薬工廠（ユニットは作らない）'
 };
 var ED_LIMIT_COLS = ['factory', 'port', 'airport', 'city'];
 // そのユニットを作れる一番低い施設レベル (Lv表示に使う)
@@ -17849,7 +17883,7 @@ function edRenderPalette(){
   var pal = document.getElementById('ed-palette');
   pal.innerHTML = '';
   if(ed.tool === 'terrain' || ed.tool === 'bucket' || ed.tool === 'rect'){
-    var terKeys = ['PLAIN','FOREST','MOUNTAIN','ROAD','BRIDGE','BRIDGE_RUINED','RAIL','RAIL_DOUBLE','RAIL_BRIDGE','RAIL_RUINED','RAIL_BRIDGE_RUINED','SEA_RAIL','SEA_RAIL_RUINED','SEA_RAIL_DRAW','SEA_RAIL_DRAW_RUINED','CITY','BIG_CITY','COMMERCE_CITY','AMMO_DEPOT','CAPITAL','FACTORY','WHEEL_FACTORY','TRACK_FACTORY','WHEEL_ARSENAL','TRACK_ARSENAL','WHEEL_WORKS','TRACK_WORKS','AIRPORT','AIR_BASE','AIR_ARSENAL','AIR_WORKS','PORT','NAVY_BASE','NAVY_ARSENAL','NAVY_WORKS','SHOAL','REEF','RIVER','SEA','DEEP_SEA','RUINS_CITY','RUINS_FACTORY','RUINS_AIRPORT','RUINS_PORT'];
+    var terKeys = ['PLAIN','FOREST','MOUNTAIN','ROAD','BRIDGE','BRIDGE_RUINED','RAIL','RAIL_DOUBLE','RAIL_BRIDGE','RAIL_RUINED','RAIL_BRIDGE_RUINED','SEA_RAIL','SEA_RAIL_RUINED','SEA_RAIL_DRAW','SEA_RAIL_DRAW_RUINED','CITY','BIG_CITY','COMMERCE_CITY','AMMO_DEPOT','SUPPLY_DEPOT','CAPITAL','FACTORY','WHEEL_FACTORY','TRACK_FACTORY','WHEEL_ARSENAL','TRACK_ARSENAL','WHEEL_WORKS','TRACK_WORKS','AIRPORT','AIR_BASE','AIR_ARSENAL','AIR_WORKS','PORT','NAVY_BASE','NAVY_ARSENAL','NAVY_WORKS','SHOAL','REEF','RIVER','SEA','DEEP_SEA','RUINS_CITY','RUINS_FACTORY','RUINS_AIRPORT','RUINS_PORT'];
     var html = '<div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:4px;">';
     for(var i=0; i<terKeys.length; i++){
       var k = terKeys[i];
