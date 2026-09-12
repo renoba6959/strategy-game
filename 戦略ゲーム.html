@@ -346,12 +346,12 @@ var TER = {
   // 都市系 (3段階直列)
   CITY:    { name:'都市', def:2, color:'#B8B5B0', heal:2, capturable:true, income:1000, capHpMax:20, level:1, group:'city', upgradeTo:['BIG_CITY'], defenseSlots:1, lightSource:true, sight:2 },
   BIG_CITY: { name:'中都市', def:3, color:'#A8A5A0', heal:2, capturable:true, income:1500, capHpMax:30, level:2, group:'city', upgradeTo:['COMMERCE_CITY','AMMO_DEPOT'], defenseSlots:2, lightSource:true, sight:2 },
-  COMMERCE_CITY: { name:'大都市', def:2, color:'#C8B570', heal:2, capturable:true, income:2000, capHpMax:20, level:3, group:'city', defenseSlots:3, lightSource:true, sight:2 },
+  COMMERCE_CITY: { name:'大都市', def:3, color:'#C8B570', heal:2, capturable:true, income:2000, capHpMax:30, level:3, group:'city', defenseSlots:3, lightSource:true, sight:2 },
   // 弾薬工廠 (大都市のアップグレード先): 隣接マスの自軍ユニットの燃料・弾薬を毎ターン全回復
-  AMMO_DEPOT: { name:'弾薬工廠', def:3, color:'#8A6E4F', heal:2, capturable:true, income:1500, capHpMax:30, level:3, group:'city', ammoDepot:true, defenseSlots:3, lightSource:true, sight:2 },
+  AMMO_DEPOT: { name:'弾薬工廠', def:3, color:'#8A6E4F', heal:2, capturable:true, income:1000, capHpMax:30, level:3, group:'city', ammoDepot:true, defenseSlots:3, lightSource:true, sight:2 },
   // 補給拠点: 生産はできない補給専門の施設。周囲3マスに100%補給する「配る場所」。
   // 弾薬工廠 (大量に貯める積み元・範囲は直上と隣接だけ) と役割を分ける。
-  SUPPLY_DEPOT: { name:'補給拠点', def:2, color:'#7FA08A', heal:2, capturable:true, income:500, capHpMax:20, level:1, group:'depot', supplyDepot:true, defenseSlots:1, lightSource:true, sight:2 },
+  SUPPLY_DEPOT: { name:'補給拠点', def:1, color:'#7FA08A', heal:2, capturable:true, income:0, capHpMax:20, level:1, group:'depot', supplyDepot:true, defenseSlots:1, lightSource:true, sight:2 },
   // 工場系 (2段階分岐)
   FACTORY: { name:'工場', def:2, color:'#9F8E80', heal:3, capturable:true, healCat:'LAND', income:500, capHpMax:20, level:1, group:'factory', slots:1, produces:['INFANTRY','AT_INFANTRY','ENGINEER','SCOUT','APC','SUPPLY_TRUCK','LIGHT_TANK','LOCOMOTIVE','SUPPLY_CAR'], upgradeTo:['WHEEL_FACTORY','TRACK_FACTORY'], defenseSlots:1, lightSource:true, sight:2 },
   // 装輪工場 (レベル2): 装輪系 (機動戦闘車・水陸両用・空挺・MLRS) を追加
@@ -363,9 +363,9 @@ var TER = {
   // 戦車工廠 (レベル3): 戦車工場の上位、スロット3、生産品目同じ
   TRACK_ARSENAL: { name:'戦車工廠', def:4, color:'#5F5240', heal:3, capturable:true, healCat:'LAND', income:1000, capHpMax:40, level:3, group:'factory', slots:3, produces:['INFANTRY','AT_INFANTRY','ENGINEER','OBSERVER','ARTILLERY','HEAVY_ARTILLERY','MOUNTAIN_TROOP','PARATROOPER','SCOUT','APC','SUPPLY_TRUCK','LIGHT_TANK','MEDIUM_TANK','HEAVY_TANK','TANK_DESTROYER','HEAVY_TD','AA_TANK','AA_MISSILE','SPG','LOCOMOTIVE','SUPPLY_CAR','AA_TRAIN','ARMORED_TRAIN','RAIL_GUN'], upgradeTo:['TRACK_WORKS'], defenseSlots:3, lightSource:true, sight:2 },
   // 装輪兵器廠 (レベル4): 装輪工廠の上位、スロット4、製造ターン-1
-  WHEEL_WORKS: { name:'装輪兵器廠', def:5, color:'#5F5240', heal:3, capturable:true, healCat:'LAND', income:1500, capHpMax:50, level:4, group:'factory', slots:4, prodTurnBonus:-1, produces:['INFANTRY','AT_INFANTRY','ENGINEER','OBSERVER','ARTILLERY','HEAVY_ARTILLERY','MOUNTAIN_TROOP','PARATROOPER','SCOUT','APC','SUPPLY_TRUCK','LIGHT_TANK','MOBILE_COMBAT','AMPHIB_TANK','AIRBORNE_TANK','MLRS','LOCOMOTIVE','SUPPLY_CAR'], defenseSlots:4, lightSource:true, sight:2 },
+  WHEEL_WORKS: { name:'装輪兵器廠', def:4, color:'#5F5240', heal:3, capturable:true, healCat:'LAND', income:1500, capHpMax:50, level:4, group:'factory', slots:4, prodTurnBonus:-1, produces:['INFANTRY','AT_INFANTRY','ENGINEER','OBSERVER','ARTILLERY','HEAVY_ARTILLERY','MOUNTAIN_TROOP','PARATROOPER','SCOUT','APC','SUPPLY_TRUCK','LIGHT_TANK','MOBILE_COMBAT','AMPHIB_TANK','AIRBORNE_TANK','MLRS','LOCOMOTIVE','SUPPLY_CAR'], defenseSlots:4, lightSource:true, sight:2 },
   // 戦車兵器廠 (レベル4): 戦車工廠の上位、スロット4、製造ターン-1
-  TRACK_WORKS: { name:'戦車兵器廠', def:5, color:'#403628', heal:3, capturable:true, healCat:'LAND', income:1500, capHpMax:50, level:4, group:'factory', slots:4, prodTurnBonus:-1, produces:['INFANTRY','AT_INFANTRY','ENGINEER','OBSERVER','ARTILLERY','HEAVY_ARTILLERY','MOUNTAIN_TROOP','PARATROOPER','SCOUT','APC','SUPPLY_TRUCK','LIGHT_TANK','MEDIUM_TANK','HEAVY_TANK','TANK_DESTROYER','HEAVY_TD','AA_TANK','AA_MISSILE','SPG','LOCOMOTIVE','SUPPLY_CAR','AA_TRAIN','ARMORED_TRAIN','RAIL_GUN'], defenseSlots:4, lightSource:true, sight:2 },
+  TRACK_WORKS: { name:'戦車兵器廠', def:4, color:'#403628', heal:3, capturable:true, healCat:'LAND', income:1500, capHpMax:50, level:4, group:'factory', slots:4, prodTurnBonus:-1, produces:['INFANTRY','AT_INFANTRY','ENGINEER','OBSERVER','ARTILLERY','HEAVY_ARTILLERY','MOUNTAIN_TROOP','PARATROOPER','SCOUT','APC','SUPPLY_TRUCK','LIGHT_TANK','MEDIUM_TANK','HEAVY_TANK','TANK_DESTROYER','HEAVY_TD','AA_TANK','AA_MISSILE','SPG','LOCOMOTIVE','SUPPLY_CAR','AA_TRAIN','ARMORED_TRAIN','RAIL_GUN'], defenseSlots:4, lightSource:true, sight:2 },
   // 空港系 (3段階直列)
   AIRPORT: { name:'空港', def:2, color:'#C9C7C2', heal:3, capturable:true, healCat:'AIR', income:500, capHpMax:20, level:1, group:'airport', slots:1, produces:['TRANSPORT_HELI','LIGHT_HELI','ATK_HELI','SCOUT_PLANE'], upgradeTo:['AIR_BASE'], defenseSlots:1, lightSource:true, sight:2 },
   AIR_BASE: { name:'空軍基地', def:3, color:'#B5B3AE', heal:3, capturable:true, healCat:'AIR', income:750, capHpMax:30, level:2, group:'airport', slots:2, produces:['TRANSPORT_HELI','LIGHT_HELI','ATK_HELI','AT_HELI','SCOUT_PLANE','OBSERVER_PLANE','RECON_PLANE','TRANSPORT_PLANE','CARRIER_FIGHTER','CARRIER_BOMBER','CARRIER_TORPEDO'], upgradeTo:['AIR_ARSENAL'], defenseSlots:2, lightSource:true, sight:2 },
@@ -1735,27 +1735,55 @@ function _supplyTargetMatches(supplierType, targetUnit){
 
 // ===== 施設の備蓄 (補給システム 段階2) =====
 // 施設は燃料・弾薬の備蓄を持ち、ユニットへの補給で減っていく。
-// 工場系と弾薬工廠だけが毎ターン備蓄を生産する。都市系・首都は生産しない
+// 工場系・港系・空港系と弾薬工廠だけが毎ターン備蓄を生産する。都市系・首都・補給拠点は生産しない
 // (段階3で補給車が運んでくる)。
 // 単位: 燃料1 = ユニットの燃料1、弾薬1 = 弾1発 (補給ユニットの在庫と同じ単位)
+// 施設ごとの備蓄設定 (調整表)
+//   fuelGain / ammoGain = 毎ターン自分で作り出す量 (0 = 作らない。補給車で運ぶしかない)
+//   fuelMax  / ammoMax  = 貯めておける上限
+//   fuelInit / ammoInit = ゲーム開始時に入っている量
+var FACILITY_STOCK = {
+  // 都市系・首都: 物資は作らない。貯めておく倉庫として使う
+  CITY:          { fuelGain:0,   ammoGain:0,  fuelMax:100,  ammoMax:10,  fuelInit:50,  ammoInit:10 },
+  BIG_CITY:      { fuelGain:0,   ammoGain:0,  fuelMax:150,  ammoMax:15,  fuelInit:50,  ammoInit:10 },
+  COMMERCE_CITY: { fuelGain:0,   ammoGain:0,  fuelMax:200,  ammoMax:20,  fuelInit:50,  ammoInit:10 },
+  CAPITAL:       { fuelGain:0,   ammoGain:0,  fuelMax:500,  ammoMax:20,  fuelInit:100, ammoInit:10 },
+  // 弾薬工廠: 大量に貯める積み元。開始時は空で、稼働させて貯めていく
+  AMMO_DEPOT:    { fuelGain:100, ammoGain:10, fuelMax:1000, ammoMax:100, fuelInit:0,   ammoInit:0 },
+  // 補給拠点: 配るだけの中継点。物資は作らないので運んでこないと空のまま
+  SUPPLY_DEPOT:  { fuelGain:0,   ammoGain:0,  fuelMax:200,  ammoMax:20,  fuelInit:0,   ammoInit:0 },
+  // 工場系
+  FACTORY:       { fuelGain:20,  ammoGain:2,  fuelMax:200,  ammoMax:20,  fuelInit:100, ammoInit:10 },
+  WHEEL_FACTORY: { fuelGain:40,  ammoGain:4,  fuelMax:300,  ammoMax:30,  fuelInit:200, ammoInit:15 },
+  TRACK_FACTORY: { fuelGain:40,  ammoGain:4,  fuelMax:300,  ammoMax:30,  fuelInit:200, ammoInit:15 },
+  WHEEL_ARSENAL: { fuelGain:60,  ammoGain:6,  fuelMax:400,  ammoMax:40,  fuelInit:200, ammoInit:20 },
+  TRACK_ARSENAL: { fuelGain:60,  ammoGain:6,  fuelMax:400,  ammoMax:40,  fuelInit:250, ammoInit:20 },
+  WHEEL_WORKS:   { fuelGain:80,  ammoGain:8,  fuelMax:500,  ammoMax:50,  fuelInit:250, ammoInit:25 },
+  TRACK_WORKS:   { fuelGain:80,  ammoGain:8,  fuelMax:500,  ammoMax:50,  fuelInit:200, ammoInit:25 },
+  // 空港系
+  AIRPORT:       { fuelGain:20,  ammoGain:2,  fuelMax:200,  ammoMax:20,  fuelInit:100, ammoInit:10 },
+  AIR_BASE:      { fuelGain:40,  ammoGain:4,  fuelMax:300,  ammoMax:30,  fuelInit:150, ammoInit:15 },
+  AIR_ARSENAL:   { fuelGain:60,  ammoGain:6,  fuelMax:400,  ammoMax:40,  fuelInit:200, ammoInit:20 },
+  AIR_WORKS:     { fuelGain:80,  ammoGain:8,  fuelMax:500,  ammoMax:50,  fuelInit:250, ammoInit:25 },
+  // 港系
+  PORT:          { fuelGain:20,  ammoGain:2,  fuelMax:200,  ammoMax:20,  fuelInit:100, ammoInit:10 },
+  NAVY_BASE:     { fuelGain:40,  ammoGain:4,  fuelMax:300,  ammoMax:30,  fuelInit:150, ammoInit:15 },
+  NAVY_ARSENAL:  { fuelGain:60,  ammoGain:6,  fuelMax:400,  ammoMax:40,  fuelInit:200, ammoInit:20 },
+  NAVY_WORKS:    { fuelGain:80,  ammoGain:8,  fuelMax:500,  ammoMax:50,  fuelInit:250, ammoInit:25 }
+};
+
 function facilityStockSpec(terKey){
   var ter = TER[terKey];
   if(!ter || !ter.capturable || ter.isRuins) return null;
-  // fuelInit / ammoInit = ゲーム開始時の備蓄。生産できる施設は満タンで始まる。
-  // 弾薬工廠: 補給範囲3マス・補給率100%と消費が激しいぶん、生産量も上位
-  if(ter.ammoDepot) return { fuelGain: 150, ammoGain: 20, fuelMax: 800, ammoMax: 80, fuelInit: 800, ammoInit: 80 };
-  // 補給拠点: 配るだけの中継点。物資は自分では作らないので、配り切ったら
-  // 補給車・補給列車で運んでこないと空のまま。ユニットも生産しない。
-  if(ter.supplyDepot) return { fuelGain: 0, ammoGain: 0, fuelMax: 400, ammoMax: 40, fuelInit: 400, ammoInit: 40 };
-  // 生産施設 (工場系・港系・空港系): レベル1〜4に応じて増える。上限は生産量の5ターン分
+  var e = FACILITY_STOCK[terKey];
+  if(e) return e;
+  // 表に無い施設 (将来の追加分) の保険: 生産施設はレベルなり、それ以外は倉庫だけ
   if(ter.slots){
     var lv = ter.level || 1;
-    var fg = 20 + 20 * lv, ag = 2 + 2 * lv;
-    return { fuelGain: fg, ammoGain: ag, fuelMax: fg * 5, ammoMax: ag * 5, fuelInit: fg * 5, ammoInit: ag * 5 };
+    var fg = 20 * lv, ag = 2 * lv;
+    return { fuelGain: fg, ammoGain: ag, fuelMax: 100*(lv+1), ammoMax: 10*(lv+1), fuelInit: 50*(lv+1), ammoInit: 5*(lv+1) };
   }
-  // 都市系・首都: 自力では生産しない (貯めておくことはできる)
-  // 開始時は上限の半分だけ。使い切ると運んでもらうしかなく、補給の大切さが分かるようにする
-  if(ter.group === 'city' || ter.group === 'capital') return { fuelGain: 0, ammoGain: 0, fuelMax: 200, ammoMax: 20, fuelInit: 100, ammoInit: 10 };
+  if(ter.group === 'city' || ter.group === 'capital') return { fuelGain:0, ammoGain:0, fuelMax:200, ammoMax:20, fuelInit:100, ammoInit:10 };
   return null;
 }
 
@@ -2383,7 +2411,7 @@ function getSupplySource(unit){
   // 自軍が占領している施設・拠点から一定範囲内にいれば補給を受けられる。
   // 「施設マスの上に乗らないと補給できない」仕様だと1マスの取り合いになるため、
   // 範囲を広げている (段階1: 補給範囲の拡大)。
-  //   ・補給拠点 : 3マス以内 / 毎ターン100% (固定翼機は対象外。ヘリは可)
+  //   ・補給拠点 : 2マス以内 / 毎ターン100% (固定翼機は対象外。ヘリは可)
   //   ・弾薬工廠 : 直上と隣接のみ / 毎ターン100% (大量に貯める積み元)
   //   ・工場系   : 2マス以内 / 毎ターン50%  (地上・ヘリ)
   //   ・港系     : 1マス以内 / 毎ターン50%  (艦船。直上と隣接だけ = 接岸して受け取る)
@@ -2398,7 +2426,7 @@ function getSupplySource(unit){
   //     固定翼機は従来どおり空港系・空母のみ。
   var FAC_RANGE = 2;    // 工場系・都市系の補給範囲
   var PORT_RANGE = 1;   // 港系の補給範囲 (直上と隣接。接岸して受け取る)
-  var DEPOT_RANGE = 3;       // 補給拠点の補給範囲 (配る役)
+  var DEPOT_RANGE = 2;       // 補給拠点の補給範囲 (配る役)
   var AMMO_DEPOT_RANGE = 1;  // 弾薬工廠の補給範囲 (貯める役。直上と隣接だけ)
   var isHeli = isHelicopter(unit);
   // ヘリは着陸して受け取るので、補給要員 (装輪車両) が入れない地形にいると
@@ -2423,7 +2451,7 @@ function getSupplySource(unit){
     var fd = manhattan(fx, fy, unit.x, unit.y);
     var r = 0;
     if(fter.supplyDepot && (cat !== 'AIR' || isHeli) && fd <= DEPOT_RANGE){
-      // 補給拠点: 前線へ配るための施設。3マス100%
+      // 補給拠点: 前線へ配るための施設。2マス100%
       r = 1.0;
     } else if(fter.ammoDepot && (cat !== 'AIR' || isHeli) && fd <= AMMO_DEPOT_RANGE){
       // 弾薬工廠: 大量に貯める積み元。配る範囲は直上と隣接だけ
@@ -15146,10 +15174,10 @@ function renderFacilitiesTab(){
   html += '<h4 style="margin:6px 0; font-size:14px; color:#5a4a30;">📦 補給拠点</h4>';
   html += '<div style="font-size:11px; color:#666; margin-bottom:6px;">生産はできない補給専門の施設。マップエディタから配置します (アップグレードでは作れません)。</div>';
   html += '<div style="font-size:11px; color:#444; margin-bottom:14px; line-height:1.7; background:#eef4f0; border-left:3px solid #0F6E56; padding:8px 12px; border-radius:0 4px 4px 0;">';
-  html += '<b>周囲3マスに毎ターン100%補給</b> (地上・ヘリ。固定翼機は対象外)。備蓄は燃料400 / 弾薬40。<br>';
+  html += '<b>周囲2マスに毎ターン100%補給</b> (地上・ヘリ。固定翼機は対象外)。備蓄は燃料200 / 弾薬20で、<b>開始時は空</b>です。<br>';
   html += '<b>ユニットも物資も自分では作りません。</b>配り切ったら補給車・補給列車で運んでくるまで空のままです (都市と同じ扱い)。前線まで兵站をつなぐための中継点です。<br>';
-  html += '収入500G、防御+2、防御スロット1、待機修理+2。<br>';
-  html += '<b>弾薬工廠との違い</b>: 弾薬工廠は<b>大量に貯める積み元</b> (燃料800 / 弾薬80、毎ターン +150 / +20) ですが、配る範囲は<b>直上と隣接だけ</b>です。補給拠点は<b>前線へ配る場所</b>で、備蓄は中くらいのかわりに<b>3マス</b>届きます。';
+  html += '収入なし、防御+1、防御スロット1、待機修理+2。<br>';
+  html += '<b>弾薬工廠との違い</b>: 弾薬工廠は<b>大量に貯める積み元</b> (燃料1000 / 弾薬100、毎ターン +100 / +10) ですが、配る範囲は<b>直上と隣接だけ</b>です。補給拠点は<b>前線へ配る場所</b>で、自分では物資を作らないかわりに<b>2マス</b>届きます。';
   html += '</div>';
 
   // 都市系
@@ -15162,8 +15190,8 @@ function renderFacilitiesTab(){
     ['首都', '+4', 30, 2000, '占領で<b style="color:#A32D2D;">即敗北</b>。陣営の最重要拠点'],
     ['都市', '+2', 20, 1000, '基本拠点。アップグレード可: 中都市(+4000G, 4T)'],
     ['中都市', '+3', 30, 1500, 'アップグレード可: 大都市(収入特化) <b>or</b> 弾薬工廠(備蓄特化) (+4000G, 4T)'],
-    ['大都市', '+2', 20, 2000, '収入特化。これ以上アップグレード不可'],
-    ['弾薬工廠', '+3', 30, 1500, '<b>隣接陸海ユニット</b>に毎ターン燃料・弾薬を補給(航空には効果なし)。補給車・補給艦の弾薬庫を満タンに']
+    ['大都市', '+3', 30, 2000, '収入特化。これ以上アップグレード不可'],
+    ['弾薬工廠', '+3', 30, 1000, '<b>隣接陸海ユニット</b>に毎ターン燃料・弾薬を補給(航空には効果なし)。補給車・補給艦の弾薬庫を満タンに']
   ];
   for(var i=0; i<cityRows.length; i++){
     var r = cityRows[i];
@@ -15191,9 +15219,9 @@ function renderFacilitiesTab(){
   html += '<div style="margin-top:6px;"><b>戦車工廠</b> (Lv3) スロット<b>3</b> / 防御+4 / 収入1000 / 施設HP40 / 占領HP40</div>';
   html += '<div style="padding-left:14px; color:#444;">追加生産: <span style="color:#185FA5;">空挺降下兵・重戦車・重駆逐戦車・重砲兵</span></div>';
   html += '<div style="padding-left:14px; color:#888;">アップグレード: 戦車兵器廠 (8000G, 5T)</div>';
-  html += '<div style="margin-top:6px;"><b>装輪兵器廠</b> (Lv4) スロット<b>4</b> / 防御+5 / 収入1500 / 施設HP50 / 占領HP50</div>';
+  html += '<div style="margin-top:6px;"><b>装輪兵器廠</b> (Lv4) スロット<b>4</b> / 防御+4 / 収入1500 / 施設HP50 / 占領HP50</div>';
   html += '<div style="padding-left:14px; color:#444;">生産品目は装輪工廠と同じ + <span style="color:#A32D2D;">各種製造ターン-1 (最低1T)</span></div>';
-  html += '<div style="margin-top:6px;"><b>戦車兵器廠</b> (Lv4) スロット<b>4</b> / 防御+5 / 収入1500 / 施設HP50 / 占領HP50</div>';
+  html += '<div style="margin-top:6px;"><b>戦車兵器廠</b> (Lv4) スロット<b>4</b> / 防御+4 / 収入1500 / 施設HP50 / 占領HP50</div>';
   html += '<div style="padding-left:14px; color:#444;">生産品目は戦車工廠と同じ + <span style="color:#A32D2D;">各種製造ターン-1 (最低1T)</span></div>';
   html += '</div>';
 
