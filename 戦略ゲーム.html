@@ -228,6 +228,15 @@ button:hover { background: #f0f0f0; }
           </div>
         </div>
 
+        <!-- ステージの制限 -->
+        <div style="background:#fff; border-radius:6px; padding:10px 12px; margin-bottom:10px; border:1px solid #ddd;">
+          <div style="display:flex; align-items:center; justify-content:space-between; cursor:pointer;" id="ed-limit-head">
+            <div style="font-size:11px; color:#666;">⚖ このステージの制限</div>
+            <span id="ed-limit-toggle" style="font-size:11px; color:#888;">▼</span>
+          </div>
+          <div id="ed-limit-body" style="margin-top:8px;"></div>
+        </div>
+
         <!-- インポート/エクスポート -->
         <div style="background:#fff; border-radius:6px; padding:10px 12px; margin-bottom:10px; border:1px solid #ddd;">
           <div style="font-size:11px; color:#666; margin-bottom:6px;">JSON共有</div>
@@ -2822,6 +2831,55 @@ function unitAtVisible(x, y, viewerOwner){
   return u;
 }
 function inBounds(x,y){ return x>=0 && x<W && y>=0 && y<H; }
+// ===== ステージごとの制限 =====
+// ステージ JSON の limits で指定する。未指定なら制限なし。
+//   limits: { upgradeMax: { factory:4, airport:4, port:4, city:4 },
+//             banned: { RAIL_GUN:true, ... } }
+// 施設の上限レベルを下げると、そのレベルでしか作れないユニットは自然に作れなくなる。
+var stageLimits = null;
+var UPGRADE_GROUPS = ['factory', 'airport', 'port', 'city'];
+function stageUpgradeCap(group){
+  if(!stageLimits || !stageLimits.upgradeMax) return 4;
+  var v = stageLimits.upgradeMax[group];
+  return (typeof v === 'number') ? v : 4;
+}
+// その施設 (アップグレード先) がステージの上限に収まっているか
+function canUpgradeToTer(terKey){
+  var t = TER[terKey];
+  if(!t) return false;
+  if(!t.group) return true;
+  if(UPGRADE_GROUPS.indexOf(t.group) < 0) return true;
+  return (t.level || 1) <= stageUpgradeCap(t.group);
+}
+// その施設にアップグレード先が1つでも残っているか
+function hasAllowedUpgrade(ter){
+  if(!ter || !ter.upgradeTo) return false;
+  for(var i=0; i<ter.upgradeTo.length; i++){ if(canUpgradeToTer(ter.upgradeTo[i])) return true; }
+  return false;
+}
+// そのユニットがこのステージで生産できるか
+function isUnitProducible(typeKey){
+  if(!stageLimits || !stageLimits.banned) return true;
+  return !stageLimits.banned[typeKey];
+}
+// 上限レベルの設定だけで「どのユニットが作れるか」を求める (エディタの連動表示に使う)
+function producibleUnderCaps(upgradeMax){
+  var set = {};
+  for(var k in TER){
+    var t = TER[k];
+    if(!t.slots || !t.produces) continue;
+    var g = t.group;
+    var cap = 4;
+    if(g && UPGRADE_GROUPS.indexOf(g) >= 0){
+      var v = upgradeMax ? upgradeMax[g] : undefined;
+      cap = (typeof v === 'number') ? v : 4;
+    }
+    if((t.level || 1) > cap) continue;
+    for(var i=0; i<t.produces.length; i++) set[t.produces[i]] = true;
+  }
+  return set;
+}
+
 function moveCost(type, terId){
   var t = TYPE[type];
   // 複線は線路とまったく同じコスト (通行の扱いは変えず、すれ違いだけを許す)
@@ -2853,6 +2911,7 @@ function setClear(set){ for(var k in set){ delete set[k]; } }
 function loadStage(key){
   var s = STAGES[key];
   currentStage = key; W = s.W; H = s.H;
+  stageLimits = s.limits || null;   // ステージごとの制限 (施設の上限レベル・生産禁止ユニット)
   railBase = {}; railHp = {};   // 線路の敷設前地形と耐久の記録をリセット
   M = [];
   for(var y=0; y<H; y++){
@@ -3661,7 +3720,7 @@ function facilityPanelButtons(ter, cap, x, y){
   if(ter.slots){
     btns.push('<button onclick="openProductionMenu('+x+','+y+',\'produce\')" style="'+style+'background:#0F6E56;">⚙ 生産・収容</button>');
   }
-  if(ter.upgradeTo && ter.upgradeTo.length > 0 && !cap.upgrading){
+  if(hasAllowedUpgrade(ter) && !cap.upgrading){
     btns.push('<button onclick="openProductionMenu('+x+','+y+',\'upgrade\')" style="'+style+'background:#BA7517;">⬆ アップグレード</button>');
   }
   if(cap.upgrading){
@@ -6763,7 +6822,7 @@ function aiProduceAndTakeOut(aiFaction, phase){
     for(var pi=0; pi<ter.produces.length; pi++){
       var key = ter.produces[pi];
       var t = TYPE[key];
-      if(t && !t.planned && _spendable() >= t.price) affordable.push(key);
+      if(t && !t.planned && isUnitProducible(key) && _spendable() >= t.price) affordable.push(key);
     }
     // 全体ユニット数 60 を超える場合は生産しない
     if(totalUnitOverflowed){
@@ -7201,6 +7260,7 @@ function aiUpgrade(aiFaction){
     var fx = parseInt(xy[0]), fy = parseInt(xy[1]);
     var ter = TER[M[fy][fx]];
     if(!ter || !ter.upgradeTo || ter.upgradeTo.length === 0) continue;
+    if(!hasAllowedUpgrade(ter)) continue;   // ステージの上限レベルに達している
     var cost = UPGRADE_COST[M[fy][fx]] || 0;
     if(cost <= 0) continue;
     var g = ter.group || '_other';
@@ -7235,7 +7295,7 @@ function aiUpgrade(aiFaction){
     }
     // 戦況に応じてアップグレード先を選ぶ
     var target = aiPickUpgradeTarget(c.ter, aiFaction);
-    if(!target) continue;
+    if(!target || !canUpgradeToTer(target)) continue;
     // 開始
     var turns = UPGRADE_TURNS[M[c.y][c.x]] || 3;
     c.capObj.upgrading = { target: target, remaining: turns, cost: c.cost };
@@ -7260,6 +7320,13 @@ function TYPE_NAME_OR_TER(key){
 // それ以外 (都市・空港・港) は upgradeTo が単一なのでそれをそのまま選ぶ
 function aiPickUpgradeTarget(ter, aiFaction){
   if(!ter.upgradeTo || ter.upgradeTo.length === 0) return null;
+  // ステージの上限レベルに収まる行き先だけを候補にする
+  var allowed = [];
+  for(var ai2=0; ai2<ter.upgradeTo.length; ai2++){
+    if(canUpgradeToTer(ter.upgradeTo[ai2])) allowed.push(ter.upgradeTo[ai2]);
+  }
+  if(allowed.length === 0) return null;
+  ter = { upgradeTo: allowed };
   if(ter.upgradeTo.length === 1) return ter.upgradeTo[0];
   // 工場の分岐: 自軍の陸ユニット構成を見る
   var seaCount = 0, landCount = 0;
@@ -15013,6 +15080,12 @@ function renderFacilitiesTab(){
   html += '⛽ 燃料・弾薬・修理の詳細は「補給」タブを参照してください';
   html += '</div>';
 
+  html += '<div style="font-size:11px; color:#444; margin-bottom:14px; line-height:1.6; background:#f6f2e8; border-left:3px solid #7A5A10; padding:8px 12px; border-radius:0 4px 4px 0;">';
+  html += '<b style="color:#7A5A10;">⚖ ステージごとの制限</b><br>';
+  html += 'マップエディタの「⚖ このステージの制限」で、<b>施設ごとの上限レベル</b>と<b>生産できるユニット</b>をステージ単位で決められます。<br>';
+  html += '上限レベルを下げると、そのレベルでしか作れないユニットは<b>自動的に作れなくなります</b> (例: 空港系をLv1までにすると固定翼機が全部作れない)。プレイヤーもAIも同じ制限を受けます。';
+  html += '</div>';
+
   // 防御スロットの概念説明
   html += '<div style="font-size:11px; color:#444; margin-bottom:14px; line-height:1.6; background:#f0f5fa; border-left:3px solid #185FA5; padding:8px 12px; border-radius:0 4px 4px 0;">';
   html += '<b style="color:#185FA5;">🛡 防御スロット</b> (各施設に固有)<br>';
@@ -16475,6 +16548,7 @@ function openProductionMenu(x, y, focus){
         var t = TYPE[key];
         if(!t) continue;
         if(t.planned) continue; // 未実装ユニットは生産不可
+        if(!isUnitProducible(key)) continue; // このステージでは生産禁止
         var canAfford = funds.P >= t.price;
         var disabled = !canAfford || capObj.upgrading; // アップグレード中は生産不可
         // 兵器廠などの prodTurnBonus を反映した実際の製造ターン数
@@ -16511,7 +16585,7 @@ function openProductionMenu(x, y, focus){
     html += '</div>';
   }
   // アップグレード可能な選択肢
-  else if(ter.upgradeTo && ter.upgradeTo.length > 0){
+  else if(hasAllowedUpgrade(ter)){
     html += '<div id="prod-upgrade-anchor" style="font-size:12px; font-weight:600; margin:14px 0 4px;">アップグレード</div>';
     var upCost = UPGRADE_COST[M[prodFacilityY][prodFacilityX]] || 0;
     var upTurns = UPGRADE_TURNS[M[prodFacilityY][prodFacilityX]] || 3;
@@ -16520,6 +16594,7 @@ function openProductionMenu(x, y, focus){
       var upKey = ter.upgradeTo[i];
       var upTer = TER[upKey];
       if(!upTer) continue;
+      if(!canUpgradeToTer(upKey)) continue; // このステージの上限レベルを超える
       var canAfford = funds.P >= upCost;
       var disabled = !canAfford;
       var buttonStyle = 'display:flex; align-items:center; gap:6px; padding:8px 10px; border:1px solid #ccc; border-radius:4px; background:#fff; cursor:pointer; font-size:12px; margin-bottom:4px; width:100%; text-align:left;';
@@ -17100,6 +17175,8 @@ function edInit(){
   ed.dayNightCycle = false;
   ed.dayLength = 2;
   ed.startPhase = 'day';
+  ed.limits = { upgradeMax: { factory:4, airport:4, port:4, city:4 }, banned: {} };
+  ed.limitOpen = false;
   ed.weatherDrift = 'random';
   ed.windDirection = 'east';
   ed.windStrength = 1;
@@ -17108,6 +17185,7 @@ function edInit(){
   document.getElementById('ed-desc').value = ed.desc;
   edUpdateStageSettings();
   edRenderTeams();
+  edRenderLimits();
   edHistoryReset();
   edRenderBoard();
   edRenderPalette();
@@ -17556,6 +17634,140 @@ function edApplyRect(x1, y1, x2, y2){
   edRenderBoard();
 }
 
+// ===== ステージの制限パネル =====
+// 施設ごとの上限レベル (スライダー) と、生産できるユニット (チェックボックス)。
+// 上限レベルを下げると、そのレベルでしか作れないユニットは自動で灰色になる。
+var ED_UNIT_GROUPS = [
+  ['陸 / 歩兵',        ['INFANTRY','AT_INFANTRY','ENGINEER','MOUNTAIN_TROOP','PARATROOPER']],
+  ['陸 / 重歩兵',      ['OBSERVER','ARTILLERY','HEAVY_ARTILLERY']],
+  ['陸 / 装輪車両',    ['SCOUT','AA_MISSILE','APC','SUPPLY_TRUCK','MOBILE_COMBAT','AIRBORNE_TANK','AMPHIB_TANK']],
+  ['陸 / 軽キャタピラ', ['LIGHT_TANK','TANK_DESTROYER','AA_TANK','SPG']],
+  ['陸 / 重キャタピラ', ['MEDIUM_TANK','HEAVY_TANK','HEAVY_TD','MLRS']],
+  ['陸 / 列車',        ['LOCOMOTIVE','ARMORED_TRAIN','RAIL_GUN','SUPPLY_CAR','AA_TRAIN']],
+  ['海 / 戦闘艦',      ['CHASER','FRIGATE','DESTROYER','AA_DESTROYER','LIGHT_CRUISER','HEAVY_CRUISER','BATTLE_CRUISER','BATTLESHIP']],
+  ['海 / 潜水艦',      ['SUBMARINE','ATTACK_SUBMARINE']],
+  ['海 / 輸送・補給艦', ['TRANSPORT_SHIP','OILER','AMMO_SHIP']],
+  ['海 / 空母',        ['LIGHT_CARRIER','CARRIER','ARMORED_CARRIER']],
+  ['空 / 固定翼戦闘機', ['FIGHTER']],
+  ['空 / 攻撃機・爆撃機',['ATTACKER','BOMBER','STEALTH_BOMBER','AC_130']],
+  ['空 / 搭載機',      ['CARRIER_FIGHTER','CARRIER_BOMBER','CARRIER_TORPEDO']],
+  ['空 / ヘリ',        ['TRANSPORT_HELI','LIGHT_HELI','ATK_HELI','AT_HELI']],
+  ['空 / 輸送・支援',  ['TRANSPORT_PLANE','AERIAL_TANKER','RECON_PLANE','SCOUT_PLANE','OBSERVER_PLANE','ASW_PLANE']]
+];
+var ED_GROUP_LABEL = { factory:'工場系', airport:'空港系', port:'港系', city:'都市系' };
+var ED_GROUP_NOTE = {
+  factory:'Lv1 工場 / Lv2 装輪・戦車工場 / Lv3 工廠 / Lv4 兵器廠',
+  airport:'Lv1 空港 / Lv2 空軍基地 / Lv3 空軍工廠 / Lv4 空軍兵器廠',
+  port:'Lv1 港 / Lv2 軍港 / Lv3 海軍工廠 / Lv4 海軍兵器廠',
+  city:'Lv1 都市 / Lv2 大都市 / Lv3 商業都市・弾薬工廠 / Lv4 (なし)'
+};
+function edRenderLimits(){
+  var body = document.getElementById('ed-limit-body');
+  if(!body) return;
+  var tog = document.getElementById('ed-limit-toggle');
+  if(tog) tog.textContent = ed.limitOpen ? '▲' : '▼';
+  if(!ed.limitOpen){ body.innerHTML = ''; return; }
+  if(!ed.limits) ed.limits = { upgradeMax:{factory:4,airport:4,port:4,city:4}, banned:{} };
+  if(!ed.limits.upgradeMax) ed.limits.upgradeMax = {factory:4,airport:4,port:4,city:4};
+  if(!ed.limits.banned) ed.limits.banned = {};
+  var h = '<div style="font-size:10px; color:#888; margin-bottom:6px;">施設の上限レベルを下げると、そのレベルでしか作れないユニットは自動的に作れなくなります。</div>';
+  for(var gi=0; gi<UPGRADE_GROUPS.length; gi++){
+    var g = UPGRADE_GROUPS[gi];
+    var v = ed.limits.upgradeMax[g];
+    if(typeof v !== 'number') v = 4;
+    h += '<div style="margin-bottom:7px;">'
+       + '<div style="display:flex; justify-content:space-between; font-size:11px;"><span>' + ED_GROUP_LABEL[g] + '</span><b>Lv' + v + 'まで</b></div>'
+       + '<input type="range" min="1" max="4" step="1" value="' + v + '" data-uglim="' + g + '" style="width:100%;">'
+       + '<div style="font-size:9px; color:#aaa;">' + ED_GROUP_NOTE[g] + '</div>'
+       + '</div>';
+  }
+  // 生産できるユニット
+  var reach = producibleUnderCaps(ed.limits.upgradeMax);
+  h += '<div style="border-top:1px solid #eee; margin-top:8px; padding-top:8px;">';
+  h += '<div style="display:flex; gap:4px; margin-bottom:6px;">'
+     + '<button data-unitall="on" style="font-size:10px; flex:1;">全部許可</button>'
+     + '<button data-unitall="off" style="font-size:10px; flex:1;">全部禁止</button>'
+     + '<button data-unitall="land" style="font-size:10px; flex:1;">陸のみ</button>'
+     + '<button data-unitall="noair" style="font-size:10px; flex:1;">航空なし</button>'
+     + '</div>';
+  for(var i=0; i<ED_UNIT_GROUPS.length; i++){
+    var gname = ED_UNIT_GROUPS[i][0], keys = ED_UNIT_GROUPS[i][1];
+    var rows = '', shown = 0, onCount = 0;
+    for(var k=0; k<keys.length; k++){
+      var key = keys[k];
+      var t = TYPE[key];
+      if(!t) continue;
+      shown++;
+      var reachable = !!reach[key];
+      var on = reachable && !ed.limits.banned[key];
+      if(on) onCount++;
+      rows += '<label style="display:flex; align-items:center; gap:4px; font-size:10.5px; padding:1px 0;'
+            + (reachable ? '' : 'opacity:0.4;') + '" title="' + (reachable ? '' : 'この上限レベルでは作れません') + '">'
+            + '<input type="checkbox" data-unit="' + key + '"' + (on ? ' checked' : '') + (reachable ? '' : ' disabled') + '>'
+            + '<span>' + t.name + (reachable ? '' : ' (上限外)') + '</span></label>';
+    }
+    if(shown === 0) continue;
+    h += '<div style="margin-bottom:5px;">'
+       + '<div style="display:flex; justify-content:space-between; font-size:10px; color:#7a6a4a; font-weight:600;">'
+       + '<span>' + gname + '</span>'
+       + '<span><button data-groupall="' + i + '" style="font-size:9px; padding:0 4px;">まとめて切替</button> ' + onCount + '/' + shown + '</span>'
+       + '</div>' + rows + '</div>';
+  }
+  h += '</div>';
+  body.innerHTML = h;
+  // スライダー
+  var sliders = body.querySelectorAll('[data-uglim]');
+  for(var si=0; si<sliders.length; si++){
+    sliders[si].oninput = function(){
+      ed.limits.upgradeMax[this.getAttribute('data-uglim')] = parseInt(this.value, 10);
+      edRenderLimits();
+    };
+  }
+  // チェックボックス
+  var boxes = body.querySelectorAll('[data-unit]');
+  for(var bi=0; bi<boxes.length; bi++){
+    boxes[bi].onchange = function(){
+      var key = this.getAttribute('data-unit');
+      if(this.checked) delete ed.limits.banned[key];
+      else ed.limits.banned[key] = true;
+      edRenderLimits();
+    };
+  }
+  // まとめ操作
+  function setGroup(keys, on){
+    for(var i=0; i<keys.length; i++){
+      if(on) delete ed.limits.banned[keys[i]];
+      else ed.limits.banned[keys[i]] = true;
+    }
+  }
+  var groupBtns = body.querySelectorAll('[data-groupall]');
+  for(var gb=0; gb<groupBtns.length; gb++){
+    groupBtns[gb].onclick = function(){
+      var g = ED_UNIT_GROUPS[parseInt(this.getAttribute('data-groupall'), 10)];
+      var anyOn = false;
+      for(var i=0; i<g[1].length; i++){ if(!ed.limits.banned[g[1][i]]) anyOn = true; }
+      setGroup(g[1], !anyOn);
+      edRenderLimits();
+    };
+  }
+  var allBtns = body.querySelectorAll('[data-unitall]');
+  for(var ab=0; ab<allBtns.length; ab++){
+    allBtns[ab].onclick = function(){
+      var mode = this.getAttribute('data-unitall');
+      ed.limits.banned = {};
+      for(var i=0; i<ED_UNIT_GROUPS.length; i++){
+        var g = ED_UNIT_GROUPS[i];
+        var isAir = g[0].indexOf('空 /') === 0;
+        var isLand = g[0].indexOf('陸 /') === 0;
+        if(mode === 'off') setGroup(g[1], false);
+        else if(mode === 'land' && !isLand) setGroup(g[1], false);
+        else if(mode === 'noair' && isAir) setGroup(g[1], false);
+      }
+      edRenderLimits();
+    };
+  }
+}
+
 function edRenderPalette(){
   var pal = document.getElementById('ed-palette');
   pal.innerHTML = '';
@@ -17773,6 +17985,25 @@ function edSerialize(){
   for(var k in ed.caps){
     if(ed.caps[k] !== 'N') capOwners[k] = ed.caps[k];
   }
+  // ステージの制限 (既定のままなら書き出さない)
+  var limOut = null;
+  if(ed.limits){
+    var um = {}, hasUm = false;
+    for(var gi=0; gi<UPGRADE_GROUPS.length; gi++){
+      var g = UPGRADE_GROUPS[gi];
+      var v = ed.limits.upgradeMax ? ed.limits.upgradeMax[g] : 4;
+      if(typeof v !== 'number') v = 4;
+      um[g] = v;
+      if(v < 4) hasUm = true;
+    }
+    var bn = {}, hasBn = false;
+    for(var bk in (ed.limits.banned || {})){ if(ed.limits.banned[bk]){ bn[bk] = true; hasBn = true; } }
+    if(hasUm || hasBn){
+      limOut = {};
+      if(hasUm) limOut.upgradeMax = um;
+      if(hasBn) limOut.banned = bn;
+    }
+  }
   // 陣営別ユニット配列を作成
   var P = ed.units.filter(function(u){ return u.owner==='P'; }).map(function(u){ return [u.type, u.x, u.y]; });
   var E = ed.units.filter(function(u){ return u.owner==='E'; }).map(function(u){ return [u.type, u.x, u.y]; });
@@ -17845,6 +18076,7 @@ function edSerialize(){
     // teamsが空ならフィールドごと省略
     if(Object.keys(data.teams).length === 0) delete data.teams;
   }
+  if(limOut) data.limits = limOut;   // ステージの制限
   return data;
 }
 
@@ -17865,6 +18097,17 @@ function edDeserialize(data){
   }
   ed.caps = {};
   for(var k in (data.capOwners||{})) ed.caps[k] = data.capOwners[k];
+  // ステージの制限
+  ed.limits = { upgradeMax:{factory:4,airport:4,port:4,city:4}, banned:{} };
+  if(data.limits){
+    if(data.limits.upgradeMax){
+      for(var lg=0; lg<UPGRADE_GROUPS.length; lg++){
+        var gk = UPGRADE_GROUPS[lg];
+        if(typeof data.limits.upgradeMax[gk] === 'number') ed.limits.upgradeMax[gk] = data.limits.upgradeMax[gk];
+      }
+    }
+    if(data.limits.banned){ for(var bk2 in data.limits.banned){ if(data.limits.banned[bk2]) ed.limits.banned[bk2] = true; } }
+  }
   // 天候の復元 (data.weather は ['c..r..', '......'] のような文字列配列)
   ed.weather = [];
   for(var y=0; y<ed.H; y++){
@@ -17904,6 +18147,7 @@ function edDeserialize(data){
   }
   edUpdateStageSettings();
   edRenderTeams();
+  edRenderLimits();
   edRenderBoard();
 }
 
@@ -17994,7 +18238,7 @@ function edImport(){
 function openEditor(){
   document.getElementById('editor-overlay').style.display = 'block';
   if(ed.cells.length === 0) edInit();
-  else { edRenderBoard(); edRenderPalette(); edRenderSavedList(); edRenderTeams(); }
+  else { edRenderBoard(); edRenderPalette(); edRenderSavedList(); edRenderTeams(); edRenderLimits(); }
 }
 function closeEditor(){
   document.getElementById('editor-overlay').style.display = 'none';
@@ -18105,6 +18349,10 @@ document.getElementById('editor-close').onclick = closeEditor;
 document.getElementById('ed-resize').onclick = edResize;
 document.getElementById('ed-save').onclick = edSave;
 document.getElementById('ed-test').onclick = edTestPlay;
+(function(){
+  var head = document.getElementById('ed-limit-head');
+  if(head) head.onclick = function(){ ed.limitOpen = !ed.limitOpen; edRenderLimits(); };
+})();
 document.getElementById('ed-clear').onclick = function(){
   if(!confirm('マップをクリアしますか?')) return;
   edInit();
