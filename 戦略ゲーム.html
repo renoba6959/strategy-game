@@ -478,6 +478,18 @@ var COST = {
             PORT:1, NAVY_BASE:1, NAVY_ARSENAL:1, NAVY_WORKS:1 },
   AIR:    { PLAIN:1, FOREST:1, MOUNTAIN:1, ROAD:1, RAIL:1, RAIL_BRIDGE:1, RAIL_RUINED:1, RAIL_BRIDGE_RUINED:1, SEA_RAIL:1, SEA_RAIL_RUINED:1, SEA_RAIL_DRAW:1, SEA_RAIL_DRAW_RUINED:1, BRIDGE:1, BRIDGE_RUINED:1, CITY:1, FACTORY:1, AIRPORT:1, PORT:1, CAPITAL:1, BIG_CITY:1, COMMERCE_CITY:1, AMMO_DEPOT:1, WHEEL_FACTORY:1, WHEEL_ARSENAL:1, WHEEL_WORKS:1, TRACK_FACTORY:1, TRACK_ARSENAL:1, TRACK_WORKS:1, AIR_BASE:1, AIR_ARSENAL:1, AIR_WORKS:1, NAVY_BASE:1, NAVY_ARSENAL:1, NAVY_WORKS:1, RUINS_CITY:1, RUINS_FACTORY:1, RUINS_AIRPORT:1, RUINS_PORT:1, SHOAL:1, REEF:1, RIVER:1, SEA:1, DEEP_SEA:1 }
 };
+// 通行コスト表に載っていない地形を、同じ扱いの地形からコピーして埋める。
+// moveCost() は都度 変換しているが、COST.WHEEL[...] のように表を直接引く場所
+// (ヘリの補給要員判定など) があるので、表そのものにも入れておく。
+//   補給拠点系 → 都市と同じ / 複線 → 線路と同じ
+(function(){
+  var alias = { SUPPLY_DEPOT:'CITY', SUPPLY_BASE:'CITY', LOGISTICS_DEPOT:'CITY', LOGISTICS_BASE:'CITY', RAIL_DOUBLE:'RAIL' };
+  for(var cls in COST){
+    for(var k in alias){
+      if(COST[cls][k] === undefined && COST[cls][alias[k]] !== undefined) COST[cls][k] = COST[cls][alias[k]];
+    }
+  }
+})();
 
 var ICONS = {
   INFANTRY: '<svg viewBox="0 0 32 32" fill="currentColor"><circle cx="7" cy="7" r="3.5"/><path d="M2,12 L12,12 L11,22 L9,22 L9,30 L5,30 L5,22 L3,22 Z"/><rect x="13" y="14" width="17" height="1.5" fill="#3a3a3a" stroke="currentColor" stroke-width="0.3"/><path d="M13,15.5 L20,15.5 L20,18 L14,18 Z" fill="#7a4a20" stroke="currentColor" stroke-width="0.3"/><rect x="20" y="15.5" width="3" height="3.5" fill="#3a3a3a" stroke="currentColor" stroke-width="0.3"/><rect x="22" y="12.5" width="1" height="1.5" fill="#3a3a3a"/><rect x="29" y="14" width="1.5" height="1.5" fill="#222"/></svg>',
@@ -1111,7 +1123,7 @@ var FACTION_COLORS = {
   'P': '#185FA5', // 青 (プレイヤー)
   'E': '#A32D2D', // 赤 (敵1)
   'C': '#0F6E56', // 緑 (敵2)
-  'D': '#BA7517', // 黄 (敵3)
+  'D': '#6B3FA0', // 紫 (敵3)。以前の黄土色は陣営2の赤と見分けにくかった
   'N': '#888888'  // 中立
 };
 // 陣営の表示名
@@ -2083,23 +2095,32 @@ function supplyStockFull(u){
 //   積み降ろしは隣接でもできるので、隣に着ければ用は足りる。
 //   ただし隣が全部塞がっていれば拠点マスの上に入る (立ち往生させない)。
 function supplyRouteMove(u, tx, ty, stopAdjacent){
-  var dist = bfsPathDistances(tx, ty, u);
+  // 自動巡回なら、見えている敵の近くを避けて経路を引く
+  var avoid = autoRouteAvoidTiles(u);
+  var dist = bfsPathDistances(tx, ty, u, avoid);
   function eff(d){
     if(d === undefined) return Infinity;
     return (stopAdjacent && d === 0) ? 1.5 : d; // 拠点マス自体は隣接マスより一段劣る扱い
   }
-  var curD = eff(dist[u.x+','+u.y]);
+  var curKey = u.x+','+u.y;
+  var curD = eff(dist[curKey]);
   var movable = computeMovable(u);
   var best = null, bestD = curD;
+  // いま敵のそばにいるなら、目的地に近づけなくても安全なマスへ下がる
+  var inDanger = !!(avoid && avoid[curKey]);
+  var retreat = null, retreatD = Infinity;
   for(var k in movable){
     var xy = k.split(',');
     var mx = parseInt(xy[0]), my = parseInt(xy[1]);
     if(mx === u.x && my === u.y) continue;
     if(unitAt(mx, my)) continue;
+    if(avoid && avoid[k]) continue;               // 敵の近くには入らない
     var d = eff(dist[k]);
-    if(d === Infinity) continue;
     if(d < bestD){ bestD = d; best = { x: mx, y: my }; }
+    // 下がる先: 目的地に近い安全なマス。どこも届かなければ安全なマスならどこでも
+    if(inDanger && (retreat === null || d < retreatD)){ retreatD = d; retreat = { x: mx, y: my }; }
   }
+  if(!best && inDanger) best = retreat;
   if(!best) return false;
   var fromX = u.x, fromY = u.y;
   u.preMoveX = fromX; u.preMoveY = fromY;
@@ -2158,6 +2179,31 @@ function facilityReachDist(reach, f){
 }
 
 // ===== 自動巡回 =====
+// 自動巡回の補給ユニットは、見えている敵からこの距離以内のマスには入らない。
+// 最前線まで配りに行って撃破されるのを防ぐ (前線へ据え置きたいときは駐留地点を使う)
+var AUTO_ROUTE_ENEMY_RADIUS = 3;
+// owner から見えている敵ユニットの周囲 radius マスの集合 ('x,y' → true)
+function enemyProximityTiles(owner, radius){
+  var tiles = {};
+  for(var i=0; i<units.length; i++){
+    var ev = units[i];
+    if(ev.hp <= 0 || ev.owner === 'N' || isAlly(ev.owner, owner)) continue;
+    if(!isUnitVisibleTo(ev, owner)) continue;
+    for(var dy=-radius; dy<=radius; dy++){
+      for(var dx=-radius; dx<=radius; dx++){
+        if(Math.abs(dx) + Math.abs(dy) > radius) continue;
+        var tx = ev.x + dx, ty = ev.y + dy;
+        if(inBounds(tx, ty)) tiles[tx+','+ty] = true;
+      }
+    }
+  }
+  return tiles;
+}
+// 自動巡回中のユニットが避けるマス (自動巡回でなければ null = 避けない)
+function autoRouteAvoidTiles(u){
+  if(!u.route || !u.route.auto) return null;
+  return enemyProximityTiles(u.owner, AUTO_ROUTE_ENEMY_RADIUS);
+}
 // 積み元・降ろし先を固定せず、毎ターン選び直す。
 //   降ろし先 = 備蓄を「自分では作れない」自軍拠点 (都市系・首都) のうち
 //              充足率が最も低いもの。工場などを降ろし先にすると、積んだ拠点に
@@ -2167,7 +2213,9 @@ function facilityReachDist(reach, f){
 function autoRoutePick(u, want){
   var kinds = supplyKindsOf(u);
   if(kinds.length === 0) return null;
-  var reach = bfsPathDistances(u.x, u.y, u);
+  // 敵の近くのマスは通らない・目的地にしない
+  var avoid = enemyProximityTiles(u.owner, AUTO_ROUTE_ENEMY_RADIUS);
+  var reach = bfsPathDistances(u.x, u.y, u, avoid);
   var best = null, bestScore = 0;
   for(var k in captures){
     var cap = captures[k];
@@ -2175,6 +2223,7 @@ function autoRoutePick(u, want){
     var xy = k.split(',');
     var fx = parseInt(xy[0]), fy = parseInt(xy[1]);
     if(!isSupplyRouteFacility(fx, fy, u.owner, u)) continue;
+    if(avoid[k]) continue;                        // 敵のそばの拠点には行かない
     var st = facilityStock(cap, M[fy][fx]);
     if(!st.spec) continue;
     var f = { x: fx, y: fy, st: st };
@@ -3146,7 +3195,7 @@ function loadStage(key){
   selected = null; pendingUnit = null; gameOver = false; attackMode = false;
   setClear(movableSet); setClear(attackableSet);
   hideCommandPanel();
-  infoX = null; infoY = null;
+  infoX = null; infoY = null; supplyRangeView = null;
   // 資金: 活性陣営すべてに INITIAL_FUNDS
   funds = {};
   for(var i=0; i<activeFactions.length; i++){
@@ -3492,21 +3541,26 @@ function getArmorClass(unitOrType){
 // この攻撃ユニットに対して、観測兵ボーナス(観測射撃・効力射)が発動可能か確認
 // 攻撃者が間接武器を持ち、観測兵の視界内に攻撃者がいる場合 true
 // (標的の判定は実際の攻撃時に行う)
+// 観測射撃・効力射に使える間接武器か。
+// 観測兵ボーナスは陸・海の標的にしか効かず、効力射の周囲ダメージも陸・海だけなので、
+// 対空専用の間接武器 (地対空・空対空・艦対空ミサイル) は対象外。
+// これを除かないと、対空ミサイルにも「効力射」が出て弾を2発捨てるだけになる。
+function isSurfaceIndirectWeapon(w){
+  if(!w || !w.indirect) return false;
+  var a = w.atk || {};
+  return (a.INF > 0 || a.UV > 0 || a.AV > 0 || a.US > 0 || a.AS > 0 || a.SUB > 0);
+}
 function canUseObserverFire(attacker){
   if(!attacker) return false;
   var t = TYPE[attacker.type];
-  // 間接武器を持っているか
-  var hasIndirect = false;
-  var indirectRangeMax = 0, indirectRangeMin = Infinity;
+  // 陸・海を撃てる間接武器を持っているか
+  var surfaceWeapons = [];
   for(var i=0; i<t.weapons.length; i++){
-    if(t.weapons[i].indirect){
-      hasIndirect = true;
-      var rng = getEffectiveRange(attacker, t.weapons[i]);
-      if(rng[1] > indirectRangeMax) indirectRangeMax = rng[1];
-      if(rng[0] < indirectRangeMin) indirectRangeMin = rng[0];
+    if(isSurfaceIndirectWeapon(t.weapons[i])){
+      surfaceWeapons.push({ w: t.weapons[i], rng: getEffectiveRange(attacker, t.weapons[i]) });
     }
   }
-  if(!hasIndirect) return false;
+  if(surfaceWeapons.length === 0) return false;
   var atkCat = t.cat;
   if(atkCat !== 'LAND' && atkCat !== 'SEA') return false;
   // 自軍観測兵の中から、攻撃者が視界内に入る観測兵を集める
@@ -3533,9 +3587,16 @@ function canUseObserverFire(attacker){
     if(defCat !== 'LAND' && defCat !== 'SEA') continue;
     // 自軍からこの敵が見えていなければスキップ (見えない敵には攻撃不可)
     if(!isUnitVisibleTo(enemy, attacker.owner)) continue;
-    // 攻撃者の間接武器射程内?
+    // 射程内にあり、かつその敵に火力のある間接武器があるか
     var distAE = Math.abs(attacker.x - enemy.x) + Math.abs(attacker.y - enemy.y);
-    if(distAE < indirectRangeMin || distAE > indirectRangeMax) continue;
+    var enemyAC = getArmorClass(enemy);
+    var hittable = false;
+    for(var wi=0; wi<surfaceWeapons.length; wi++){
+      var sw = surfaceWeapons[wi];
+      if(distAE < sw.rng[0] || distAE > sw.rng[1]) continue;
+      if((sw.w.atk[enemyAC] || 0) > 0){ hittable = true; break; }
+    }
+    if(!hittable) continue;
     // この敵が、視界内観測兵のいずれかから見えているか?
     for(var oi=0; oi<visibleObservers.length; oi++){
       var ovo = visibleObservers[oi];
@@ -3546,13 +3607,13 @@ function canUseObserverFire(attacker){
   return false;
 }
 
-// 効力射が使用可能か (弾薬2以上の間接武器が必要)
+// 効力射が使用可能か (弾薬2以上の、陸・海を撃てる間接武器が必要)
 function canUseFireForEffect(attacker){
   if(!canUseObserverFire(attacker)) return false;
   if(!attacker.ammo) return false;
   var t = TYPE[attacker.type];
   for(var i=0; i<t.weapons.length; i++){
-    if(!t.weapons[i].indirect) continue;
+    if(!isSurfaceIndirectWeapon(t.weapons[i])) continue;
     var ammoLeft = (typeof attacker.ammo[i] === 'number') ? attacker.ammo[i] : 0;
     if(ammoLeft >= 2) return true;
   }
@@ -4050,7 +4111,7 @@ function performFireForEffect(att, defOrTarget, justMoved, wide){
   var bestW = null, bestIdx = -1, bestCost = 2;
   for(var i=0; i<t.weapons.length; i++){
     var w = t.weapons[i];
-    if(!w.indirect) continue;
+    if(!isSurfaceIndirectWeapon(w)) continue;   // 対空ミサイルなどは範囲攻撃に使わない
     if(justMoved) continue;
     var dist = manhattan(att.x, att.y, defX, defY);
     var rng = getEffectiveRange(att, w);
@@ -4510,6 +4571,12 @@ function updateInfoPanel(){
     } else if(cap.owner !== 'N' && facilityStockSpec(M[infoY][infoX])){
       html += '<div style="margin-top:3px;font-size:11px;color:#888;">📦 備蓄: 不明（偵察機・観測機・索敵機で視界に収めると分かります）</div>';
     }
+    // 補給範囲 (盤面の緑の枠と同じ内容)
+    var facProf = facilitySupplyProfile(M[infoY][infoX]);
+    if(facProf){
+      html += '<div style="margin-top:3px;font-size:11px;">⛽ 補給範囲: ' + supplyRatesText(facProf.rates)
+        + ' <span style="color:#888;">(' + facProf.who + ')</span></div>';
+    }
     // アップグレード中表示
     if(cap.upgrading){
       var upTer = TER[cap.upgrading.target];
@@ -4655,11 +4722,21 @@ function updateInfoPanel(){
       uhtml += '<div style="margin-top:1px;font-size:11px;color:'+color+';padding-left:8px;">📦 弾薬在庫: '+counter+'/'+t.supplyAmmoMax+'</div>';
     }
   }
+  // 補給ユニットの補給範囲
+  if(t.isSupply && u.owner === 'P'){
+    var uSupR = t.supplyRange || 1;
+    uhtml += '<div style="margin-top:3px;font-size:11px;color:#0F6E56;">⛽ 補給範囲: ' + (uSupR === 1 ? '隣接 (1マス)' : uSupR + 'マス以内') + ' 100%</div>';
+  }
   // 補給ルートの表示 (段階3)
   if(u.route && u.route.auto){
     var autoWhat = (u.routeTarget === 'from') ? '積みに移動中' : '補給の乏しい拠点へ移動中';
     uhtml += '<div style="margin-top:6px;font-size:11px;color:#0F6E56;">🔄 <b>自動巡回</b>（' + autoWhat + '）</div>';
     if(u.route.to) uhtml += '<div style="font-size:11px;color:#666;">いまの行き先: ('+(u.routeTarget === 'from' ? u.route.from.x+','+u.route.from.y : u.route.to.x+','+u.route.to.y)+')</div>';
+    uhtml += '<div style="font-size:10px;color:#888;padding-left:8px;">見えている敵の ' + AUTO_ROUTE_ENEMY_RADIUS + 'マス以内には入りません</div>';
+    if(u.owner === 'P'){
+      uhtml += '<div style="margin-top:5px;"><button onclick="clearSupplyRouteAt('+u.x+','+u.y+')" '
+        + 'style="font-size:11px;padding:4px 10px;border:none;border-radius:3px;cursor:pointer;color:white;background:#A32D2D;">🚚 ルート解除</button></div>';
+    }
   } else if(u.route){
     var rFrom = TER[M[u.route.from.y][u.route.from.x]];
     var isPointRoute = (u.route.toKind === 'point');
@@ -8969,7 +9046,9 @@ function aiComputeDangerScore(faction, x, y, selfUnit){
 // targetX,targetY: 経路距離を計算したい起点
 // unit: 経路を計算する対象ユニット (コストカテゴリで通れる地形が決まる)
 // 注: ZOC や敵ユニット占有マスは考慮しない (純粋な地形通行可否のみ)
-function bfsPathDistances(targetX, targetY, unit){
+// blocked ('x,y' → true) を渡すと、そのマスは通れないものとして距離を引く
+// (自動巡回の補給ユニットが敵のそばを避けるのに使う)
+function bfsPathDistances(targetX, targetY, unit, blocked){
   if(!COST[TYPE[unit.type].cost]) return {};
   var visited = {};
   var queue = [{ x: targetX, y: targetY, d: 0 }];
@@ -8981,6 +9060,7 @@ function bfsPathDistances(targetX, targetY, unit){
       var nx = cur.x + dirs[di][0];
       var ny = cur.y + dirs[di][1];
       if(nx<0||ny<0||nx>=W||ny>=H) continue;
+      if(blocked && blocked[nx+','+ny]) continue;
       var c = moveCost(unit.type, M[ny][nx]);
       if(c === Infinity) continue;
       var nd = cur.d + c;
@@ -12130,7 +12210,7 @@ function doAutoRoute(){
   }
   u.route = { auto: true, from: pick, to: pick, toKind: 'facility' };
   u.routeTarget = want;
-  setStatus('🔄 自動巡回にしました（備蓄の乏しい都市へ運び、空になったら工場などへ積みに戻ります）');
+  setStatus('🔄 自動巡回にしました（備蓄の乏しい都市へ運び、空になったら工場などへ積みに戻ります。見えている敵の' + AUTO_ROUTE_ENEMY_RADIUS + 'マス以内には近づきません）');
   if(window.plog) plog('🔄 ' + TYPE[u.type].name + '@('+u.x+','+u.y+') を自動巡回に設定');
   u.acted = true;
   pendingUnit = null;
@@ -13530,7 +13610,9 @@ function onCellClick(x, y){
   if(animationLock) return; // アニメーション中はブロック
   var k = x+','+y;
   var clicked = unitAt(x, y);
-  infoX = x; infoY = y; updateInfoPanel();
+  infoX = x; infoY = y;
+  supplyRangeView = computeSupplyRangeView(x, y);   // 施設・補給ユニットの補給範囲を盤面に出す
+  updateInfoPanel();
   // 補給ルートの指定モード (段階3)。中止はコマンドパネルの「中止」ボタンで行う
   if(routeSetMode){
     if(handleRouteSetClick(x, y)) return;
@@ -13879,12 +13961,71 @@ function onCellClick(x, y){
   }
 }
 
+// ===== 補給範囲の表示 =====
+// マスをクリックしたとき、そこにある施設 (占領済み) や自軍の補給ユニットが
+// どこまで・何%配れるかを盤面に重ねて示す。判定は getSupplySource と同じ規則。
+var supplyRangeView = null;   // { x, y, tiles:{ 'x,y': 率 }, text }
+// 施設の距離ごとの補給率。届かない施設なら null
+function facilitySupplyProfile(terId){
+  var ter = TER[terId];
+  if(!ter || ter.isRuins) return null;
+  if(ter.supplyDepot) return { rates: ter.supplyRates || [1, 1], who: '地上・ヘリ' };
+  if(ter.ammoDepot)   return { rates: [1, 1], who: '地上・艦船・ヘリ' };
+  if(ter.healCat === 'SEA')  return { rates: [0.5, 0.5], who: '艦船' };
+  if(ter.healCat === 'AIR')  return { rates: [0.5, 0.5, 0.5], who: 'ヘリ (固定翼機は直上のみ)' };
+  if(ter.healCat === 'LAND') return { rates: [0.5, 0.5, 0.5], who: '地上・ヘリ' };
+  if(ter.group === 'capital') return { rates: [0.5, 0.5, 0.5], who: '地上・ヘリ' };
+  if(ter.group === 'city')    return { rates: [0.2, 0.2, 0.2], who: '地上・ヘリ' };
+  return null;
+}
+// 率の並びを「直上・隣接 100% ／ 2マス 50%」のような文にする
+function supplyRatesText(rates){
+  var parts = [];
+  var r01 = Math.round(rates[0] * 100);
+  if(rates.length >= 2 && rates[1] === rates[0]) parts.push('直上・隣接 ' + r01 + '%');
+  else {
+    parts.push('直上 ' + r01 + '%');
+    if(rates.length >= 2) parts.push('隣接 ' + Math.round(rates[1] * 100) + '%');
+  }
+  for(var d=2; d<rates.length; d++) parts.push(d + 'マス ' + Math.round(rates[d] * 100) + '%');
+  return parts.join(' ／ ');
+}
+function computeSupplyRangeView(x, y){
+  if(!inBounds(x, y)) return null;
+  var rates = null, text = '';
+  var u = unitAt(x, y);
+  if(u && u.owner === 'P' && TYPE[u.type].isSupply){
+    var ur = TYPE[u.type].supplyRange || 1;
+    rates = [];
+    for(var i=0; i<=ur; i++) rates.push(1);
+    text = '⛽ 補給範囲: ' + (ur === 1 ? '隣接 (1マス)' : ur + 'マス以内') + ' 100%';
+  } else {
+    var cap = captures[x+','+y];
+    if(cap){
+      var prof = facilitySupplyProfile(M[y][x]);
+      if(prof){ rates = prof.rates; text = '⛽ 補給範囲: ' + supplyRatesText(prof.rates) + ' <span style="color:#888;">(' + prof.who + ')</span>'; }
+    }
+  }
+  if(!rates) return null;
+  var tiles = {};
+  var R = rates.length - 1;
+  for(var dy=-R; dy<=R; dy++){
+    for(var dx=-R; dx<=R; dx++){
+      var d = Math.abs(dx) + Math.abs(dy);
+      if(d > R || rates[d] <= 0) continue;
+      var tx = x + dx, ty = y + dy;
+      if(inBounds(tx, ty)) tiles[tx+','+ty] = rates[d];
+    }
+  }
+  return { x: x, y: y, tiles: tiles, text: text };
+}
+
 // 陣営ごとの背景色 (ユニット内側の薄い色)
 var FACTION_BG_COLORS = {
   'P': '#E6F1FB',
   'E': '#FCEBEB',
   'C': '#E0F0E8',
-  'D': '#FFF1D5',
+  'D': '#EEE6F8',
   'N': '#EEEEEE'
 };
 
@@ -14464,6 +14605,17 @@ function render(){
           cell.appendChild(dmgBox);
         }
       }
+      // 補給範囲の表示 (クリックした施設・補給ユニットが配れるマスと率)
+      if(supplyRangeView && supplyRangeView.tiles[k] !== undefined){
+        var srRate = supplyRangeView.tiles[k];
+        var srBox = document.createElement('div');
+        srBox.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:1;'
+          + 'box-shadow:inset 0 0 0 2px rgba(15,110,86,' + (0.3 + 0.5 * srRate).toFixed(2) + ');'
+          + 'background:rgba(15,110,86,' + (0.05 + 0.15 * srRate).toFixed(2) + ');';
+        srBox.innerHTML = '<span style="position:absolute;right:1px;bottom:1px;font-size:8px;line-height:10px;padding:0 2px;border-radius:2px;background:rgba(15,110,86,0.85);color:#fff;font-weight:600;">'
+          + Math.round(srRate * 100) + '</span>';
+        cell.appendChild(srBox);
+      }
       // 視界外マスの暗化 (FoW + 夜間)
       // - 昼間: 視界外を薄霧 (rgba(40,45,55,0.42))
       // - 夜間: 視界外をより濃い夜霧 (rgba(15,20,40,0.65))
@@ -14501,7 +14653,7 @@ function routeCellCenter(x, y){ return { cx: 22 + 43 * x, cy: 22 + 43 * y }; }
 function supplyRoutePathTiles(u, fromPos, toPos){
   if(!u || !fromPos || !toPos) return null;
   if(!COST[TYPE[u.type].cost]) return null;
-  var dist = bfsPathDistances(toPos.x, toPos.y, u);
+  var dist = bfsPathDistances(toPos.x, toPos.y, u, autoRouteAvoidTiles(u));
   var cd = dist[fromPos.x+','+fromPos.y];
   if(cd === undefined) return null;   // そもそも到達できない
   var path = [{ x: fromPos.x, y: fromPos.y }];
@@ -15592,7 +15744,7 @@ function renderSupplyTab(){
   html += '<li>積み元・降ろし先を敵に取られると、ルートは自動で解除される</li>';
   html += '<li><b>空中給油機</b>は空港系でしか積み降ろしできない。燃料が減ると最寄りの空港・空母へ帰投し、8割まで戻るとルートを再開する (墜落防止)</li>';
   html += '<li>自走できない補給ユニット (補給貨車) はルートを持てない — 機関車が運ぶ</li>';
-  html += '<li><b>🔄 自動巡回</b>: 積み元・降ろし先を指定せず、<b>備蓄の乏しい拠点へ自動で運ぶ</b>。毎ターン行き先を選び直すので、拠点を取られても設定し直さなくてよい<br>'
+  html += '<li><b>🔄 自動巡回</b>: 積み元・降ろし先を指定せず、<b>備蓄の乏しい拠点へ自動で運ぶ</b>。毎ターン行き先を選び直すので、拠点を取られても設定し直さなくてよい。<b>見えている敵の3マス以内には近づかず</b>、敵のそばの拠点には行かない (前線へ据え置くなら駐留地点を使う)。解除は情報パネルの「🚚 ルート解除」<br>'
         + '　・降ろし先は<b>都市・中都市・大都市・首都</b>（備蓄を自分では作れない拠点）だけ。工場などを降ろし先にすると、積んだ拠点にそのまま降ろす堂々巡りになるため<br>'
         + '　・積み元は<b>備蓄を作れる施設</b>（工場系・港系・空港系・弾薬工廠）で、在庫が多く近いもの<br>'
         + '　・在庫が2割以下になったら積みに戻る。前線に据え置きたいときは従来どおり<b>駐留地点</b>を指定する</li>';
@@ -16511,7 +16663,7 @@ function renderTodoTab(){
     ['0ダメ攻撃と包囲ボーナス', 'ダメージ0以下でも攻撃可能(弾消費あり、反撃引き出し戦術)。包囲ボーナス: 攻撃対象に隣接する自軍直接攻撃ユニット数-1を火力加算(最大+3)。攻撃と反撃の両方に適用'],
     ['対施設攻撃 vsFacility', '武器ごとに対施設火力を設定。0以外の武器を持つユニットが施設攻撃可能。ダメージ=対施設火力×HP/10-地形防御。爆撃機14、ステルス爆10、艦上爆撃機8、戦艦主砲12、巡洋戦艦主砲10、重巡主砲8、ガンシップ10、自走砲6、MLRS 6'],
     ['重歩兵カテゴリ(観測兵・砲兵・重砲兵)', '<b>観測兵</b>(視界4・山+1=5、火力低、効力射の発動源)<br><b>砲兵</b>(間接2-3、歩兵カテゴリの自走砲)<br><b>重砲兵</b>(間接2-4、移動2の重砲)<br>装輪/戦車工場以上で生産可、占領不可、APC・輸送ヘリに乗せられない(輸送船・輸送機はOK)。歩兵移動 3→4 に増加'],
-    ['観測射撃 / 効力射(観測兵ボーナス)', '観測兵の視界範囲内に味方間接攻撃ユニットがいる時、攻撃時に「通常攻撃」「<b>観測射撃</b>」「<b>効力射</b>」を選択可能(攻撃マスクリック前)。<br><b>観測射撃</b>: 弾薬1消費、対象1マスに×1.2ダメージ(従来の効力射と同じ仕組み)。<br><b>効力射</b>: 弾薬2消費、着弾点に×1.2ダメージ+上下左右4マスに通常(×1.0)ダメージ(所属不問・友軍も巻き込み・空マス着弾OK・反撃なし)。倍率は着弾点からの距離だけで決まり、マスごとに観測兵ボーナスを掛け直すことはしない。<br>陸海ユニットの間接武器のみ対象、空中ユニットには発動・命中しない。<b>観測射撃</b>は観測兵が複数居れば倍率が重複(×1.2×1.2=×1.44)するが、<b>効力射は重複しない</b>(固定倍率)。AI も観測兵が居れば自動的にボーナスを得る。'],
+    ['観測射撃 / 効力射(観測兵ボーナス)', '観測兵の視界範囲内に味方間接攻撃ユニットがいる時、攻撃時に「通常攻撃」「<b>観測射撃</b>」「<b>効力射</b>」を選択可能(攻撃マスクリック前)。<br><b>観測射撃</b>: 弾薬1消費、対象1マスに×1.2ダメージ(従来の効力射と同じ仕組み)。<br><b>効力射</b>: 弾薬2消費、着弾点に×1.2ダメージ+上下左右4マスに通常(×1.0)ダメージ(所属不問・友軍も巻き込み・空マス着弾OK・反撃なし)。倍率は着弾点からの距離だけで決まり、マスごとに観測兵ボーナスを掛け直すことはしない。<br>陸海ユニットの間接武器のみ対象、空中ユニットには発動・命中しない。<b>対空ミサイル・艦対空ミサイルのような対空専用の間接武器では選択肢自体が出ない</b>(空中目標にはボーナスが効かず、地上には火力がないため)。<b>観測射撃</b>は観測兵が複数居れば倍率が重複(×1.2×1.2=×1.44)するが、<b>効力射は重複しない</b>(固定倍率)。AI も観測兵が居れば自動的にボーナスを得る。'],
     ['AI: 渡海作戦の実行', '海越え目標がある場合、AIが自動的に輸送船を生産・運用。歩兵が地続き目標を全て対処後、海越え目標があれば輸送船に向かって乗船待機。輸送船は歩兵を拾って海越え目標近くで降車。'],
     ['AI: 占領中の敵を最優先攻撃', '自軍施設を占領中の敵歩兵(captureHpが減っている)を最優先(+3000)、元自軍領土を奪われている敵(+2500)、中立施設を占領中(+1500)、占領担当を脅かす敵(+2000)など、優先度を細かく設定'],
     ['即展開ユニット(quickDeploy)', 'APC・輸送ヘリ・空母系から降車/発艦したユニットは<b>そのターンで即行動可能</b>。同ラウンド内の乗船→降車は禁止(収容→発艦のループ防止)。輸送船・輸送機は従来通り次ターンから行動可能'],
@@ -18032,7 +18184,7 @@ function edRenderPalette(){
     // 拠点所有者選択
     html += '<div style="margin-top:8px; font-size:11px; color:#666;">拠点所有者(都市/工場/空港/港用)</div>';
     html += '<div style="display:flex; gap:4px; margin-top:3px;">';
-    var owners = [['N','中立','#888'],['P','陣営1','#185FA5'],['E','陣営2','#A32D2D'],['C','陣営3','#0F6E56'],['D','陣営4','#BA7517']];
+    var owners = [['N','中立','#888'],['P','陣営1','#185FA5'],['E','陣営2','#A32D2D'],['C','陣営3','#0F6E56'],['D','陣営4','#6B3FA0']];
     for(var i=0; i<owners.length; i++){
       var sel = ed.selectedCapOwner === owners[i][0] ? 'background:'+owners[i][2]+';color:white;font-weight:600;' : '';
       html += '<button class="ed-owner" data-owner="'+owners[i][0]+'" style="flex:1;font-size:11px;padding:3px;'+sel+'">'+owners[i][1]+'</button>';
@@ -18055,7 +18207,7 @@ function edRenderPalette(){
   } else if(ed.tool === 'unit'){
     // 所有者切替
     var html = '<div style="display:flex; gap:4px; margin-bottom:8px;">';
-    var owners = [['P','陣営1','#185FA5'],['E','陣営2','#A32D2D'],['C','陣営3','#0F6E56'],['D','陣営4','#BA7517']];
+    var owners = [['P','陣営1','#185FA5'],['E','陣営2','#A32D2D'],['C','陣営3','#0F6E56'],['D','陣営4','#6B3FA0']];
     for(var i=0; i<owners.length; i++){
       var sel = ed.selectedOwner === owners[i][0] ? 'background:'+owners[i][2]+';color:white;font-weight:600;' : '';
       html += '<button class="ed-uowner" data-owner="'+owners[i][0]+'" style="flex:1;font-size:11px;padding:4px;'+sel+'">'+owners[i][1]+'</button>';
