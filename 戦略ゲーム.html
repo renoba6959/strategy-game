@@ -18584,8 +18584,18 @@ function edRenderPalette(){
     else if(ed.tool === 'facility') terKeys = ED_FACILITY_KEYS.slice();
     else terKeys = ED_TERRAIN_KEYS.concat(ED_FACILITY_KEYS.filter(function(k){ return k !== 'CAPITAL'; }));
     var html = '';
+    var owners = [['N','中立','#888'],['P','陣営1','#185FA5'],['E','陣営2','#A32D2D'],['C','陣営3','#0F6E56'],['D','陣営4','#6B3FA0']];
+    if(ed.tool !== 'terrain'){
+      // 所有する陣営 (ユニットタブと同じく上に置く)
+      html += '<div style="display:flex; gap:4px; margin-bottom:6px;">';
+      for(var oi0=0; oi0<owners.length; oi0++){
+        var selO = ed.selectedCapOwner === owners[oi0][0] ? 'background:'+owners[oi0][2]+';color:white;font-weight:600;' : '';
+        html += '<button class="ed-owner" data-owner="'+owners[oi0][0]+'" style="flex:1;font-size:11px;padding:4px;'+selO+'">'+owners[oi0][1]+'</button>';
+      }
+      html += '</div>';
+    }
     if(ed.tool === 'facility'){
-      html += '<div style="font-size:10px; color:#666; margin-bottom:6px; line-height:1.5;">下で所有する陣営を選んでから置きます。<b>首都は陣営ごとに1つ</b>で、テストプレイやキャンペーンには各陣営に首都が必要です。</div>';
+      html += '<div style="font-size:10px; color:#666; margin-bottom:6px; line-height:1.5;">上で所有する陣営を選び、施設を選んで置きます。<b>首都は陣営ごとに1つ</b>で、テストプレイやキャンペーンには各陣営に首都が必要です。</div>';
     }
     html += '<div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:4px;">';
     for(var i=0; i<terKeys.length; i++){
@@ -18613,17 +18623,8 @@ function edRenderPalette(){
       html += '</div>';
     }
     html += '</div>';
-    // 拠点所有者選択 (施設タブと、施設も塗れるバケツ・矩形で出す)
+    // 首都の配置状況 (どの陣営に首都があるか)。施設タブと、施設も塗れるバケツ・矩形で出す
     if(ed.tool !== 'terrain'){
-      html += '<div style="margin-top:8px; font-size:11px; color:#666;">所有する陣営</div>';
-      html += '<div style="display:flex; gap:4px; margin-top:3px;">';
-      var owners = [['N','中立','#888'],['P','陣営1','#185FA5'],['E','陣営2','#A32D2D'],['C','陣営3','#0F6E56'],['D','陣営4','#6B3FA0']];
-      for(var i=0; i<owners.length; i++){
-        var sel = ed.selectedCapOwner === owners[i][0] ? 'background:'+owners[i][2]+';color:white;font-weight:600;' : '';
-        html += '<button class="ed-owner" data-owner="'+owners[i][0]+'" style="flex:1;font-size:11px;padding:3px;'+sel+'">'+owners[i][1]+'</button>';
-      }
-      html += '</div>';
-      // 首都の配置状況 (どの陣営に首都があるか)
       var capsBy = edCapitalsByOwner();
       var capLine = [];
       for(var oi=1; oi<owners.length; oi++){
