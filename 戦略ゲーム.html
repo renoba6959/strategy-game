@@ -442,8 +442,8 @@ var UPGRADE_COST = {
 
 // アップグレード期間 (ターン)
 var UPGRADE_TURNS = {
-  CITY: 3, BIG_CITY: 4,
-  SUPPLY_DEPOT: 3, SUPPLY_BASE: 5, LOGISTICS_DEPOT: 6,
+  CITY: 3, BIG_CITY: 5,
+  SUPPLY_DEPOT: 3, SUPPLY_BASE: 5, LOGISTICS_DEPOT: 7,
   FACTORY: 3, WHEEL_FACTORY: 4, TRACK_FACTORY: 4, WHEEL_ARSENAL: 5, TRACK_ARSENAL: 5,
   AIRPORT: 3, AIR_BASE: 4, AIR_ARSENAL: 5,
   PORT: 3, NAVY_BASE: 4, NAVY_ARSENAL: 5
@@ -2484,7 +2484,8 @@ function getSupplySource(unit){
   //   ・工場系   : 2マス以内 / 毎ターン50%  (地上・ヘリ)
   //   ・港系     : 1マス以内 / 毎ターン50%  (艦船。直上と隣接だけ = 接岸して受け取る)
   //   ・空港系   : ヘリは2マス以内、固定翼機は直上のみ / 毎ターン50%
-  //   ・都市系/首都: 2マス以内 / 毎ターン20% (地上ユニットとヘリ)
+  //   ・都市系   : 2マス以内 / 毎ターン20% (地上ユニットとヘリ)
+  //   ・首都     : 2マス以内 / 毎ターン50% (地上ユニットとヘリ)
   // 範囲補給は「盤面に見えない補給要員がそこまで運んでいる」という考え方。
   // 固定翼機は飛んでいるので人員が届かない (人まで飛ぶことになる) ため、直上・空母搭載・
   // 施設収容・空中給油機 (これも飛んでいるので例外) でしか補給を受けられない。
@@ -2533,8 +2534,8 @@ function getSupplySource(unit){
       else if(fter.healCat === 'AIR' && cat === 'AIR' && !isHeli) reach = 0;      // 空港系 → 固定翼機: 直上のみ
       if(fd <= reach) r = 0.5;
     } else if((cat === 'LAND' || isHeli) && !fter.ammoDepot && (fter.group === 'city' || fter.group === 'capital') && fd <= FAC_RANGE){
-      // 都市系・首都 (地上ユニットとヘリ)
-      r = 0.2;
+      // 都市系・首都 (地上ユニットとヘリ)。首都は国の中心なので都市より厚く配る
+      r = (fter.group === 'capital') ? 0.5 : 0.2;
     }
     if(r <= 0) continue;
     var fst = facilityStock(fcap, M[fy][fx]);
@@ -15251,7 +15252,7 @@ function renderFacilitiesTab(){
   var depotRows = [
     ['補給拠点 (Lv1)', '+1', 20, '100 / 100', '燃料200 / 弾薬20', '補給基地へ (5000G, 3T)'],
     ['補給基地 (Lv2)', '+2', 30, '100 / 100 / 50', '燃料500 / 弾薬50', '兵站拠点へ (10000G, 5T)'],
-    ['兵站拠点 (Lv3)', '+3', 40, '100 / 100 / 50 / 25', '燃料800 / 弾薬80', '兵站基地へ (15000G, 6T)'],
+    ['兵站拠点 (Lv3)', '+3', 40, '100 / 100 / 50 / 25', '燃料800 / 弾薬80', '兵站基地へ (15000G, 7T)'],
     ['兵站基地 (Lv4)', '+4', 50, '100 / 100 / 75 / 50 / 25', '燃料1200 / 弾薬120', 'これ以上アップグレード不可']
   ];
   for(var di=0; di<depotRows.length; di++){
@@ -15273,8 +15274,8 @@ function renderFacilitiesTab(){
   html += '<thead><tr style="background:#f5f0e0;"><th style="text-align:left; padding:4px 8px;">施設</th><th style="padding:4px 6px;">防御</th><th style="padding:4px 6px;">HP</th><th style="padding:4px 6px;">収入</th><th style="text-align:left; padding:4px 8px;">特徴・解放</th></tr></thead><tbody>';
   var cityRows = [
     ['首都', '+4', 30, 2000, '占領で<b style="color:#A32D2D;">即敗北</b>。陣営の最重要拠点'],
-    ['都市', '+2', 20, 1000, '基本拠点。アップグレード可: 中都市(+4000G, 4T)'],
-    ['中都市', '+3', 30, 1500, 'アップグレード可: 大都市(収入特化) <b>or</b> 弾薬工廠(備蓄特化) (+4000G, 4T)'],
+    ['都市', '+2', 20, 1000, '基本拠点。アップグレード可: 中都市(+2000G, 3T)'],
+    ['中都市', '+3', 30, 1500, 'アップグレード可: 大都市(収入特化) <b>or</b> 弾薬工廠(備蓄特化) (+4000G, 5T)'],
     ['大都市', '+3', 30, 2000, '収入特化。これ以上アップグレード不可'],
     ['弾薬工廠', '+3', 30, 1000, '<b>隣接陸海ユニット</b>に毎ターン燃料・弾薬を補給(航空には効果なし)。補給車・補給艦の弾薬庫を満タンに']
   ];
@@ -15549,7 +15550,8 @@ function renderSupplyTab(){
   html += '<tr style="background:#fafaf3;"><td style="padding:3px 6px;">工場系 (全Lv)</td><td style="padding:3px 6px; text-align:center;"><b>2マス</b></td><td style="padding:3px 6px;">地上・ヘリ</td><td style="padding:3px 6px; text-align:center;"><b>50%</b></td></tr>';
   html += '<tr><td style="padding:3px 6px;">港系 (全Lv)</td><td style="padding:3px 6px; text-align:center;"><b>1マス</b></td><td style="padding:3px 6px;">艦船 (直上と隣接。接岸して受け取る)</td><td style="padding:3px 6px; text-align:center;"><b>50%</b></td></tr>';
   html += '<tr style="background:#fafaf3;"><td style="padding:3px 6px;">空港系 (全Lv)</td><td style="padding:3px 6px; text-align:center;"><b>ヘリ2マス<br>固定翼は直上のみ</b></td><td style="padding:3px 6px;">航空。<b>固定翼機は空港マスの上でしか受けられない</b></td><td style="padding:3px 6px; text-align:center;"><b>50%</b></td></tr>';
-  html += '<tr><td style="padding:3px 6px;">都市・中都市・大都市・首都</td><td style="padding:3px 6px; text-align:center;"><b>2マス</b></td><td style="padding:3px 6px;">地上・ヘリ</td><td style="padding:3px 6px; text-align:center;"><b>20%</b></td></tr>';
+  html += '<tr><td style="padding:3px 6px;">都市・中都市・大都市</td><td style="padding:3px 6px; text-align:center;"><b>2マス</b></td><td style="padding:3px 6px;">地上・ヘリ</td><td style="padding:3px 6px; text-align:center;"><b>20%</b></td></tr>';
+  html += '<tr style="background:#fafaf3;"><td style="padding:3px 6px;">首都</td><td style="padding:3px 6px; text-align:center;"><b>2マス</b></td><td style="padding:3px 6px;">地上・ヘリ</td><td style="padding:3px 6px; text-align:center;"><b>50%</b></td></tr>';
   html += '<tr style="background:#fafaf3;"><td style="padding:3px 6px;">空母系 (搭載中の搭載機)</td><td style="padding:3px 6px; text-align:center;">同マス</td><td style="padding:3px 6px;">航空</td><td style="padding:3px 6px; text-align:center;"><b>100%</b></td></tr>';
   html += '<tr><td style="padding:3px 6px;">補給ユニット (補給車/補給艦/給油艦/空中給油機)</td><td style="padding:3px 6px; text-align:center;">隣接</td><td style="padding:3px 6px;">それぞれの対象カテゴリ</td><td style="padding:3px 6px; text-align:center;"><b>100%</b></td></tr>';
   html += '</table>';
