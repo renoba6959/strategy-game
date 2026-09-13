@@ -17607,8 +17607,57 @@ function renderSaveSelect(){
     renderSaveSelect();
   }; });
 }
+// ターン終了前の確認: やり残しがあれば聞く。
+// 「移動終了」のすぐ横に「ターン終了」があり、押し間違いが起きやすいため。
+//   ・未行動の自軍ユニット (自走できない貨車などは除く)
+//   ・空きスロットがあり、資金内で作れるユニットがある自軍の生産施設
+function endTurnLeftovers(){
+  var out = [];
+  var idle = [];
+  for(var i=0; i<units.length; i++){
+    var u = units[i];
+    if(u.owner !== 'P' || u.hp <= 0 || u.acted) continue;
+    var t = TYPE[u.type];
+    if(!t || !(t.move > 0)) continue;          // 自走しない車輌は数えない
+    idle.push(t.name + '(' + u.x + ',' + u.y + ')');
+  }
+  if(idle.length){
+    out.push('未行動のユニットが ' + idle.length + ' 体: ' + idle.slice(0, 5).join('、') + (idle.length > 5 ? ' …' : ''));
+  }
+  var canProd = [];
+  for(var k in captures){
+    var cap = captures[k];
+    if(cap.owner !== 'P' || cap.upgrading) continue;
+    var xy = k.split(',');
+    var fx = parseInt(xy[0]), fy = parseInt(xy[1]);
+    var ter = TER[M[fy][fx]];
+    if(!ter || !ter.slots || !ter.produces) continue;
+    var ongoing = 0;
+    for(var pi=0; pi<production.length; pi++){ if(production[pi].x === fx && production[pi].y === fy) ongoing++; }
+    var stored = (cap.cargo ? cap.cargo.length : 0);
+    if(ter.slots - ongoing - stored <= 0) continue;   // 空きスロットなし
+    var affordable = false;
+    for(var ui=0; ui<ter.produces.length; ui++){
+      var tk = ter.produces[ui], tt = TYPE[tk];
+      if(!tt || tt.planned || !isUnitProducible(tk)) continue;
+      if((funds.P || 0) >= tt.price){ affordable = true; break; }
+    }
+    if(!affordable) continue;                           // 資金が足りないなら数えない
+    canProd.push(ter.name + '(' + fx + ',' + fy + ')');
+  }
+  if(canProd.length){
+    out.push('生産できる施設が ' + canProd.length + ' か所: ' + canProd.slice(0, 5).join('、') + (canProd.length > 5 ? ' …' : ''));
+  }
+  return out;
+}
 document.getElementById('end-turn-btn').onclick = function(){
   if(turn === 'P' && !gameOver){
+    if(!playerIsAI){
+      var left = endTurnLeftovers();
+      if(left.length){
+        if(!confirm('まだできることがあります:\n・' + left.join('\n・') + '\n\nこのままターンを終了しますか？')) return;
+      }
+    }
     for(var i=0; i<units.length; i++){ if(units[i].owner === 'P') units[i].acted = true; }
     selected = null; pendingUnit = null; attackMode = false; unloadMode = false; setClear(unloadValidSet); unloadStarted = false; coupleMode = false; setClear(coupleValidSet); uncoupleMode = false; setClear(uncoupleValidSet); deployMode = false; setClear(deployValidSet); deployPendingIdx = -1;
     setClear(movableSet); setClear(attackableSet);
