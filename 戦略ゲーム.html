@@ -67,6 +67,10 @@ button:hover { background: #f0f0f0; }
   <div style="font-size: 13px; color: var(--color-text-secondary); margin-bottom: 6px;">🎖 キャンペーン</div>
   <div id="campaign-body"></div>
 </div>
+<div id="save-select" style="display:none; margin-bottom: 12px;">
+  <div style="font-size: 13px; color: var(--color-text-secondary); margin-bottom: 6px;">💾 セーブ / ロード</div>
+  <div id="save-body"></div>
+</div>
 <div style="display: flex; gap: 12px; margin-bottom: 8px; flex-wrap: wrap; align-items: center;">
   <div id="ai-speed-control" style="display:inline-flex; align-items:center; gap:4px; padding:2px 6px; background: var(--color-background-secondary); border-radius: var(--border-radius-md); font-size:11px;" title="AIの行動速度">
     <span style="font-size:10px; color:var(--color-text-secondary);">AI速度</span>
@@ -78,6 +82,7 @@ button:hover { background: #f0f0f0; }
   </div>
   <button id="player-ai-toggle" style="padding:2px 8px; border:1px solid #ccc; background:#fff; cursor:pointer; font-size:11px; border-radius:3px;" title="プレイヤー陣営もAIが自動操作するシミュレーションモード">🤖 プレイヤーAI化: OFF</button>
   <button id="reset-btn">リセット</button>
+  <button id="save-btn" title="今の局面を保存する / 保存した局面から続ける">💾 セーブ / ロード</button>
   <button id="campaign-btn" title="キャンペーンを順番に攻略する">🎖 キャンペーン</button>
   <button id="stage-change-btn" title="別のステージを選ぶ (フリー対戦)">🗺 ステージ変更</button>
   <button id="spec-btn">📖 仕様書</button>
@@ -5437,6 +5442,7 @@ function endTurn(){
   if(isPlayerFaction(turn) && !playerIsAI){
     setStatus(phaseMsg + 'あなたのターン: ユニットを選んでください');
     render();
+    autoSaveGame();   // 自分のターンの始まりを「自動セーブ」枠に残す
   } else {
     var label = isPlayerFaction(turn) ? '🤖 ' + (FACTION_NAMES[turn] || turn) + ' (AI制御中)' : (FACTION_NAMES[turn] || turn) + 'のターン...';
     setStatus(phaseMsg + label);
@@ -17293,6 +17299,8 @@ document.getElementById('stage-change-btn').onclick = function(){
   if(!el) return;
   var cs = document.getElementById('campaign-select');
   if(cs) cs.style.display = 'none';
+  var sv = document.getElementById('save-select');
+  if(sv) sv.style.display = 'none';
   el.style.display = (el.style.display === 'none') ? '' : 'none';
 };
 document.getElementById('campaign-btn').onclick = function(){
@@ -17300,10 +17308,300 @@ document.getElementById('campaign-btn').onclick = function(){
   if(!el) return;
   var ss = document.getElementById('stage-select');
   if(ss) ss.style.display = 'none';
+  var sv = document.getElementById('save-select');
+  if(sv) sv.style.display = 'none';
   var open = (el.style.display === 'none');
   el.style.display = open ? '' : 'none';
   if(open) renderCampaignSelect();
 };
+document.getElementById('save-btn').onclick = function(){
+  var el = document.getElementById('save-select');
+  if(!el) return;
+  var ss = document.getElementById('stage-select');
+  if(ss) ss.style.display = 'none';
+  var cs = document.getElementById('campaign-select');
+  if(cs) cs.style.display = 'none';
+  var open = (el.style.display === 'none');
+  el.style.display = open ? '' : 'none';
+  if(open) renderSaveSelect();
+};
+
+// ===== セーブ / ロード =====
+// 局面をまるごと JSON にして、ブラウザ内 (localStorage) に名前付きで何件でも保存する。
+// ファイルへの書き出し・読み込みもできる (別のブラウザへ持っていく・バックアップ用)。
+// 自分のターンが始まるたびに「自動セーブ」枠にも上書きする。
+var SAVE_INDEX_KEY = 'mb_save_index';     // { id: { name, savedAt, stageName, round, turn } }
+var SAVE_DATA_PREFIX = 'mb_save_';        // mb_save_<id> = 局面の JSON
+var SAVE_AUTO_ID = 'auto';
+var SAVE_CONSOLE_KEY = 'mb_save_console'; // セーブ機能を付ける前にコンソールから書き出した局面
+var SAVE_FORMAT = 1;
+
+// いまの局面を1つのオブジェクトにまとめる
+function buildSaveData(){
+  return {
+    v: SAVE_FORMAT, savedAt: new Date().toISOString(),
+    stageKey: currentStage, stage: STAGES[currentStage] || null,
+    W: W, H: H, M: M, railBase: railBase, railHp: railHp,
+    units: units, nextId: nextId, captures: captures, trains: trains,
+    activeFactions: activeFactions, factionTeams: factionTeams,
+    turn: turn, funds: funds, eliminatedFactions: eliminatedFactions, production: production,
+    fowEnabled: fowEnabled, dayNightCycle: dayNightCycle, dayLength: dayLength,
+    currentPhase: currentPhase, phaseTurn: phaseTurn, roundNumber: roundNumber,
+    weather: weather, weatherDrift: weatherDrift, windDirection: windDirection, windStrength: windStrength,
+    nextWindDirection: nextWindDirection, nextWindStrength: nextWindStrength,
+    stageLimits: stageLimits, campaignState: campaignState, playerIsAI: playerIsAI, gameOver: gameOver,
+    gameLog: gameLog
+  };
+}
+function saveMetaOf(d){
+  var st = (d.stage && d.stage.name) || d.stageKey || '?';
+  return { savedAt: d.savedAt, stageName: st, round: d.roundNumber || 0, turn: d.turn || 'P' };
+}
+// ユニットID (積載中も含む) の最大値。nextId が壊れていても重複しないように
+function _maxUnitId(list){
+  var m = 0;
+  for(var i=0; i<(list||[]).length; i++){
+    var u = list[i];
+    if(u.id > m) m = u.id;
+    if(u.cargo && u.cargo.length){ var c = _maxUnitId(u.cargo); if(c > m) m = c; }
+  }
+  return m;
+}
+// 保存した局面をゲームに戻す
+function applySaveData(d){
+  if(!d || d.v !== SAVE_FORMAT || !Array.isArray(d.M) || !Array.isArray(d.units)) throw new Error('セーブデータの形式が違います');
+  // ステージ定義も一緒に保存してあるので、自作マップ・一時ステージでもリセットが効く
+  if(d.stageKey && d.stage) STAGES[d.stageKey] = d.stage;
+  currentStage = d.stageKey || currentStage;
+  W = d.W; H = d.H; M = d.M;
+  railBase = d.railBase || {}; railHp = d.railHp || {};
+  units = d.units; captures = d.captures || {}; trains = d.trains || [];
+  var maxId = _maxUnitId(units);
+  for(var ck in captures){ var cc = _maxUnitId(captures[ck].cargo); if(cc > maxId) maxId = cc; }
+  nextId = Math.max(d.nextId || 1, maxId + 1);
+  activeFactions = d.activeFactions || ['P', 'E'];
+  factionTeams = d.factionTeams || {};
+  for(var fi=0; fi<activeFactions.length; fi++){ if(!factionTeams[activeFactions[fi]]) factionTeams[activeFactions[fi]] = 'T' + activeFactions[fi]; }
+  turn = d.turn || activeFactions[0];
+  funds = d.funds || {};
+  for(var fj=0; fj<activeFactions.length; fj++){ if(typeof funds[activeFactions[fj]] !== 'number') funds[activeFactions[fj]] = INITIAL_FUNDS; }
+  eliminatedFactions = d.eliminatedFactions || {};
+  production = d.production || [];
+  fowEnabled = !!d.fowEnabled; dayNightCycle = !!d.dayNightCycle; dayLength = d.dayLength || 2;
+  currentPhase = d.currentPhase || 'day'; phaseTurn = d.phaseTurn || 0; roundNumber = d.roundNumber || 0;
+  if(Array.isArray(d.weather) && d.weather.length === H) weather = d.weather; else initWeather();
+  weatherDrift = (d.weatherDrift === 'wind') ? 'wind' : 'random';
+  windDirection = d.windDirection || 'east'; windStrength = (typeof d.windStrength === 'number') ? d.windStrength : 1;
+  nextWindDirection = d.nextWindDirection || windDirection; nextWindStrength = (typeof d.nextWindStrength === 'number') ? d.nextWindStrength : windStrength;
+  stageLimits = d.stageLimits || null;
+  campaignState = d.campaignState || null;
+  gameOver = !!d.gameOver;
+  playerIsAI = !!d.playerIsAI;
+  if(window._refreshPlayerAiBtn) window._refreshPlayerAiBtn();
+  if(Array.isArray(d.gameLog)){ gameLog = d.gameLog; renderLog(); }
+  // 選択状態やモードをすべて解除
+  selected = null; pendingUnit = null; attackMode = false; unloadMode = false; setClear(unloadValidSet); unloadStarted = false; coupleMode = false; setClear(coupleValidSet); uncoupleMode = false; setClear(uncoupleValidSet); deployMode = false; setClear(deployValidSet); deployPendingIdx = -1;
+  setClear(movableSet); setClear(attackableSet); setClear(enemyThreatSet); setClear(enemyMoveSet);
+  routeSetMode = null; movePreview = null; selectedTrainInfo = null;
+  hideCommandPanel();
+  infoX = null; infoY = null; supplyRangeView = null;
+  var st = STAGES[currentStage];
+  document.getElementById('stage-info').textContent = (st ? st.name + ' — ' + st.desc : '') + '（ロード: R' + roundNumber + '）';
+  var board = document.getElementById('board');
+  board.style.gridTemplateColumns = 'repeat(' + W + ', 42px)';
+  board.style.gridTemplateRows = 'repeat(' + H + ', 42px)';
+  var cnEl = document.getElementById('campaign-next');
+  if(cnEl) cnEl.innerHTML = '';
+  if(gameOver) renderCampaignNext();
+  if(isPlayerFaction(turn) && !playerIsAI){
+    setStatus('📂 ロードしました — あなたのターン: ユニットを選んでください');
+  } else if(isPlayerFaction(turn) && playerIsAI){
+    setStatus('📂 ロードしました — 🤖 ' + (FACTION_NAMES[turn] || turn) + ' (AI制御中)');
+  } else {
+    setStatus('📂 ロードしました — ' + (FACTION_NAMES[turn] || turn) + 'のターン...');
+  }
+  render();
+  updateStageButtons();
+  var ss = document.getElementById('stage-select'); if(ss) ss.style.display = 'none';
+  var cs = document.getElementById('campaign-select'); if(cs) cs.style.display = 'none';
+  var sv = document.getElementById('save-select'); if(sv) sv.style.display = 'none';
+  updateInfoPanel();
+  // AI のターン (または自軍がAI化) で保存されていたら、そこから AI を動かす
+  if(!gameOver && (!isPlayerFaction(turn) || playerIsAI)) setTimeout(aiTurn, aiStepDelay(600));
+}
+
+// ---- ブラウザ内の保存枠 ----
+function savesIndex(){ try{ return JSON.parse(localStorage.getItem(SAVE_INDEX_KEY) || '{}'); }catch(e){ return {}; } }
+function savesIndexStore(idx){ localStorage.setItem(SAVE_INDEX_KEY, JSON.stringify(idx)); }
+function saveSlotRead(id){
+  try{ var j = localStorage.getItem(SAVE_DATA_PREFIX + id); return j ? JSON.parse(j) : null; }catch(e){ return null; }
+}
+// 保存。容量オーバーなら false (ファイルに書き出してもらう)
+function saveSlotWrite(id, name, data){
+  var idx = savesIndex();
+  var meta = saveMetaOf(data);
+  meta.name = name;
+  try{
+    localStorage.setItem(SAVE_DATA_PREFIX + id, JSON.stringify(data));
+    idx[id] = meta;
+    savesIndexStore(idx);
+    return true;
+  }catch(e){
+    return false;
+  }
+}
+function saveSlotDelete(id){
+  var idx = savesIndex();
+  delete idx[id];
+  savesIndexStore(idx);
+  try{ localStorage.removeItem(SAVE_DATA_PREFIX + id); }catch(e){}
+}
+function saveGameAs(id, name){
+  if(!currentStage){ setStatus('ステージを始めてから保存してください'); return false; }
+  var ok = saveSlotWrite(id, name, buildSaveData());
+  if(ok){
+    setStatus('💾 「' + name + '」に保存しました');
+    if(window.plog) plog('💾 セーブ: ' + name);
+  } else {
+    alert('ブラウザの保存領域がいっぱいで保存できませんでした。古い保存を削除するか、「ファイルに書き出す」を使ってください。');
+  }
+  return ok;
+}
+// 自分のターンの始まりに自動で保存する (ロード直後や試合終了後は保存しない)
+function autoSaveGame(){
+  if(!currentStage || gameOver) return;
+  try{ saveSlotWrite(SAVE_AUTO_ID, '自動セーブ', buildSaveData()); }catch(e){}
+}
+function loadGameFrom(id){
+  var d = (id === '__console') ? (function(){ try{ return JSON.parse(localStorage.getItem(SAVE_CONSOLE_KEY) || 'null'); }catch(e){ return null; } })() : saveSlotRead(id);
+  if(!d){ alert('保存データが見つかりません'); return; }
+  if(currentStage && !confirm('今の局面は失われます。ロードしますか？')) return;
+  try{
+    applySaveData(d);
+    if(window.plog) plog('📂 ロード: ' + ((savesIndex()[id] || {}).name || id));
+  }catch(e){
+    alert('ロードできませんでした: ' + e.message);
+  }
+}
+// ---- ファイルへの書き出し / 読み込み ----
+function _saveFileName(name){
+  var t = new Date();
+  function p2(n){ return (n < 10 ? '0' : '') + n; }
+  var stamp = t.getFullYear() + p2(t.getMonth() + 1) + p2(t.getDate()) + '_' + p2(t.getHours()) + p2(t.getMinutes());
+  return 'save_' + (name || 'game').replace(/[\\/:*?"<>|]/g, '_') + '_' + stamp + '.json';
+}
+function exportSaveFile(data, name){
+  var j = JSON.stringify(data);
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([j], { type: 'application/json' }));
+  a.download = _saveFileName(name);
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(function(){ document.body.removeChild(a); URL.revokeObjectURL(a.href); }, 1000);
+}
+function importSaveFile(file){
+  var r = new FileReader();
+  r.onload = function(){
+    var d = null;
+    try{ d = JSON.parse(r.result); }catch(e){ alert('JSONとして読めませんでした'); return; }
+    if(!d || d.v !== SAVE_FORMAT){ alert('このゲームのセーブファイルではないようです'); return; }
+    if(currentStage && !confirm('今の局面は失われます。ファイルの局面をロードしますか？')) return;
+    try{
+      applySaveData(d);
+      // 読み込んだものは枠にも入れておく (次からは一覧から選べる)
+      var nm = file.name.replace(/\.json$/i, '');
+      saveSlotWrite('f' + Date.now(), nm, d);
+      if(window.plog) plog('📂 ファイルからロード: ' + file.name);
+    }catch(e){ alert('ロードできませんでした: ' + e.message); }
+  };
+  r.readAsText(file);
+}
+function _fmtSavedAt(iso){
+  if(!iso) return '';
+  var t = new Date(iso);
+  if(isNaN(t.getTime())) return iso;
+  function p2(n){ return (n < 10 ? '0' : '') + n; }
+  return (t.getMonth() + 1) + '/' + t.getDate() + ' ' + p2(t.getHours()) + ':' + p2(t.getMinutes());
+}
+// ---- 一覧パネル ----
+function renderSaveSelect(){
+  var body = document.getElementById('save-body');
+  if(!body) return;
+  var idx = savesIndex();
+  var ids = Object.keys(idx).filter(function(k){ return k !== SAVE_AUTO_ID; });
+  ids.sort(function(a, b){ return (idx[b].savedAt || '').localeCompare(idx[a].savedAt || ''); });
+  var btn = 'font-size:11px; padding:3px 9px; border:none; border-radius:3px; cursor:pointer; color:#fff;';
+  var h = '';
+  // 新しく保存
+  h += '<div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin-bottom:10px; padding:8px 10px; background:#fff; border:1px solid #ddd; border-radius:5px;">';
+  h += '<input id="save-name" type="text" placeholder="保存の名前 (例: 第3話 R12 橋を落とす前)" style="flex:1; min-width:200px; font-size:12px; padding:4px 8px; border:1px solid #ccc; border-radius:3px;">';
+  h += '<button id="save-new-btn" style="' + btn + 'background:#0F6E56;">💾 新しく保存</button>';
+  h += '<button id="save-import-btn" style="' + btn + 'background:#5a4a30;">📂 ファイルから読み込む</button>';
+  h += '<input id="save-file" type="file" accept=".json,application/json" style="display:none;">';
+  h += '</div>';
+  function row(id, meta, extraNote){
+    var r = '<div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; padding:6px 10px; border-bottom:1px solid #eee;">';
+    r += '<div style="flex:1; min-width:180px;"><div style="font-size:13px; font-weight:600;">' + (meta.name || id) + '</div>'
+       + '<div style="font-size:11px; color:#666;">' + (meta.stageName || '') + ' ／ R' + (meta.round || 0) + ' ' + (FACTION_NAMES[meta.turn] || meta.turn || '') + 'のターン ／ ' + _fmtSavedAt(meta.savedAt) + (extraNote ? ' ／ ' + extraNote : '') + '</div></div>';
+    r += '<button data-load="' + id + '" style="' + btn + 'background:#185FA5;">📂 ロード</button>';
+    if(id !== SAVE_AUTO_ID && id !== '__console') r += '<button data-over="' + id + '" style="' + btn + 'background:#0F6E56;">💾 上書き</button>';
+    r += '<button data-export="' + id + '" style="' + btn + 'background:#5a4a30;">⬇ ファイルに書き出す</button>';
+    if(id !== '__console') r += '<button data-del="' + id + '" style="' + btn + 'background:#A32D2D;">🗑 削除</button>';
+    r += '</div>';
+    return r;
+  }
+  h += '<div style="background:#fff; border:1px solid #ddd; border-radius:5px;">';
+  if(idx[SAVE_AUTO_ID]) h += row(SAVE_AUTO_ID, idx[SAVE_AUTO_ID], '自分のターンの始まりに自動で上書き');
+  var consoleSave = null;
+  try{ consoleSave = JSON.parse(localStorage.getItem(SAVE_CONSOLE_KEY) || 'null'); }catch(e){}
+  if(consoleSave && consoleSave.v === SAVE_FORMAT){
+    var cm = saveMetaOf(consoleSave); cm.name = 'コンソールから書き出した局面';
+    h += row('__console', cm, 'セーブ機能を付ける前のもの');
+  }
+  for(var i=0; i<ids.length; i++) h += row(ids[i], idx[ids[i]]);
+  if(ids.length === 0 && !idx[SAVE_AUTO_ID] && !consoleSave){
+    h += '<div style="font-size:12px; color:#888; padding:8px 10px;">まだ保存がありません。名前を付けて「💾 新しく保存」を押してください。</div>';
+  }
+  h += '</div>';
+  h += '<div style="font-size:11px; color:#888; margin-top:6px;">保存はこのブラウザの中に残ります。別のパソコンやブラウザへ持っていくときは「ファイルに書き出す」→「ファイルから読み込む」を使ってください。</div>';
+  body.innerHTML = h;
+
+  document.getElementById('save-new-btn').onclick = function(){
+    var nm = (document.getElementById('save-name').value || '').trim();
+    if(!nm){
+      var stName = (STAGES[currentStage] && STAGES[currentStage].name) || 'ゲーム';
+      nm = stName + ' R' + roundNumber;
+    }
+    if(saveGameAs('s' + Date.now(), nm)) renderSaveSelect();
+  };
+  document.getElementById('save-import-btn').onclick = function(){ document.getElementById('save-file').click(); };
+  document.getElementById('save-file').onchange = function(ev){
+    var f = ev.target.files && ev.target.files[0];
+    if(f) importSaveFile(f);
+    ev.target.value = '';
+  };
+  body.querySelectorAll('[data-load]').forEach(function(b){ b.onclick = function(){ loadGameFrom(b.getAttribute('data-load')); }; });
+  body.querySelectorAll('[data-over]').forEach(function(b){ b.onclick = function(){
+    var id = b.getAttribute('data-over');
+    var meta = savesIndex()[id] || {};
+    if(!confirm('「' + (meta.name || id) + '」を今の局面で上書きしますか？')) return;
+    if(saveGameAs(id, meta.name || id)) renderSaveSelect();
+  }; });
+  body.querySelectorAll('[data-export]').forEach(function(b){ b.onclick = function(){
+    var id = b.getAttribute('data-export');
+    var d = (id === '__console') ? consoleSave : saveSlotRead(id);
+    if(!d){ alert('保存データが見つかりません'); return; }
+    var meta = (id === '__console') ? { name: 'console' } : (savesIndex()[id] || {});
+    exportSaveFile(d, meta.name || id);
+  }; });
+  body.querySelectorAll('[data-del]').forEach(function(b){ b.onclick = function(){
+    var id = b.getAttribute('data-del');
+    var meta = savesIndex()[id] || {};
+    if(!confirm('「' + (meta.name || id) + '」を削除しますか？')) return;
+    saveSlotDelete(id);
+    renderSaveSelect();
+  }; });
+}
 document.getElementById('end-turn-btn').onclick = function(){
   if(turn === 'P' && !gameOver){
     for(var i=0; i<units.length; i++){ if(units[i].owner === 'P') units[i].acted = true; }
@@ -17360,6 +17658,7 @@ function updateAiSpeedButtons(){
       btn.style.borderColor = '#ccc';
     }
   }
+  window._refreshPlayerAiBtn = refresh;
   btn.onclick = function(){
     playerIsAI = !playerIsAI;
     refresh();
