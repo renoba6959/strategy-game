@@ -18873,6 +18873,21 @@ function userMapsLoad(){
   try { return JSON.parse(localStorage.getItem('mb_user_maps') || '{}'); } catch(e){ return {}; }
 }
 
+// マップ名 → そのマップを使っている戦役の一覧 ['戦役名 第n話', ...]
+// 自作マップを「キャンペーン用」と「それ以外」に分けて見せるのに使う
+function campaignUsageMap(){
+  var use = {};
+  var camps = campaignsLoad();
+  for(var k in camps){
+    var st = camps[k].stages || [];
+    for(var i=0; i<st.length; i++){
+      if(!use[st[i]]) use[st[i]] = [];
+      use[st[i]].push(k + ' 第' + (i + 1) + '話');
+    }
+  }
+  return use;
+}
+
 var edCampKey = null;   // エディタで編集中のキャンペーン名
 // 保存済みマップを、編集中の戦役の最後に足す。戦役が無ければ名前を聞いて作る
 function edAddMapToCampaign(mapName){
@@ -18894,7 +18909,7 @@ function edAddMapToCampaign(mapName){
   // 戦役の欄を開いて見せる
   var body = document.getElementById('ed-camp-body'), arrow = document.getElementById('ed-camp-arrow');
   if(body){ body.style.display = 'block'; if(arrow) arrow.textContent = '▲'; }
-  edRenderCampaigns(); updateStageButtons();
+  edRenderCampaigns(); edRenderSavedList(); updateStageButtons();
 }
 function edRenderCampaigns(){
   var body = document.getElementById('ed-camp-body');
@@ -18978,14 +18993,14 @@ function edRenderCampaigns(){
     if(!confirm('「' + edCampKey + '」を削除します。よろしいですか')) return;
     var cs = campaignsLoad(); delete cs[edCampKey]; campaignsSave(cs);
     var pr = campaignProgress(); delete pr[edCampKey]; campaignProgressSave(pr);
-    edCampKey = null; edRenderCampaigns(); updateStageButtons();
+    edCampKey = null; edRenderCampaigns(); edRenderSavedList(); updateStageButtons();
   };
   function withCamp(fn){
     var cs = campaignsLoad();
     if(!edCampKey || !cs[edCampKey]) return;
     fn(cs[edCampKey], cs);
     campaignsSave(cs);
-    edRenderCampaigns(); updateStageButtons();
+    edRenderCampaigns(); edRenderSavedList(); updateStageButtons();   // 一覧の「キャンペーン用」の区分けも更新
   }
   var ups = body.querySelectorAll('[data-campup]');
   for(var ui=0; ui<ups.length; ui++) ups[ui].onclick = function(){
@@ -19136,16 +19151,29 @@ function edRenderSavedList(){
     list.innerHTML = '<div style="color:#888;">まだ保存されたマップがありません</div>';
     return;
   }
-  var html = '';
-  for(var i=0; i<keys.length; i++){
-    var k = keys[i];
+  // キャンペーンに入っているマップと、それ以外に分けて並べる
+  var usage = campaignUsageMap();
+  var inCamp = keys.filter(function(k){ return !!usage[k]; });
+  var others = keys.filter(function(k){ return !usage[k]; });
+  function rowHtml(k){
     var d = saved[k];
-    html += '<div style="display:flex; align-items:center; gap:4px; padding:3px 0; border-bottom:1px solid #eee;">';
-    html += '<span style="flex:1;">'+k+' <span style="color:#888;">('+d.W+'×'+d.H+')</span></span>';
-    html += '<button class="ed-load" data-key="'+k+'" style="font-size:10px;">読込</button>';
-    html += '<button class="ed-camp-add-map" data-key="'+k+'" style="font-size:10px;" title="このマップを、いま編集中の戦役の最後に足す">🎖 追加</button>';
-    html += '<button class="ed-del" data-key="'+k+'" style="font-size:10px;">×</button>';
-    html += '</div>';
+    var r = '<div style="display:flex; align-items:center; gap:4px; padding:3px 0; border-bottom:1px solid #eee;">';
+    r += '<span style="flex:1; min-width:0;">' + k + ' <span style="color:#888;">(' + d.W + '×' + d.H + ')</span>'
+       + (usage[k] ? '<div style="font-size:10px; color:#BA7517;">🎖 ' + usage[k].join(' / ') + '</div>' : '') + '</span>';
+    r += '<button class="ed-load" data-key="'+k+'" style="font-size:10px;">読込</button>';
+    r += '<button class="ed-camp-add-map" data-key="'+k+'" style="font-size:10px;" title="このマップを、いま編集中の戦役の最後に足す">🎖 追加</button>';
+    r += '<button class="ed-del" data-key="'+k+'" style="font-size:10px;">×</button>';
+    r += '</div>';
+    return r;
+  }
+  var html = '';
+  if(inCamp.length > 0){
+    html += '<div style="font-size:10px; color:#BA7517; font-weight:600; margin:2px 0;">🎖 キャンペーンで使用中 (' + inCamp.length + ')</div>';
+    for(var ci=0; ci<inCamp.length; ci++) html += rowHtml(inCamp[ci]);
+  }
+  if(others.length > 0){
+    html += '<div style="font-size:10px; color:#666; font-weight:600; margin:' + (inCamp.length ? '8px' : '2px') + ' 0 2px;">🗺 その他の自作マップ (' + others.length + ')</div>';
+    for(var oi=0; oi<others.length; oi++) html += rowHtml(others[oi]);
   }
   list.innerHTML = html;
   document.querySelectorAll('.ed-camp-add-map').forEach(function(b){
@@ -19447,19 +19475,26 @@ updateStageButtons = function(){
       wrap.appendChild(btn);
     })(builtin[i]);
   }
-  // ユーザーマップ
+  // ユーザーマップ: 「その他の自作マップ」と「キャンペーン用」に分けて並べる
   var saved = {};
   try { saved = JSON.parse(localStorage.getItem('mb_user_maps') || '{}'); } catch(e){ saved = {}; }
   var keys = Object.keys(saved);
-  if(keys.length > 0){
-    var sep = document.createElement('span');
-    sep.textContent = '|';
-    sep.style.cssText = 'color:#aaa; margin:0 4px; align-self:center;';
-    wrap.appendChild(sep);
-    for(var i=0; i<keys.length; i++){
+  var usage = (typeof campaignUsageMap === 'function') ? campaignUsageMap() : {};
+  var others = keys.filter(function(k){ return !usage[k]; });
+  var inCamp = keys.filter(function(k){ return !!usage[k]; });
+  function addUserRow(label, color, list, withUsage){
+    if(list.length === 0) return;
+    var row = document.createElement('div');
+    row.style.cssText = 'flex-basis:100%; display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-top:4px;';
+    var lab = document.createElement('span');
+    lab.textContent = label;
+    lab.style.cssText = 'font-size:11px; color:' + color + '; font-weight:600; margin-right:2px;';
+    row.appendChild(lab);
+    for(var i=0; i<list.length; i++){
       (function(key){
         var btn = document.createElement('button');
-        btn.textContent = '🗺 ' + key;
+        btn.textContent = (withUsage ? '🎖 ' : '🗺 ') + key;
+        if(withUsage) btn.title = usage[key].join(' / ') + '（フリー対戦としても遊べます）';
         btn.style.cssText = 'font-size: 13px;' + (currentStage===('user_'+key)?'background:#E6F1FB;border-color:#185FA5;':'');
         btn.onclick = function(){
           var saved = {};
@@ -19467,10 +19502,13 @@ updateStageButtons = function(){
           STAGES['user_'+key] = saved[key];
           loadStage('user_'+key);
         };
-        wrap.appendChild(btn);
-      })(keys[i]);
+        row.appendChild(btn);
+      })(list[i]);
     }
+    wrap.appendChild(row);
   }
+  addUserRow('🗺 自作マップ', '#666', others, false);
+  addUserRow('🎖 キャンペーン用', '#BA7517', inCamp, true);
 };
 
 updateStageButtons();
