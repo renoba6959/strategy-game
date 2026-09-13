@@ -214,6 +214,7 @@ button:hover { background: #f0f0f0; }
           <div style="font-size:11px; color:#666; margin-bottom:4px;">編集ツール</div>
           <div id="ed-tool-tabs" style="display:flex; gap:2px; margin-bottom:8px; border-bottom:1px solid #ddd; flex-wrap:wrap;">
             <button class="ed-tab" data-tab="terrain" style="padding:4px 10px; border:none; background:transparent; cursor:pointer; font-size:12px; border-bottom:2px solid #185FA5; font-weight:600; color:#185FA5;">地形</button>
+            <button class="ed-tab" data-tab="facility" style="padding:4px 10px; border:none; background:transparent; cursor:pointer; font-size:12px; border-bottom:2px solid transparent;" title="都市・工場・空港・港・補給拠点・首都を、所有する陣営を選んで置く">🏭 施設</button>
             <button class="ed-tab" data-tab="unit" style="padding:4px 10px; border:none; background:transparent; cursor:pointer; font-size:12px; border-bottom:2px solid transparent;">ユニット</button>
             <button class="ed-tab" data-tab="weather" style="padding:4px 10px; border:none; background:transparent; cursor:pointer; font-size:12px; border-bottom:2px solid transparent;" title="雲・雨雲を配置(オーバーレイ、ターン毎に流れる)">☁ 天候</button>
             <button class="ed-tab" data-tab="erase" style="padding:4px 10px; border:none; background:transparent; cursor:pointer; font-size:12px; border-bottom:2px solid transparent;">削除</button>
@@ -17954,7 +17955,7 @@ document.addEventListener('mouseup', function(){
     ed.rectStart = null;
     ed.rectEnd = null;
     edSnapshot();
-  } else if(ed.tool === 'terrain' || ed.tool === 'unit' || ed.tool === 'erase'){
+  } else if(ed.tool === 'terrain' || ed.tool === 'facility' || ed.tool === 'unit' || ed.tool === 'erase'){
     // 通常ドラッグ系: 履歴に1スナップショット
     edSnapshot();
   }
@@ -18038,8 +18039,26 @@ function edUnitAt(x, y){
   return null;
 }
 
+// 首都のきまり: 陣営ごとに1つだけ。中立の首都は置けない。
+// 置けないときは理由の文字列を返す (置けるなら null)
+function edCapitalPlaceProblem(x, y, owner){
+  if(owner === 'N') return '首都は陣営を選んでから置いてください（中立の首都は置けません）';
+  for(var yy=0; yy<ed.H; yy++){
+    for(var xx=0; xx<ed.W; xx++){
+      if(xx === x && yy === y) continue;
+      if(ed.cells[yy][xx] === 'CAPITAL' && ed.caps[xx+','+yy] === owner){
+        return ownerName(owner) + 'の首都はもう (' + xx + ',' + yy + ') にあります。首都は陣営ごとに1つだけです';
+      }
+    }
+  }
+  return null;
+}
 function edApplyTool(x, y){
-  if(ed.tool === 'terrain'){
+  if(ed.tool === 'terrain' || ed.tool === 'facility'){
+    if(ed.selectedTerrain === 'CAPITAL'){
+      var capProblem = edCapitalPlaceProblem(x, y, ed.selectedCapOwner);
+      if(capProblem){ document.getElementById('ed-status').textContent = '⚠ ' + capProblem; return; }
+    }
     ed.cells[y][x] = ed.selectedTerrain;
     // 拠点を塗ったら所有者を設定
     if(TER[ed.selectedTerrain] && TER[ed.selectedTerrain].capturable){
@@ -18071,15 +18090,26 @@ function edApplyTool(x, y){
     if(!ed.weather[y]) ed.weather[y] = [];
     ed.weather[y][x] = ed.selectedWeather;
   } else if(ed.tool === 'erase'){
-    // 優先度: ユニット → 天候 → 地形を平地に戻す
-    var u = edUnitAt(x, y);
-    if(u){
+    // 何を消すかは削除タブで選ぶ (既定はユニットだけ)。
+    // 以前は「ユニット → 天候 → 地形」の順に消していたため、クリック時にわずかに
+    // マウスが動くと同じマスに2回目の削除が走り、ユニットの下の地形まで平地に戻っていた。
+    var em = ed.eraseMode || 'unit';
+    if(em === 'unit'){
       ed.units = ed.units.filter(function(uu){ return !(uu.x===x && uu.y===y); });
-    } else if(ed.weather[y] && ed.weather[y][x]){
-      ed.weather[y][x] = null;
+    } else if(em === 'weather'){
+      if(ed.weather[y]) ed.weather[y][x] = null;
+    } else if(em === 'facility'){
+      // 施設だけを平地に戻す (自然の地形はそのまま)
+      if(TER[ed.cells[y][x]] && TER[ed.cells[y][x]].capturable){
+        ed.cells[y][x] = 'PLAIN';
+        delete ed.caps[x+','+y];
+      }
     } else {
+      // 地形を平地に戻す (施設・ユニット・天候もまとめて)
       ed.cells[y][x] = 'PLAIN';
       delete ed.caps[x+','+y];
+      ed.units = ed.units.filter(function(uu){ return !(uu.x===x && uu.y===y); });
+      if(ed.weather[y]) ed.weather[y][x] = null;
     }
   } else if(ed.tool === 'bucket'){
     // バケツ塗り: 4方向 flood fill で同じ地形の連続領域を塗り替え
@@ -18453,12 +18483,62 @@ function edRenderLimits(){
   }
 }
 
+// 地形タブと施設タブに出すもの
+var ED_TERRAIN_KEYS = ['PLAIN','FOREST','MOUNTAIN','ROAD','BRIDGE','BRIDGE_RUINED','RAIL','RAIL_DOUBLE','RAIL_BRIDGE','RAIL_RUINED','RAIL_BRIDGE_RUINED','SEA_RAIL','SEA_RAIL_RUINED','SEA_RAIL_DRAW','SEA_RAIL_DRAW_RUINED','SHOAL','REEF','RIVER','SEA','DEEP_SEA'];
+var ED_FACILITY_KEYS = ['CAPITAL','CITY','BIG_CITY','COMMERCE_CITY','AMMO_DEPOT','SUPPLY_DEPOT','SUPPLY_BASE','LOGISTICS_DEPOT','LOGISTICS_BASE','FACTORY','WHEEL_FACTORY','TRACK_FACTORY','WHEEL_ARSENAL','TRACK_ARSENAL','WHEEL_WORKS','TRACK_WORKS','AIRPORT','AIR_BASE','AIR_ARSENAL','AIR_WORKS','PORT','NAVY_BASE','NAVY_ARSENAL','NAVY_WORKS','RUINS_CITY','RUINS_FACTORY','RUINS_AIRPORT','RUINS_PORT'];
+// 編集中のマップの首都を陣営ごとに集める { P:[{x,y}], ... }
+function edCapitalsByOwner(){
+  var by = {};
+  for(var y=0; y<ed.H; y++){
+    for(var x=0; x<ed.W; x++){
+      if(ed.cells[y][x] !== 'CAPITAL') continue;
+      var o = ed.caps[x+','+y] || 'N';
+      if(!by[o]) by[o] = [];
+      by[o].push({ x: x, y: y });
+    }
+  }
+  return by;
+}
+// 保存データ (edSerialize の形) の首都を点検する。問題があれば文の配列、なければ空配列
+//   ・参加する陣営それぞれに首都が1つ必要
+//   ・同じ陣営の首都が2つ以上あってはいけない
+//   ・中立の首都は置けない
+function mapCapitalProblems(data){
+  var probs = [];
+  if(!data || !data.map) return probs;
+  var count = {};
+  for(var y=0; y<data.map.length; y++){
+    var row = data.map[y];
+    for(var x=0; x<row.length; x++){
+      if(CHARS[row.charAt(x)] !== 'CAPITAL') continue;
+      var o = (data.capOwners && data.capOwners[x+','+y]) || 'N';
+      count[o] = (count[o] || 0) + 1;
+    }
+  }
+  var facs = data.factions || ['P', 'E'];
+  for(var i=0; i<facs.length; i++){
+    var f = facs[i];
+    if(!count[f]) probs.push(ownerName(f) + 'に首都がありません');
+    else if(count[f] > 1) probs.push(ownerName(f) + 'の首都が' + count[f] + 'つあります (1つにしてください)');
+  }
+  if(count.N) probs.push('中立の首都が' + count.N + 'つあります (陣営を決めてください)');
+  return probs;
+}
 function edRenderPalette(){
   var pal = document.getElementById('ed-palette');
   pal.innerHTML = '';
-  if(ed.tool === 'terrain' || ed.tool === 'bucket' || ed.tool === 'rect'){
-    var terKeys = ['PLAIN','FOREST','MOUNTAIN','ROAD','BRIDGE','BRIDGE_RUINED','RAIL','RAIL_DOUBLE','RAIL_BRIDGE','RAIL_RUINED','RAIL_BRIDGE_RUINED','SEA_RAIL','SEA_RAIL_RUINED','SEA_RAIL_DRAW','SEA_RAIL_DRAW_RUINED','CITY','BIG_CITY','COMMERCE_CITY','AMMO_DEPOT','SUPPLY_DEPOT','SUPPLY_BASE','LOGISTICS_DEPOT','LOGISTICS_BASE','CAPITAL','FACTORY','WHEEL_FACTORY','TRACK_FACTORY','WHEEL_ARSENAL','TRACK_ARSENAL','WHEEL_WORKS','TRACK_WORKS','AIRPORT','AIR_BASE','AIR_ARSENAL','AIR_WORKS','PORT','NAVY_BASE','NAVY_ARSENAL','NAVY_WORKS','SHOAL','REEF','RIVER','SEA','DEEP_SEA','RUINS_CITY','RUINS_FACTORY','RUINS_AIRPORT','RUINS_PORT'];
-    var html = '<div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:4px;">';
+  if(ed.tool === 'terrain' || ed.tool === 'facility' || ed.tool === 'bucket' || ed.tool === 'rect'){
+    // 地形タブ = 自然の地形と道・線路。施設タブ = 占領できる施設 (所有者を選んで置く)。
+    // バケツ・矩形は両方から選べる (首都だけは一気に塗れないので外す)
+    var terKeys;
+    if(ed.tool === 'terrain') terKeys = ED_TERRAIN_KEYS.slice();
+    else if(ed.tool === 'facility') terKeys = ED_FACILITY_KEYS.slice();
+    else terKeys = ED_TERRAIN_KEYS.concat(ED_FACILITY_KEYS.filter(function(k){ return k !== 'CAPITAL'; }));
+    var html = '';
+    if(ed.tool === 'facility'){
+      html += '<div style="font-size:10px; color:#666; margin-bottom:6px; line-height:1.5;">下で所有する陣営を選んでから置きます。<b>首都は陣営ごとに1つ</b>で、テストプレイやキャンペーンには各陣営に首都が必要です。</div>';
+    }
+    html += '<div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:4px;">';
     for(var i=0; i<terKeys.length; i++){
       var k = terKeys[i];
       var t = TER[k];
@@ -18484,15 +18564,25 @@ function edRenderPalette(){
       html += '</div>';
     }
     html += '</div>';
-    // 拠点所有者選択
-    html += '<div style="margin-top:8px; font-size:11px; color:#666;">拠点所有者(都市/工場/空港/港用)</div>';
-    html += '<div style="display:flex; gap:4px; margin-top:3px;">';
-    var owners = [['N','中立','#888'],['P','陣営1','#185FA5'],['E','陣営2','#A32D2D'],['C','陣営3','#0F6E56'],['D','陣営4','#6B3FA0']];
-    for(var i=0; i<owners.length; i++){
-      var sel = ed.selectedCapOwner === owners[i][0] ? 'background:'+owners[i][2]+';color:white;font-weight:600;' : '';
-      html += '<button class="ed-owner" data-owner="'+owners[i][0]+'" style="flex:1;font-size:11px;padding:3px;'+sel+'">'+owners[i][1]+'</button>';
+    // 拠点所有者選択 (施設タブと、施設も塗れるバケツ・矩形で出す)
+    if(ed.tool !== 'terrain'){
+      html += '<div style="margin-top:8px; font-size:11px; color:#666;">所有する陣営</div>';
+      html += '<div style="display:flex; gap:4px; margin-top:3px;">';
+      var owners = [['N','中立','#888'],['P','陣営1','#185FA5'],['E','陣営2','#A32D2D'],['C','陣営3','#0F6E56'],['D','陣営4','#6B3FA0']];
+      for(var i=0; i<owners.length; i++){
+        var sel = ed.selectedCapOwner === owners[i][0] ? 'background:'+owners[i][2]+';color:white;font-weight:600;' : '';
+        html += '<button class="ed-owner" data-owner="'+owners[i][0]+'" style="flex:1;font-size:11px;padding:3px;'+sel+'">'+owners[i][1]+'</button>';
+      }
+      html += '</div>';
+      // 首都の配置状況 (どの陣営に首都があるか)
+      var capsBy = edCapitalsByOwner();
+      var capLine = [];
+      for(var oi=1; oi<owners.length; oi++){
+        var oc = capsBy[owners[oi][0]] || [];
+        capLine.push('<span style="color:' + owners[oi][2] + ';">' + owners[oi][1] + '</span> ' + (oc.length ? '(' + oc[0].x + ',' + oc[0].y + ')' : '<span style="color:#c00;">なし</span>'));
+      }
+      html += '<div style="margin-top:6px; font-size:10px; color:#666;">首都: ' + capLine.join(' ／ ') + '</div>';
     }
-    html += '</div>';
     pal.innerHTML = html;
     // 地形クリック
     document.querySelectorAll('.ed-ter').forEach(function(el){
@@ -18581,12 +18671,31 @@ function edRenderPalette(){
       };
     });
   } else if(ed.tool === 'erase'){
-    pal.innerHTML = '<div style="font-size:12px; padding:10px; color:#666; line-height:1.6;">クリックでマスを平地に戻す/ユニット削除。<br>ユニットがあればユニットを優先削除します。</div>';
+    var em = ed.eraseMode || 'unit';
+    var modes = [
+      ['unit', '🪖 ユニットだけ', 'ユニットを消す。地形・施設はそのまま'],
+      ['weather', '☁ 天候だけ', '雲・雨雲を消す'],
+      ['facility', '🏭 施設だけ', '施設を平地に戻す (森や山などの地形は触らない)'],
+      ['terrain', '⬜ すべて平地に', 'マスを平地に戻す (施設・ユニット・天候もまとめて消す)']
+    ];
+    var eh = '<div style="font-size:11px; color:#666; margin-bottom:6px;">何を消しますか</div><div style="display:flex; flex-direction:column; gap:4px;">';
+    for(var ei=0; ei<modes.length; ei++){
+      var on = (modes[ei][0] === em);
+      eh += '<button class="ed-erase-mode" data-mode="' + modes[ei][0] + '" title="' + modes[ei][2] + '" style="text-align:left; font-size:12px; padding:5px 8px; border-radius:3px; cursor:pointer; border:1px solid ' + (on ? '#A32D2D' : '#ccc') + '; background:' + (on ? '#A32D2D' : '#fff') + '; color:' + (on ? '#fff' : '#333') + '; font-weight:' + (on ? '600' : '400') + ';">' + modes[ei][1] + '</button>';
+    }
+    eh += '</div><div style="font-size:10px; color:#888; margin-top:6px; line-height:1.5;">' + modes.filter(function(m){ return m[0] === em; })[0][2] + '。クリックまたはドラッグで消します。</div>';
+    pal.innerHTML = eh;
+    document.querySelectorAll('.ed-erase-mode').forEach(function(b){
+      b.onclick = function(){ ed.eraseMode = b.dataset.mode; edRenderPalette(); };
+    });
   }
 }
 
 function edSwitchTool(tool){
   ed.tool = tool;
+  // 地形タブで施設が選ばれたまま、施設タブで地形が選ばれたまま、にならないように
+  if(tool === 'terrain' && ED_TERRAIN_KEYS.indexOf(ed.selectedTerrain) < 0) ed.selectedTerrain = 'PLAIN';
+  if(tool === 'facility' && ED_FACILITY_KEYS.indexOf(ed.selectedTerrain) < 0) ed.selectedTerrain = 'CITY';
   document.querySelectorAll('.ed-tab').forEach(function(b){
     var act = b.dataset.tab === tool;
     b.style.borderBottomColor = act ? '#185FA5' : 'transparent';
@@ -18845,7 +18954,9 @@ function edSave(){
   saved[id] = data;
   try {
     localStorage.setItem('mb_user_maps', JSON.stringify(saved));
-    document.getElementById('ed-status').textContent = '「' + id + '」を保存しました';
+    var capProbsS = mapCapitalProblems(data);
+    document.getElementById('ed-status').textContent = '「' + id + '」を保存しました'
+      + (capProbsS.length ? ' ⚠ ' + capProbsS.join('。') + '（首都が揃うまでテストプレイ・キャンペーンには使えません）' : '');
   } catch(e){
     document.getElementById('ed-status').textContent = '保存失敗: ブラウザがlocalStorageを使えません (JSONエクスポートで代用してください)';
   }
@@ -18854,9 +18965,9 @@ function edSave(){
 }
 
 // ===== キャンペーン =====
-// 保存済みの自作マップを順番に並べて1本の戦役にする。
-// 保存先: mb_campaigns { 戦役名: { name, desc, stages:[マップ名, ...] } }
-// 進行状況: mb_campaign_progress { 戦役名: { cleared: クリア済みの話数 } }
+// 保存済みの自作マップを順番に並べて1本のキャンペーンにする。
+// 保存先: mb_campaigns { キャンペーン名: { name, desc, stages:[マップ名, ...] } }
+// 進行状況: mb_campaign_progress { キャンペーン名: { cleared: クリア済みの話数 } }
 function campaignsLoad(){
   try { return JSON.parse(localStorage.getItem('mb_campaigns') || '{}'); } catch(e){ return {}; }
 }
@@ -18873,7 +18984,7 @@ function userMapsLoad(){
   try { return JSON.parse(localStorage.getItem('mb_user_maps') || '{}'); } catch(e){ return {}; }
 }
 
-// マップ名 → そのマップを使っている戦役の一覧 ['戦役名 第n話', ...]
+// マップ名 → そのマップを使っているキャンペーンの一覧 ['キャンペーン名 第n話', ...]
 // 自作マップを「キャンペーン用」と「それ以外」に分けて見せるのに使う
 function campaignUsageMap(){
   var use = {};
@@ -18889,24 +19000,30 @@ function campaignUsageMap(){
 }
 
 var edCampKey = null;   // エディタで編集中のキャンペーン名
-// 保存済みマップを、編集中の戦役の最後に足す。戦役が無ければ名前を聞いて作る
+// 保存済みマップを、編集中のキャンペーンの最後に足す。キャンペーンが無ければ名前を聞いて作る
 function edAddMapToCampaign(mapName){
+  var mapsAll = userMapsLoad();
+  var capProbsC = mapCapitalProblems(mapsAll[mapName]);
+  if(capProbsC.length){
+    alert('「' + mapName + '」はまだキャンペーンに入れられません:\n・' + capProbsC.join('\n・') + '\n\n「🏭 施設」タブで首都を置いてください (陣営ごとに1つ)');
+    return;
+  }
   var cs = campaignsLoad();
   if(!edCampKey || !cs[edCampKey]){
-    var nm = prompt('まだ戦役がありません。新しい戦役の名前を入れてください');
+    var nm = prompt('まだキャンペーンがありません。新しいキャンペーンの名前を入れてください');
     if(!nm) return;
     if(!cs[nm]) cs[nm] = { name: nm, desc: '', stages: [] };
     edCampKey = nm;
   }
   var c = cs[edCampKey];
   if(c.stages.indexOf(mapName) >= 0){
-    document.getElementById('ed-status').textContent = '「' + mapName + '」は戦役「' + edCampKey + '」にもう入っています';
+    document.getElementById('ed-status').textContent = '「' + mapName + '」はキャンペーン「' + edCampKey + '」にもう入っています';
   } else {
     c.stages.push(mapName);
     if(!campaignsSave(cs)){ alert('保存に失敗しました (localStorageが使えません)'); return; }
-    document.getElementById('ed-status').textContent = '「' + mapName + '」を戦役「' + edCampKey + '」の第' + c.stages.length + '話にしました';
+    document.getElementById('ed-status').textContent = '「' + mapName + '」をキャンペーン「' + edCampKey + '」の第' + c.stages.length + '話にしました';
   }
-  // 戦役の欄を開いて見せる
+  // キャンペーンの欄を開いて見せる
   var body = document.getElementById('ed-camp-body'), arrow = document.getElementById('ed-camp-arrow');
   if(body){ body.style.display = 'block'; if(arrow) arrow.textContent = '▲'; }
   edRenderCampaigns(); edRenderSavedList(); updateStageButtons();
@@ -18921,17 +19038,17 @@ function edRenderCampaigns(){
 
   var h = '';
   h += '<div style="font-size:10px; color:#666; line-height:1.6; margin-bottom:6px; padding:6px 8px; background:#f6f3ea; border-radius:4px;">'
-     + '<b>作り方</b><br>① マップを作って「💾 保存」<br>② 「＋ 新しい戦役を作る」で名前を付ける<br>③ 「保存してこの戦役に追加」か、自作マップ一覧の「🎖 追加」でマップを並べる</div>';
-  h += '<button id="ed-camp-new" style="font-size:11px; width:100%; margin-bottom:6px; padding:4px 0; background:#0F6E56; color:#fff; border:none; border-radius:3px; cursor:pointer;">＋ 新しい戦役を作る</button>';
+     + '<b>作り方</b><br>① マップを作って「💾 保存」<br>② 「＋ 新しいキャンペーンを作る」で名前を付ける<br>③ 「保存してこのキャンペーンに追加」か、自作マップ一覧の「🎖 追加」でマップを並べる</div>';
+  h += '<button id="ed-camp-new" style="font-size:11px; width:100%; margin-bottom:6px; padding:4px 0; background:#0F6E56; color:#fff; border:none; border-radius:3px; cursor:pointer;">＋ 新しいキャンペーンを作る</button>';
   if(keys.length > 0){
     h += '<div style="display:flex; gap:4px; margin-bottom:6px; align-items:center;">';
-    h += '<span style="font-size:10px; color:#888; white-space:nowrap;">編集する戦役</span>';
+    h += '<span style="font-size:10px; color:#888; white-space:nowrap;">編集するキャンペーン</span>';
     h += '<select id="ed-camp-sel" style="flex:1; font-size:11px;">';
     for(var i=0; i<keys.length; i++){
       h += '<option value="' + keys[i] + '"' + (keys[i] === edCampKey ? ' selected' : '') + '>' + keys[i] + '</option>';
     }
     h += '</select>';
-    h += '<button id="ed-camp-del" style="font-size:11px;" title="この戦役を削除">🗑</button>';
+    h += '<button id="ed-camp-del" style="font-size:11px;" title="このキャンペーンを削除">🗑</button>';
     h += '</div>';
   }
 
@@ -18957,7 +19074,7 @@ function edRenderCampaigns(){
     }
     // 編集中のマップを保存して、そのまま追加 (いちばん簡単な道)
     var curName = (document.getElementById('ed-name') && document.getElementById('ed-name').value) || '';
-    h += '<button id="ed-camp-add-cur" style="font-size:11px; width:100%; margin-top:8px; padding:4px 0; background:#185FA5; color:#fff; border:none; border-radius:3px; cursor:pointer;">💾 編集中のマップを保存して、この戦役に追加</button>';
+    h += '<button id="ed-camp-add-cur" style="font-size:11px; width:100%; margin-top:8px; padding:4px 0; background:#185FA5; color:#fff; border:none; border-radius:3px; cursor:pointer;">💾 編集中のマップを保存して、このキャンペーンに追加</button>';
     h += '<div style="font-size:10px; color:#888; margin:2px 0 6px;">' + (curName ? '「' + curName + '」を第' + (stages.length + 1) + '話にします' : 'マップ名を入れてから押してください') + '</div>';
     // 保存済みマップから追加
     var mapKeys = Object.keys(maps);
@@ -19021,20 +19138,30 @@ function edRenderCampaigns(){
   if(bAdd) bAdd.onclick = function(){
     var v = document.getElementById('ed-camp-add-sel').value;
     if(!v) return;
+    var capProbsV = mapCapitalProblems(userMapsLoad()[v]);
+    if(capProbsV.length){
+      alert('「' + v + '」はまだキャンペーンに入れられません:\n・' + capProbsV.join('\n・'));
+      return;
+    }
     withCamp(function(c){ c.stages.push(v); });
-    document.getElementById('ed-status').textContent = '「' + v + '」を戦役「' + edCampKey + '」に追加しました';
+    document.getElementById('ed-status').textContent = '「' + v + '」をキャンペーン「' + edCampKey + '」に追加しました';
   };
   var bAddCur = document.getElementById('ed-camp-add-cur');
   if(bAddCur) bAddCur.onclick = function(){
     var nmEl = document.getElementById('ed-name');
     var nm = (nmEl && nmEl.value) || '';   // 保存名と同じ文字列にする (edSerialize と揃える)
     if(!nm.trim()){ alert('先にマップ名を入れてください (左上の「マップ名」の欄)'); if(nmEl) nmEl.focus(); return; }
+    var capProbsA = mapCapitalProblems(edSerialize());
+    if(capProbsA.length){
+      alert('このマップはまだキャンペーンに入れられません:\n・' + capProbsA.join('\n・') + '\n\n「🏭 施設」タブで首都を置いてください (陣営ごとに1つ)');
+      return;
+    }
     edSave();                                   // 保存 (同名なら上書き)
     var added = false;
     withCamp(function(c){ if(c.stages.indexOf(nm) < 0){ c.stages.push(nm); added = true; } });
     document.getElementById('ed-status').textContent = added
-      ? '「' + nm + '」を保存して、戦役「' + edCampKey + '」の第' + campaignsLoad()[edCampKey].stages.length + '話にしました'
-      : '「' + nm + '」を保存しました (この戦役にはもう入っています)';
+      ? '「' + nm + '」を保存して、キャンペーン「' + edCampKey + '」の第' + campaignsLoad()[edCampKey].stages.length + '話にしました'
+      : '「' + nm + '」を保存しました (このキャンペーンにはもう入っています)';
   };
   var bReset = document.getElementById('ed-camp-reset');
   if(bReset) bReset.onclick = function(){
@@ -19045,7 +19172,7 @@ function edRenderCampaigns(){
 }
 
 // ===== キャンペーンのプレイ =====
-var campaignState = null;   // { key: 戦役名, index: 何話目(0始まり) }
+var campaignState = null;   // { key: キャンペーン名, index: 何話目(0始まり) }
 function campaignStageKey(key, idx){ return 'camp_' + key + '_' + idx; }
 // キャンペーンの第idx話をロードする
 function loadCampaignStage(key, idx){
@@ -19101,7 +19228,7 @@ function renderCampaignSelect(){
   var keys = Object.keys(camps);
   if(keys.length === 0){
     body.innerHTML = '<div style="font-size:12px; color:#666; line-height:1.7;">まだキャンペーンがありません。<br>'
-      + '<b>作り方</b>: 🛠 マップエディタでマップを作る → 左の「🎖 キャンペーン」を開いて「＋ 新しい戦役を作る」 → 「💾 編集中のマップを保存して、この戦役に追加」。<br>'
+      + '<b>作り方</b>: 🛠 マップエディタでマップを作る → 左の「🎖 キャンペーン」を開いて「＋ 新しいキャンペーンを作る」 → 「💾 編集中のマップを保存して、このキャンペーンに追加」。<br>'
       + '保存済みのマップは「🗂 自作マップ一覧」の「🎖 追加」でも並べられます。</div>';
     return;
   }
@@ -19161,7 +19288,7 @@ function edRenderSavedList(){
     r += '<span style="flex:1; min-width:0;">' + k + ' <span style="color:#888;">(' + d.W + '×' + d.H + ')</span>'
        + (usage[k] ? '<div style="font-size:10px; color:#BA7517;">🎖 ' + usage[k].join(' / ') + '</div>' : '') + '</span>';
     r += '<button class="ed-load" data-key="'+k+'" style="font-size:10px;">読込</button>';
-    r += '<button class="ed-camp-add-map" data-key="'+k+'" style="font-size:10px;" title="このマップを、いま編集中の戦役の最後に足す">🎖 追加</button>';
+    r += '<button class="ed-camp-add-map" data-key="'+k+'" style="font-size:10px;" title="このマップを、いま編集中のキャンペーンの最後に足す">🎖 追加</button>';
     r += '<button class="ed-del" data-key="'+k+'" style="font-size:10px;">×</button>';
     r += '</div>';
     return r;
@@ -19203,6 +19330,11 @@ function edRenderSavedList(){
 
 function edTestPlay(){
   var data = edSerialize();
+  var capProbs = mapCapitalProblems(data);
+  if(capProbs.length){
+    alert('このマップはまだ遊べません:\n・' + capProbs.join('\n・') + '\n\n「🏭 施設」タブで首都を置いてください (陣営ごとに1つ)');
+    return;
+  }
   // 一時ステージとして登録してロード
   STAGES.__test__ = data;
   closeEditor();
