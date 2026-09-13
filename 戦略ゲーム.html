@@ -18874,6 +18874,28 @@ function userMapsLoad(){
 }
 
 var edCampKey = null;   // エディタで編集中のキャンペーン名
+// 保存済みマップを、編集中の戦役の最後に足す。戦役が無ければ名前を聞いて作る
+function edAddMapToCampaign(mapName){
+  var cs = campaignsLoad();
+  if(!edCampKey || !cs[edCampKey]){
+    var nm = prompt('まだ戦役がありません。新しい戦役の名前を入れてください');
+    if(!nm) return;
+    if(!cs[nm]) cs[nm] = { name: nm, desc: '', stages: [] };
+    edCampKey = nm;
+  }
+  var c = cs[edCampKey];
+  if(c.stages.indexOf(mapName) >= 0){
+    document.getElementById('ed-status').textContent = '「' + mapName + '」は戦役「' + edCampKey + '」にもう入っています';
+  } else {
+    c.stages.push(mapName);
+    if(!campaignsSave(cs)){ alert('保存に失敗しました (localStorageが使えません)'); return; }
+    document.getElementById('ed-status').textContent = '「' + mapName + '」を戦役「' + edCampKey + '」の第' + c.stages.length + '話にしました';
+  }
+  // 戦役の欄を開いて見せる
+  var body = document.getElementById('ed-camp-body'), arrow = document.getElementById('ed-camp-arrow');
+  if(body){ body.style.display = 'block'; if(arrow) arrow.textContent = '▲'; }
+  edRenderCampaigns(); updateStageButtons();
+}
 function edRenderCampaigns(){
   var body = document.getElementById('ed-camp-body');
   if(!body) return;
@@ -18882,24 +18904,29 @@ function edRenderCampaigns(){
   if(keys.length > 0 && (!edCampKey || !camps[edCampKey])) edCampKey = keys[0];
   if(keys.length === 0) edCampKey = null;
 
-  var h = '<div style="display:flex; gap:4px; margin-bottom:6px;">';
-  h += '<select id="ed-camp-sel" style="flex:1; font-size:11px;">';
-  for(var i=0; i<keys.length; i++){
-    h += '<option value="' + keys[i] + '"' + (keys[i] === edCampKey ? ' selected' : '') + '>' + keys[i] + '</option>';
+  var h = '';
+  h += '<div style="font-size:10px; color:#666; line-height:1.6; margin-bottom:6px; padding:6px 8px; background:#f6f3ea; border-radius:4px;">'
+     + '<b>作り方</b><br>① マップを作って「💾 保存」<br>② 「＋ 新しい戦役を作る」で名前を付ける<br>③ 「保存してこの戦役に追加」か、自作マップ一覧の「🎖 追加」でマップを並べる</div>';
+  h += '<button id="ed-camp-new" style="font-size:11px; width:100%; margin-bottom:6px; padding:4px 0; background:#0F6E56; color:#fff; border:none; border-radius:3px; cursor:pointer;">＋ 新しい戦役を作る</button>';
+  if(keys.length > 0){
+    h += '<div style="display:flex; gap:4px; margin-bottom:6px; align-items:center;">';
+    h += '<span style="font-size:10px; color:#888; white-space:nowrap;">編集する戦役</span>';
+    h += '<select id="ed-camp-sel" style="flex:1; font-size:11px;">';
+    for(var i=0; i<keys.length; i++){
+      h += '<option value="' + keys[i] + '"' + (keys[i] === edCampKey ? ' selected' : '') + '>' + keys[i] + '</option>';
+    }
+    h += '</select>';
+    h += '<button id="ed-camp-del" style="font-size:11px;" title="この戦役を削除">🗑</button>';
+    h += '</div>';
   }
-  if(keys.length === 0) h += '<option value="">(まだありません)</option>';
-  h += '</select>';
-  h += '<button id="ed-camp-new" style="font-size:11px;" title="新しい戦役を作る">＋</button>';
-  h += '<button id="ed-camp-del" style="font-size:11px;" title="この戦役を削除">🗑</button>';
-  h += '</div>';
 
   if(edCampKey && camps[edCampKey]){
     var c = camps[edCampKey];
     var stages = c.stages || [];
     var maps = userMapsLoad();
-    h += '<div style="font-size:10px; color:#888; margin-bottom:4px;">上から順に挑戦します</div>';
+    h += '<div style="font-size:11px; font-weight:600; margin-bottom:2px;">🎖 ' + edCampKey + ' <span style="font-size:10px; font-weight:400; color:#888;">上から順に挑戦します</span></div>';
     if(stages.length === 0){
-      h += '<div style="font-size:11px; color:#aaa; padding:4px 0;">まだ空です。下から追加してください</div>';
+      h += '<div style="font-size:11px; color:#aaa; padding:4px 0;">まだ話がありません。下のボタンで追加してください</div>';
     }
     for(var si=0; si<stages.length; si++){
       var nm = stages[si];
@@ -18913,9 +18940,14 @@ function edRenderCampaigns(){
          + '<button data-campdel="' + si + '" style="font-size:10px; padding:0 4px;">✕</button>'
          + '</div>';
     }
-    // マップ追加
+    // 編集中のマップを保存して、そのまま追加 (いちばん簡単な道)
+    var curName = (document.getElementById('ed-name') && document.getElementById('ed-name').value) || '';
+    h += '<button id="ed-camp-add-cur" style="font-size:11px; width:100%; margin-top:8px; padding:4px 0; background:#185FA5; color:#fff; border:none; border-radius:3px; cursor:pointer;">💾 編集中のマップを保存して、この戦役に追加</button>';
+    h += '<div style="font-size:10px; color:#888; margin:2px 0 6px;">' + (curName ? '「' + curName + '」を第' + (stages.length + 1) + '話にします' : 'マップ名を入れてから押してください') + '</div>';
+    // 保存済みマップから追加
     var mapKeys = Object.keys(maps);
-    h += '<div style="display:flex; gap:4px; margin-top:6px;">';
+    h += '<div style="display:flex; gap:4px; margin-top:4px; align-items:center;">';
+    h += '<span style="font-size:10px; color:#888; white-space:nowrap;">保存済みから</span>';
     h += '<select id="ed-camp-add-sel" style="flex:1; font-size:11px;">';
     for(var mi=0; mi<mapKeys.length; mi++) h += '<option value="' + mapKeys[mi] + '">' + mapKeys[mi] + '</option>';
     if(mapKeys.length === 0) h += '<option value="">(保存済みマップが無い)</option>';
@@ -18975,6 +19007,19 @@ function edRenderCampaigns(){
     var v = document.getElementById('ed-camp-add-sel').value;
     if(!v) return;
     withCamp(function(c){ c.stages.push(v); });
+    document.getElementById('ed-status').textContent = '「' + v + '」を戦役「' + edCampKey + '」に追加しました';
+  };
+  var bAddCur = document.getElementById('ed-camp-add-cur');
+  if(bAddCur) bAddCur.onclick = function(){
+    var nmEl = document.getElementById('ed-name');
+    var nm = (nmEl && nmEl.value) || '';   // 保存名と同じ文字列にする (edSerialize と揃える)
+    if(!nm.trim()){ alert('先にマップ名を入れてください (左上の「マップ名」の欄)'); if(nmEl) nmEl.focus(); return; }
+    edSave();                                   // 保存 (同名なら上書き)
+    var added = false;
+    withCamp(function(c){ if(c.stages.indexOf(nm) < 0){ c.stages.push(nm); added = true; } });
+    document.getElementById('ed-status').textContent = added
+      ? '「' + nm + '」を保存して、戦役「' + edCampKey + '」の第' + campaignsLoad()[edCampKey].stages.length + '話にしました'
+      : '「' + nm + '」を保存しました (この戦役にはもう入っています)';
   };
   var bReset = document.getElementById('ed-camp-reset');
   if(bReset) bReset.onclick = function(){
@@ -19040,7 +19085,9 @@ function renderCampaignSelect(){
   var camps = campaignsLoad();
   var keys = Object.keys(camps);
   if(keys.length === 0){
-    body.innerHTML = '<div style="font-size:12px; color:#888;">まだキャンペーンがありません。🛠 マップエディタの「🎖 キャンペーン」から作れます。</div>';
+    body.innerHTML = '<div style="font-size:12px; color:#666; line-height:1.7;">まだキャンペーンがありません。<br>'
+      + '<b>作り方</b>: 🛠 マップエディタでマップを作る → 左の「🎖 キャンペーン」を開いて「＋ 新しい戦役を作る」 → 「💾 編集中のマップを保存して、この戦役に追加」。<br>'
+      + '保存済みのマップは「🗂 自作マップ一覧」の「🎖 追加」でも並べられます。</div>';
     return;
   }
   var prog = campaignProgress();
@@ -19096,10 +19143,14 @@ function edRenderSavedList(){
     html += '<div style="display:flex; align-items:center; gap:4px; padding:3px 0; border-bottom:1px solid #eee;">';
     html += '<span style="flex:1;">'+k+' <span style="color:#888;">('+d.W+'×'+d.H+')</span></span>';
     html += '<button class="ed-load" data-key="'+k+'" style="font-size:10px;">読込</button>';
+    html += '<button class="ed-camp-add-map" data-key="'+k+'" style="font-size:10px;" title="このマップを、いま編集中の戦役の最後に足す">🎖 追加</button>';
     html += '<button class="ed-del" data-key="'+k+'" style="font-size:10px;">×</button>';
     html += '</div>';
   }
   list.innerHTML = html;
+  document.querySelectorAll('.ed-camp-add-map').forEach(function(b){
+    b.onclick = function(){ edAddMapToCampaign(b.dataset.key); };
+  });
   document.querySelectorAll('.ed-load').forEach(function(b){
     b.onclick = function(){
       var saved = {};
