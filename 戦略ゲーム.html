@@ -13002,34 +13002,38 @@ function executeTrainMove(chain, driver, destX, destY, info){
 }
 
 // 連結できる相手 (隣接する自軍の列車系ユニット)。編成の端どうしでのみ繋げる。
+// 連結できる相手 = 自分の編成の「両端」に隣接している自軍の列車系ユニット。
+// (選んだ車輌の隣だけで探すと、機関車─貨車A のあとに A の先の貨車B を足せず、
+//  いったん切り離してから繋ぎ直すしかなくなる。編成のどの車輌を選んでいても、
+//  編成の端に続く車輌なら足せるようにする)
 function coupleCandidatesAround(unit){
   var list = [];
   var t = TYPE[unit.type];
   if(!t || !t.isTrain) return list;
   var myChain = trainOf(unit);
-  if(myChain){
-    if(myChain[0].id !== unit.id && myChain[myChain.length-1].id !== unit.id) return list; // 中間の車輌からは連結できない
-    if(myChain.length >= TRAIN_MAX_CARS) return list;
-  }
+  if(myChain && myChain.length >= TRAIN_MAX_CARS) return list;
   var mySize = myChain ? myChain.length : 1;
   var myIds = [];
   if(myChain){ for(var mi=0; mi<myChain.length; mi++) myIds.push(myChain[mi].id); }
   else myIds.push(unit.id);
+  var ends = myChain ? [myChain[0], myChain[myChain.length-1]] : [unit];
   var dirs = [[1,0],[-1,0],[0,1],[0,-1]];
-  for(var i=0; i<dirs.length; i++){
-    var nx = unit.x + dirs[i][0], ny = unit.y + dirs[i][1];
-    if(!inBounds(nx, ny)) continue;
-    var o = unitAt(nx, ny);
-    if(!o || o.owner !== unit.owner || o.id === unit.id) continue;
-    if(!TYPE[o.type].isTrain) continue;
-    if(myChain){
-      var inMine = false;
-      for(var k=0; k<myChain.length; k++){ if(myChain[k].id === o.id) inMine = true; }
-      if(inMine) continue;
+  for(var e=0; e<ends.length; e++){
+    var end = ends[e];
+    for(var i=0; i<dirs.length; i++){
+      var nx = end.x + dirs[i][0], ny = end.y + dirs[i][1];
+      if(!inBounds(nx, ny)) continue;
+      var o = unitAt(nx, ny);
+      if(!o || o.owner !== unit.owner || o.hp <= 0) continue;
+      if(!TYPE[o.type].isTrain) continue;
+      if(myIds.indexOf(o.id) >= 0) continue;                 // すでに自分の編成
+      var dup = false;
+      for(var li=0; li<list.length; li++){ if(list[li].id === o.id) dup = true; }
+      if(dup) continue;
+      if(mySize + 1 > TRAIN_MAX_CARS) continue;
+      if(!trainFits(myIds.concat([o.id]))) continue;   // 牽引力が足りない
+      list.push(o);
     }
-    if(mySize + 1 > TRAIN_MAX_CARS) continue;
-    if(!trainFits(myIds.concat([o.id]))) continue;   // 牽引力が足りない
-    list.push(o);
   }
   return list;
 }
@@ -13042,7 +13046,7 @@ function enterCoupleMode(){
   coupleMode = true;
   coupleValidSet = {};
   for(var i=0; i<cands.length; i++) setAdd(coupleValidSet, cands[i].x+','+cands[i].y);
-  setStatus('🔗 連結する方向を選んでください（線路沿いに続く車輌はまとめて連結します）');
+  setStatus('🔗 連結する車輌を選んでください（編成の端に続く車輌。線路沿いに続くものはまとめて連結します）');
   var btnWrap = document.getElementById('command-buttons');
   btnWrap.innerHTML = '';
   var b = document.createElement('button');
@@ -15592,7 +15596,7 @@ function renderRulesTab(){
     + '<h4>連結と編成 (列車)</h4>'
     + '<div style="background:#f6f2e8; border-left:3px solid #7A5A10; padding:6px 10px; margin:6px 0; font-size:12px;">'
     + '<b style="color:#7A5A10;">🔗 編成の作り方と動かし方</b><br>'
-    + '線路の上で隣り合った自軍の列車を「🔗 連結」で繋ぎます。<b>その方向に並んでいる車輌はまとめて連結</b>され、切るときは「🔗 切り離し」でその車輌から先が外れます。<br>'
+    + '線路の上で隣り合った自軍の列車を「🔗 連結」で繋ぎます。<b>その方向に並んでいる車輌はまとめて連結</b>され、切るときは「🔗 切り離し」でその車輌から先が外れます。すでに編成になっているときは、<b>編成のどちらの端に続く車輌でも</b>足せます (機関車を選んだまま、貨車の先の貨車を足せる)。<br>'
     + '・<b>編成は最大5両</b>。牽引できるのは<b>機関車が4両、装甲列車が2両</b>まで<br>'
     + '・<b>並び順は絶対に変わりません</b>。機関車が引いても押しても1・2・3・4のままです<br>'
     + '・<b>機関車か装甲列車が1両でも編成にいれば、前後どちらへも動けます</b>。両端に機関車を付けておけば片方をやられても反対側へ逃げられます<br>'
