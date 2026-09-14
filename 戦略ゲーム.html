@@ -13683,7 +13683,7 @@ function onCellClick(x, y){
   var k = x+','+y;
   var clicked = unitAt(x, y);
   infoX = x; infoY = y;
-  supplyRangeView = computeSupplyRangeView(x, y);   // 施設・補給ユニットの補給範囲を盤面に出す
+  supplyRangeView = deployMode ? null : computeSupplyRangeView(x, y);   // 施設・補給ユニットの補給範囲を盤面に出す (出撃先の選択中は出さない)
   updateInfoPanel();
   // 補給ルートの指定モード (段階3)。中止はコマンドパネルの「中止」ボタンで行う
   if(routeSetMode){
@@ -14624,8 +14624,9 @@ function render(){
       if(setHas(unloadValidSet, k)){ bg = '#A8E6C8'; border = '2px dashed #0F6E56'; }
       if(setHas(coupleValidSet, k)){ bg = '#E8D48A'; border = '2px dashed #7A5A10'; }
       if(setHas(uncoupleValidSet, k)){ bg = '#E8D48A'; border = '2px dashed #7A5A10'; }
-      if(setHas(deployValidSet, k)){ bg = '#BFE3CC'; border = '2px dashed #0F6E56'; }
       if(setHas(movableSet, k)){ bg = '#A8E6C8'; border = '1.5px solid #0F6E56'; }
+      // 出撃先 (生産・収容の取り出し) は他の塗りより優先して、はっきり見せる
+      if(setHas(deployValidSet, k)){ bg = '#9FE0BE'; border = '3px dashed #0B5C46'; }
       // 敵脅威範囲表示 (敵ユニットクリック時)。重なったら赤(脅威)優先
       if(setHas(enemyMoveSet, k)){ bg = '#B8D8F0'; border = '1.5px solid #185FA5'; }
       if(setHas(enemyThreatSet, k)){ bg = '#F5B0B0'; border = '1.5px solid #A32D2D'; }
@@ -17243,9 +17244,12 @@ function takeOutProduction(idx){
     deployValidSet = cand;
     deployPendingIdx = idx;
     deployPendingKind = 'prod';
+    // 施設をクリックしたときの補給範囲の枠 (緑) が候補マスに重なって見えにくいので消す
+    supplyRangeView = null; selected = null; setClear(movableSet); setClear(attackableSet);
     closeProductionMenu();
     setStatus('🚩 ' + TYPE[p.type].name + 'の出撃先を選んでください（施設マスは塞がっているので出られません。移動扱いなので、出た先で伏兵に遭うことがあります）');
     render();
+    showDeployPanel(TYPE[p.type].name);
     return;
   }
   // 施設マスが空いている → その場に出る (移動していないので、このターン普通に動ける)
@@ -17346,6 +17350,19 @@ function exitDeployMode(){
   setClear(deployValidSet);
   deployPendingIdx = -1;
   deployPendingKind = 'prod';
+  hideCommandPanel();
+}
+// 出撃先を選んでいる間、コマンド欄に案内と「やめる」を出す (状況メッセージだけだと気づきにくい)
+function showDeployPanel(unitName){
+  var panel = document.getElementById('command-panel');
+  document.getElementById('command-label').textContent = '🚩 ' + unitName + ': 出撃先 (緑の破線マス) をクリック';
+  var btnWrap = document.getElementById('command-buttons');
+  btnWrap.innerHTML = '';
+  var b = document.createElement('button');
+  b.textContent = 'やめる (施設に残す)';
+  b.onclick = function(e){ e.stopPropagation(); exitDeployMode(); render(); setStatus('出撃をやめました。ユニットは施設に残っています'); };
+  btnWrap.appendChild(b);
+  panel.style.visibility = 'visible';
 }
 
 function takeOutFromFacility(idx){
@@ -17380,9 +17397,11 @@ function takeOutFromFacility(idx){
     deployValidSet = candS;
     deployPendingIdx = idx;
     deployPendingKind = 'stored';
+    supplyRangeView = null; selected = null; setClear(movableSet); setClear(attackableSet);
     closeProductionMenu();
     setStatus('🚩 ' + TYPE[cg.type].name + 'の出撃先を選んでください（施設マスは塞がっているので出られません。移動扱いなので、出た先で伏兵に遭うことがあります）');
     render();
+    showDeployPanel(TYPE[cg.type].name);
     return;
   }
   // 新ユニットとして配置(HP保持、取り出した時点で動ける)
