@@ -2497,6 +2497,43 @@ function payTakeOutSupply(newU, cg, fx, fy){
 }
 
 // 施設の備蓄から取り出す。実際に取り出せた量を返す
+// 補給ユニットの積載庫を、範囲内の「自分で備蓄を作る施設」から順に満たす。
+// 最初に率の高い施設 (primary) から取り、足りなければ残りの施設からも率の高い順に取る。
+// 弾薬工廠の隣にいても、工廠の備蓄が少なくて満タンにならないときは、2マス以内の工場からも積める。
+// 各施設から取れるのは「積載庫の上限 × その施設の率」まで (1ターンあたり)。
+// 戻り値: 積んだ合計
+function fillSupplyHoldFromFacilities(u, kind, primary, facilities){
+  var t = TYPE[u.type];
+  var max = (kind === 'fuel') ? t.supplyFuelMax : t.supplyAmmoMax;
+  if(typeof max !== 'number') return 0;
+  var cur = (kind === 'fuel')
+    ? ((typeof u.supplyFuelCount === 'number') ? u.supplyFuelCount : max)
+    : ((typeof u.supplyAmmoCount === 'number') ? u.supplyAmmoCount : max);
+  var total = 0;
+  var list = [];
+  if(primary) list.push({ x: primary.x, y: primary.y, rate: null });
+  var others = (facilities || []).slice().sort(function(a, b){ return b.rate - a.rate; });
+  for(var i=0; i<others.length; i++){
+    if(primary && others[i].x === primary.x && others[i].y === primary.y) continue;
+    list.push(others[i]);
+  }
+  for(var li=0; li<list.length && cur < max; li++){
+    var f = list[li];
+    if(!facilityMakesStock(f, kind)) continue;          // 作らない施設 (都市・補給拠点) からは自動で積まない
+    var rate = (f.rate === null) ? null : f.rate;
+    if(rate === null){
+      // primary の率は呼び出し側が求めているので、facilities から引く
+      for(var k=0; k<others.length; k++){ if(others[k].x === f.x && others[k].y === f.y){ rate = others[k].rate; break; } }
+      if(rate === null) rate = 1.0;
+    }
+    var want = Math.min(max - cur, Math.ceil(max * rate));
+    if(want <= 0) continue;
+    var got = takeFacilityStock(f, kind, want);
+    if(got > 0){ cur += got; total += got; }
+  }
+  if(kind === 'fuel') u.supplyFuelCount = Math.min(max, cur); else u.supplyAmmoCount = Math.min(max, cur);
+  return total;
+}
 // pos が null の場合は無制限扱い (在庫の概念を持たない旧仕様の補給ユニットなど)
 // その施設が自分で備蓄を作るか (工場系・港系・空港系・弾薬工廠 = 作る / 都市系・首都 = 作らない)
 // 作る施設からなら、補給ユニットの積載庫を自動で満たしてよい。
@@ -2564,6 +2601,7 @@ function getSupplySource(unit){
   // 備蓄(段階2)が残っている施設のみ候補にする。燃料と弾薬で別々に選ぶ
   var facFuelRate = 0, facFuelName = null, facFuelPos = null;
   var facAmmoRate = 0, facAmmoName = null, facAmmoPos = null;
+  var facAll = [];   // 範囲内の施設すべて { x, y, rate }。補給ユニットの積載庫を複数の施設から満たすのに使う
   for(var fk in captures){
     if(isHeli && !heliReachable) break;   // 山・川・海のヘリには補給要員が届かない
     var fcap = captures[fk];
@@ -2594,6 +2632,7 @@ function getSupplySource(unit){
     }
     if(r <= 0) continue;
     var fst = facilityStock(fcap, M[fy][fx]);
+    facAll.push({ x: fx, y: fy, rate: r });
     if(fst.fuel > 0 && r > facFuelRate){ facFuelRate = r; facFuelName = fter.name; facFuelPos = { x: fx, y: fy }; }
     if(fst.ammo > 0 && r > facAmmoRate){ facAmmoRate = r; facAmmoName = fter.name; facAmmoPos = { x: fx, y: fy }; }
   }
@@ -2679,6 +2718,7 @@ function getSupplySource(unit){
     rate: Math.max(fuelRate, ammoRate), // 後方互換 (fuelRate/ammoRate が無い呼び出し用)
     fuelFromUnit: fuelFromUnit, ammoFromUnit: ammoFromUnit,
     fuelFacility: fuelFacility, ammoFacility: ammoFacility,
+    facilities: facAll,
     isFacility: (!fuelFromUnit && !ammoFromUnit)
   };
 }
@@ -5109,12 +5149,9 @@ function applyTurnStart(owner){
         if(t.supplyFuel && typeof t.supplyFuelMax === 'number' && holdFuelOK){
           var ownFuelCnt = (typeof u.supplyFuelCount === 'number') ? u.supplyFuelCount : t.supplyFuelMax;
           if(ownFuelCnt < t.supplyFuelMax){
-            var wantFuelStock = Math.min(t.supplyFuelMax - ownFuelCnt, Math.ceil(t.supplyFuelMax * fRate));
-            var gotFuelStock = takeFacilityStock(src.fuelFacility, 'fuel', wantFuelStock);
-            if(gotFuelStock > 0){
-              u.supplyFuelCount = Math.min(t.supplyFuelMax, ownFuelCnt + gotFuelStock);
-              didSupply = true;
-            }
+            // 率の高い施設から取り、足りなければ範囲内の他の作る施設からも順に積む
+            var gotFuelStock = fillSupplyHoldFromFacilities(u, 'fuel', src.fuelFacility, src.facilities);
+            if(gotFuelStock > 0) didSupply = true;
             if(u.supplyFuelCount < t.supplyFuelMax) partial = true;
           }
         }
@@ -5203,9 +5240,8 @@ function applyTurnStart(owner){
         if(t.supplyAmmo && typeof t.supplyAmmoMax === 'number' && holdAmmoOK){
           var ownCnt = (typeof u.supplyAmmoCount === 'number') ? u.supplyAmmoCount : t.supplyAmmoMax;
           if(ownCnt < t.supplyAmmoMax){
-            var wantStock = Math.min(t.supplyAmmoMax - ownCnt, Math.ceil(t.supplyAmmoMax * rate));
-            var gotStock = takeFacilityStock(src.ammoFacility, 'ammo', wantStock);
-            u.supplyAmmoCount = Math.min(t.supplyAmmoMax, ownCnt + gotStock);
+            // 率の高い施設から取り、足りなければ範囲内の他の作る施設からも順に積む
+            fillSupplyHoldFromFacilities(u, 'ammo', src.ammoFacility, src.facilities);
             if(u.supplyAmmoCount < t.supplyAmmoMax) stillNeedSomething = true;
           }
         }
@@ -15791,7 +15827,7 @@ function renderSupplyTab(){
   html += '<div style="margin-top:6px; background:#fff4d6; padding:6px 8px; border-radius:3px;"><b>そのターンに降ろされた物資は、同じターンには積み出せません</b><br>拠点を中継点にして補給車を並べると、1ターンのうちに物資が何リンクも先へ飛んでしまうためです。物資は<b>1ターンに1リンクずつ</b>進みます。降ろした物資を近くの味方が受け取るのは今までどおりです。</div>';
   html += '<div style="margin-top:6px; background:#fff4d6; padding:6px 8px; border-radius:3px;"><b>生産した補給ユニットの積載庫は空です</b><br>満タンで出てくると、1台作るたびに物資が備蓄の外から湧いてしまうためです。拠点の隣で「📦 積む」か、補給ルートの積み元で積んでください。(空母は積み込みの操作を持たないので、従来どおり艦内在庫を持って出てきます)</div>';
   html += '<div style="margin-top:6px; background:#fff4d6; padding:6px 8px; border-radius:3px;"><b>物資は「作る拠点」から「作らない拠点」への一方通行</b><br>'
-        + '<b>工場系・港系・空港系・弾薬工廠</b>は毎ターン備蓄を作る拠点で、<b>物資を出すのが仕事</b>です。範囲内にいる補給ユニットの<b>積載庫も自動で満たします</b>。<br>'
+        + '<b>工場系・港系・空港系・弾薬工廠</b>は毎ターン備蓄を作る拠点で、<b>物資を出すのが仕事</b>です。範囲内にいる補給ユニットの<b>積載庫も自動で満たします</b>。率のいちばん高い施設から取り、それで満タンにならなければ<b>範囲内の他の作る施設からも順に積みます</b> (例: 弾薬工廠の備蓄が少ないとき、2マス以内の工場からも)。<br>'
         + '<b>都市・中都市・大都市・首都</b>は備蓄を作れない拠点なので、<b>受け取る側</b>です。ここから積載庫が補充されることはありません (運んで降ろした物資を積み直すことになるため)。<br>'
         + '補給ルートの<b>自動の降ろし先には生産施設を選びません</b>。手動で降ろすことは制限していません。<br>'
         + '補給ユニット<b>自身</b>の燃料・弾薬 (走るための燃料) は、どの拠点からでも他のユニットと同じように範囲補給で入ります。</div>';
