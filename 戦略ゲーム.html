@@ -4939,29 +4939,34 @@ function processFactionElimination(){
         u.hp = 0; // 撃破扱い
       }
     }
-    // 拠点処理:
-    //   - 首都はそのまま (取った陣営の所有を維持)
-    //   - 元 f 所有でまだ f 所有のままの拠点 → 中立化 (f の領地だった部分は誰のものでもない)
-    //   - 元 f 所有だが既に他陣営が占領済みの拠点 → そのまま (既に占領した陣営の所有を維持)
+    // 拠点処理: f がその時点で持っている拠点 (元の領地も、f が他から奪ったものも) は
+    // すべて首都を取った陣営のものになる (降伏 = 領土ごと明け渡す)。
+    // 首都を取った陣営がいない (全滅などで脱落) ときは中立化。
+    // 他陣営が既に占領済みの拠点はそのまま。
+    var handed = 0;
     for(var k in captures){
       var cap = captures[k];
-      if(cap.originalOwner !== f) continue;
+      if(cap.owner !== f) continue;
       var xy = k.split(',');
       var ter = TER[M[parseInt(xy[1])][parseInt(xy[0])]];
-      if(ter && ter.isCapital){
-        // 首都は取った陣営のまま (originalOwner は変わらず f だが、現 owner は征服者)
-        continue;
+      if(conqueror){
+        cap.owner = conqueror;
+        // 収容中のユニット・生産中のものも引き継ぐ
+        if(cap.cargo){ for(var cgi=0; cgi<cap.cargo.length; cgi++){ if(cap.cargo[cgi].owner === f) cap.cargo[cgi].owner = conqueror; } }
+        handed++;
+      } else {
+        cap.owner = 'N';
       }
-      // 既に他陣営が占領済みなら、そのまま保持 (プレイヤーが汗水たらして占領した施設を奪わない)
-      if(cap.owner !== f && cap.owner !== 'N') continue;
-      // f がまだ所有 (または中立) → 中立化
-      cap.owner = 'N';
-      cap.captureHp = ter.capCaptureHp || ter.capHpMax || CAP_MAX; // 占領HPリセット
+      cap.captureHp = (ter && (ter.capCaptureHp || ter.capHpMax)) || CAP_MAX; // 占領HPリセット
+    }
+    if(conqueror){
+      for(var pi=0; pi<production.length; pi++){ if(production[pi].owner === f) production[pi].owner = conqueror; }
     }
     var label = (FACTION_NAMES[f] || f);
     if(conqueror){
       var conqLabel = FACTION_NAMES[conqueror] || conqueror;
-      setStatus('💀 ' + label + ' が脱落 — ユニットは ' + conqLabel + ' に編入、拠点は中立化');
+      setStatus('💀 ' + label + ' が降伏 — ユニットと拠点 ' + handed + ' か所は ' + conqLabel + ' のものになりました');
+      if(window.plog) plog('💀 ' + label + ' が降伏。ユニットと拠点' + handed + 'か所が ' + conqLabel + ' に');
     } else {
       setStatus('💀 ' + label + ' が脱落 — 全ユニット撃破、拠点は中立化');
     }
@@ -15499,7 +15504,7 @@ function renderFacilitiesTab(){
   html += '<table style="border-collapse:collapse; font-size:11px; width:100%; margin-bottom:8px;">';
   html += '<thead><tr style="background:#f5f0e0;"><th style="text-align:left; padding:4px 8px;">施設</th><th style="padding:4px 6px;">防御</th><th style="padding:4px 6px;">HP</th><th style="padding:4px 6px;">収入</th><th style="text-align:left; padding:4px 8px;">特徴・解放</th></tr></thead><tbody>';
   var cityRows = [
-    ['首都', '+4', 30, 2000, '占領で<b style="color:#A32D2D;">即敗北</b>。陣営の最重要拠点'],
+    ['首都', '+4', 30, 2000, '占領で<b style="color:#A32D2D;">即敗北</b>。陣営の最重要拠点。降伏した陣営の<b>ユニットと拠点はすべて、首都を取った陣営のもの</b>になる'],
     ['都市', '+2', 20, 1000, '基本拠点。アップグレード可: 中都市(+2000G, 3T)'],
     ['中都市', '+3', 30, 1500, 'アップグレード可: 大都市(収入特化) <b>or</b> 弾薬工廠(備蓄特化) (+4000G, 5T)'],
     ['大都市', '+3', 30, 2000, '収入特化。これ以上アップグレード不可'],
