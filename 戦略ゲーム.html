@@ -98,6 +98,7 @@ button:hover { background: #f0f0f0; }
   <span id="campaign-next" style="flex:none;"></span>
   <button id="end-turn-btn" style="font-weight:600; flex:none;">ターン終了</button>
   <div id="cap-counter" style="font-size:12px; padding:4px 10px; background: var(--color-background-secondary); border-radius: var(--border-radius-md);"></div>
+  <div id="victory-counter" style="display:none; font-size:12px; padding:4px 10px; background:#FFF1C2; border:1px solid #BA7517; border-radius: var(--border-radius-md); font-weight:600; color:#7a5a10;"></div>
   <div id="wind-indicator" style="display:none; font-size:12px; padding:4px 10px; background: #E6F1FB; border:1px solid #BAD3EE; border-radius: var(--border-radius-md);" title="現ラウンドの風 / 次ラウンドの予測"></div>
   <div id="funds-counter" style="font-size:12px; padding:4px 10px; background: var(--color-background-secondary); border-radius: var(--border-radius-md);"></div>
   <div id="status" style="font-size: 14px; font-weight: 500; padding: 6px 12px; background: var(--color-background-secondary); border-radius: var(--border-radius-md); flex: 1; min-width: 200px;">ステージを選んでください</div>
@@ -279,6 +280,10 @@ button:hover { background: #f0f0f0; }
     </div>
 
     <!-- ステージの制限 (横幅いっぱい) -->
+    <div style="background:#fff; border-radius:6px; padding:10px 14px; margin-top:12px; border:1px solid #ddd;">
+      <div style="font-size:12px; color:#666; font-weight:600; margin-bottom:6px;">🏁 勝利条件と開始資金</div>
+      <div id="ed-victory-body"></div>
+    </div>
     <div style="background:#fff; border-radius:6px; padding:10px 14px; margin-top:12px; border:1px solid #ddd;">
       <div style="display:flex; align-items:center; justify-content:space-between; cursor:pointer;" id="ed-limit-head">
         <div style="font-size:12px; color:#666; font-weight:600;">⚖ このステージの制限 (施設の上限レベル・生産できるユニット)</div>
@@ -1165,6 +1170,12 @@ function isEnemy(ownerA, ownerB){
 }
 // 脱落した陣営の記録 (loadStage でリセット)
 var eliminatedFactions = {};
+// ステージの勝利条件 (loadStage で読む)。null = 通常 (敵の首都をすべて落とす)
+//   { type:'survive', rounds: N, hold: ['x,y', ...] }
+//     N ラウンド目の開始時に、自軍の首都と hold の拠点が残っていて、ユニットが1体以上いれば勝利。
+//     途中で首都か hold の拠点を取られる、またはユニットが全滅すると敗北。
+//     指定ラウンドの前に敵の首都をすべて落とせば、その時点で勝利 (通常と同じ)
+var victoryCond = null;
 // プレイヤー陣営か (P が常にプレイヤー)
 function isPlayerFaction(f){ return f === 'P'; }
 // AI 陣営か (E/C/D)
@@ -3242,11 +3253,14 @@ function loadStage(key){
   setClear(movableSet); setClear(attackableSet);
   hideCommandPanel();
   infoX = null; infoY = null; supplyRangeView = null;
-  // 資金: 活性陣営すべてに INITIAL_FUNDS
+  // 資金: ステージに陣営ごとの開始資金があればそれ、なければ INITIAL_FUNDS
   funds = {};
   for(var i=0; i<activeFactions.length; i++){
-    funds[activeFactions[i]] = INITIAL_FUNDS;
+    var fFac = activeFactions[i];
+    funds[fFac] = (s.funds && typeof s.funds[fFac] === 'number') ? s.funds[fFac] : INITIAL_FUNDS;
   }
+  // 勝利条件 (○ラウンド耐える など)
+  victoryCond = (s.victory && s.victory.type === 'survive') ? { type:'survive', rounds: Math.max(1, s.victory.rounds || 10), hold: (s.victory.hold || []).slice() } : null;
   // 脱落陣営をリセット
   eliminatedFactions = {};
   production = [];
@@ -4984,6 +4998,35 @@ function checkWin(){
     setStatus('敗北... プレイヤー陣営が脱落しました');
     return true;
   }
+  // 耐久戦 (○ラウンド耐える)
+  if(victoryCond && victoryCond.type === 'survive'){
+    // 守る拠点を取られたら敗北
+    for(var hi=0; hi<victoryCond.hold.length; hi++){
+      var hcap = captures[victoryCond.hold[hi]];
+      if(hcap && hcap.owner !== 'P'){
+        var hxy = victoryCond.hold[hi].split(',');
+        var hter = TER[M[parseInt(hxy[1])][parseInt(hxy[0])]];
+        gameOver = true;
+        setStatus('敗北... 守るべき ' + (hter ? hter.name : '拠点') + '(' + victoryCond.hold[hi] + ') を失いました');
+        return true;
+      }
+    }
+    // ユニットが全滅したら敗北
+    var pAlive = 0;
+    for(var pi=0; pi<units.length; pi++){ if(units[pi].owner === 'P' && units[pi].hp > 0) pAlive++; }
+    if(pAlive === 0){
+      gameOver = true;
+      setStatus('敗北... 自軍のユニットが全滅しました');
+      return true;
+    }
+    // 指定ラウンドまで持ちこたえたら勝利
+    if(roundNumber >= victoryCond.rounds){
+      gameOver = true;
+      setStatus('勝利！' + victoryCond.rounds + ' ラウンド持ちこたえました');
+      campaignMarkCleared();
+      return true;
+    }
+  }
   // プレイヤー以外で生存している陣営があるか
   var aliveOthers = 0;
   for(var fi=0; fi<activeFactions.length; fi++){
@@ -5462,6 +5505,8 @@ function endTurn(){
   var roundEnded = (nextFac === activeFactions[0]);
   if(roundEnded) roundNumber++;
   turn = nextFac;
+  // 耐久戦: 指定ラウンドに達したらここで決着 (AI を動かす前に止める)
+  if(roundEnded && victoryCond && checkWin()){ render(); renderCaptureCount(); return; }
   // ターン開始ログ
   if(window.PLAYER_LOG || window.AI_DEBUG){
     try{ console.log('%c=== Round ' + roundNumber + ' Turn: ' + turn + ' ===', 'color:#5a4a30; font-weight:bold; background:#f5e8c4; padding:2px 8px;'); }catch(e){}
@@ -14939,7 +14984,23 @@ function onCellLeave(){
   setStatus('攻撃対象を赤マスから選んでください');
 }
 
+// 耐久戦の残りラウンド表示
+function renderVictoryCounter(){
+  var el = document.getElementById('victory-counter');
+  if(!el) return;
+  if(!victoryCond || victoryCond.type !== 'survive' || !currentStage){ el.style.display = 'none'; return; }
+  var left = Math.max(0, victoryCond.rounds - roundNumber);
+  var holdNames = [];
+  for(var i=0; i<victoryCond.hold.length; i++){
+    var xy = victoryCond.hold[i].split(',');
+    var t = TER[M[parseInt(xy[1])][parseInt(xy[0])]];
+    if(t) holdNames.push(t.name + '(' + victoryCond.hold[i] + ')');
+  }
+  el.style.display = '';
+  el.textContent = '🛡 あと ' + left + ' ラウンド耐える（守る: 首都' + (holdNames.length ? '・' + holdNames.join('・') : '') + '、ユニット全滅で敗北）';
+}
 function renderCaptureCount(){
+  renderVictoryCounter();
   var capList = [];
   for(var k in captures) capList.push(captures[k]);
   var total = capList.length;
@@ -17524,6 +17585,8 @@ function applySaveData(d){
   nextWindDirection = d.nextWindDirection || windDirection; nextWindStrength = (typeof d.nextWindStrength === 'number') ? d.nextWindStrength : windStrength;
   stageLimits = d.stageLimits || null;
   campaignState = d.campaignState || null;
+  var stV = STAGES[currentStage] && STAGES[currentStage].victory;
+  victoryCond = (stV && stV.type === 'survive') ? { type:'survive', rounds: Math.max(1, stV.rounds || 10), hold: (stV.hold || []).slice() } : null;
   gameOver = !!d.gameOver;
   playerIsAI = !!d.playerIsAI;
   if(window._refreshPlayerAiBtn) window._refreshPlayerAiBtn();
@@ -17906,6 +17969,8 @@ var ed = {
 
 // 現在の状態のスナップショットを履歴に追加
 function edSnapshot(){
+  // 施設を置いたり消したりしたら「守る拠点」の候補も変わるので描き直す (入力中の欄は無い)
+  if(ed.victory && ed.victory.type === 'survive') edRenderVictory();
   var snap = {
     cells: ed.cells.map(function(row){ return row.slice(); }),
     weather: ed.weather.map(function(row){ return row.slice(); }),
@@ -17993,6 +18058,8 @@ function edInit(){
   ed.startPhase = 'day';
   ed.limits = { upgradeMax: { factory:4, airport:4, port:4, city:4 }, banned: {} };
   ed.limitOpen = false;
+  ed.victory = { type:'normal', rounds:20, hold:[] };   // 勝利条件
+  ed.funds = {};                                         // 陣営ごとの開始資金 (未指定は INITIAL_FUNDS)
   ed.weatherDrift = 'random';
   ed.windDirection = 'east';
   ed.windStrength = 1;
@@ -18002,6 +18069,7 @@ function edInit(){
   edUpdateStageSettings();
   edRenderTeams();
   edRenderLimits();
+  edRenderVictory();
   edHistoryReset();
   edRenderBoard();
   edRenderPalette();
@@ -18523,6 +18591,75 @@ function minFacilityLevelFor(typeKey, group){
   return best;
 }
 
+// 勝利条件と開始資金の欄
+function edRenderVictory(){
+  var body = document.getElementById('ed-victory-body');
+  if(!body) return;
+  if(!ed.victory) ed.victory = { type:'normal', rounds:20, hold:[] };
+  if(!ed.funds) ed.funds = {};
+  var v = ed.victory;
+  var isSurv = (v.type === 'survive');
+  var h = '';
+  h += '<div style="display:flex; gap:14px; flex-wrap:wrap; align-items:center; font-size:12px;">';
+  h += '<label style="cursor:pointer;"><input type="radio" name="ed-vic" value="normal"' + (!isSurv ? ' checked' : '') + '> 通常 (敵の首都をすべて落とす)</label>';
+  h += '<label style="cursor:pointer;"><input type="radio" name="ed-vic" value="survive"' + (isSurv ? ' checked' : '') + '> '
+     + '<input id="ed-vic-rounds" type="number" min="10" max="99" value="' + (v.rounds || 20) + '" style="width:52px; font-size:12px; padding:2px 4px;"' + (isSurv ? '' : ' disabled') + '> ラウンド耐える</label>';
+  h += '</div>';
+  if(isSurv){
+    h += '<div style="font-size:10px; color:#666; margin:4px 0 6px; line-height:1.5;">指定ラウンドの開始時に、自軍の<b>首都</b>と下で選んだ拠点が残っていて、<b>ユニットが1体以上</b>いれば勝利。途中で失えば敗北。先に敵の首都をすべて落とせばその時点で勝利。</div>';
+    // 守る拠点 (陣営1 所有の施設から選ぶ。首都は常に対象)
+    var opts = [];
+    for(var y=0; y<ed.H; y++){
+      for(var x=0; x<ed.W; x++){
+        var ck = ed.cells[y][x];
+        if(!TER[ck] || !TER[ck].capturable || TER[ck].isCapital) continue;
+        if(ed.caps[x+','+y] !== 'P') continue;
+        opts.push({ key: x+','+y, name: TER[ck].name });
+      }
+    }
+    h += '<div style="font-size:11px; color:#666;">首都のほかに守る拠点 (陣営1の施設から。任意):</div>';
+    if(opts.length === 0){
+      h += '<div style="font-size:10px; color:#aaa;">陣営1の施設がまだありません (施設タブで陣営1を選んで置くと出ます)</div>';
+    } else {
+      h += '<div style="display:flex; flex-wrap:wrap; gap:4px 10px; margin-top:2px;">';
+      for(var oi=0; oi<opts.length; oi++){
+        var on = (v.hold || []).indexOf(opts[oi].key) >= 0;
+        h += '<label style="font-size:11px; cursor:pointer; white-space:nowrap;"><input type="checkbox" class="ed-vic-hold" value="' + opts[oi].key + '"' + (on ? ' checked' : '') + '> ' + opts[oi].name + ' (' + opts[oi].key + ')</label>';
+      }
+      h += '</div>';
+    }
+  }
+  // 開始資金
+  h += '<div style="font-size:11px; color:#666; margin-top:8px;">開始資金 (未入力は ' + INITIAL_FUNDS + 'G)。守る側を少なく、攻める側を多くすると防衛戦になります:</div>';
+  h += '<div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:2px;">';
+  var fl = [['P','陣営1','#185FA5'],['E','陣営2','#A32D2D'],['C','陣営3','#0F6E56'],['D','陣営4','#6B3FA0']];
+  for(var fi=0; fi<fl.length; fi++){
+    var fv = (typeof ed.funds[fl[fi][0]] === 'number') ? ed.funds[fl[fi][0]] : '';
+    h += '<label style="font-size:11px; color:' + fl[fi][2] + '; font-weight:600;">' + fl[fi][1] + ' <input type="number" class="ed-funds" data-fac="' + fl[fi][0] + '" min="0" max="999999" step="500" value="' + fv + '" placeholder="' + INITIAL_FUNDS + '" style="width:80px; font-size:12px; padding:2px 4px; font-weight:400;"> G</label>';
+  }
+  h += '</div>';
+  body.innerHTML = h;
+  body.querySelectorAll('input[name="ed-vic"]').forEach(function(r){
+    r.onchange = function(){ ed.victory.type = r.value; edRenderVictory(); };
+  });
+  var rEl = document.getElementById('ed-vic-rounds');
+  if(rEl) rEl.onchange = function(){ var n = parseInt(rEl.value, 10); if(!isFinite(n)) n = 20; n = Math.max(10, Math.min(99, n)); ed.victory.rounds = n; rEl.value = n; };
+  body.querySelectorAll('.ed-vic-hold').forEach(function(c){
+    c.onchange = function(){
+      var arr = ed.victory.hold || (ed.victory.hold = []);
+      var i = arr.indexOf(c.value);
+      if(c.checked && i < 0) arr.push(c.value);
+      if(!c.checked && i >= 0) arr.splice(i, 1);
+    };
+  });
+  body.querySelectorAll('.ed-funds').forEach(function(inp){
+    inp.onchange = function(){
+      var n = parseInt(inp.value, 10);
+      if(inp.value === '' || !isFinite(n)) delete ed.funds[inp.dataset.fac];
+      else ed.funds[inp.dataset.fac] = Math.max(0, n);
+    };
+  });
+}
 function edRenderLimits(){
   var body = document.getElementById('ed-limit-body');
   if(!body) return;
@@ -19045,6 +19182,24 @@ function edSerialize(){
     if(Object.keys(data.teams).length === 0) delete data.teams;
   }
   if(limOut) data.limits = limOut;   // ステージの制限
+  // 勝利条件 (耐久戦のときだけ書く)
+  if(ed.victory && ed.victory.type === 'survive'){
+    var holdOut = [];
+    for(var hi=0; hi<(ed.victory.hold||[]).length; hi++){
+      var hk = ed.victory.hold[hi];
+      var hxy = hk.split(',');
+      var hcell = ed.cells[parseInt(hxy[1])] && ed.cells[parseInt(hxy[1])][parseInt(hxy[0])];
+      if(hcell && TER[hcell] && TER[hcell].capturable && ed.caps[hk] === 'P') holdOut.push(hk);   // 消えた施設は外す
+    }
+    data.victory = { type:'survive', rounds: Math.max(10, Math.min(99, parseInt(ed.victory.rounds, 10) || 20)), hold: holdOut };
+  }
+  // 開始資金 (既定と違う陣営だけ書く)
+  var fundsOut = {};
+  for(var fi2=0; fi2<factions.length; fi2++){
+    var ff = factions[fi2];
+    if(ed.funds && typeof ed.funds[ff] === 'number' && ed.funds[ff] !== INITIAL_FUNDS) fundsOut[ff] = ed.funds[ff];
+  }
+  if(Object.keys(fundsOut).length) data.funds = fundsOut;
   return data;
 }
 
@@ -19095,6 +19250,11 @@ function edDeserialize(data){
   (data.C||[]).forEach(function(a){ ed.units.push({ type:a[0], owner:'C', x:a[1], y:a[2] }); });
   (data.D||[]).forEach(function(a){ ed.units.push({ type:a[0], owner:'D', x:a[1], y:a[2] }); });
   // ステージ設定の復元
+  ed.victory = (data.victory && data.victory.type === 'survive')
+    ? { type:'survive', rounds: data.victory.rounds || 20, hold: (data.victory.hold || []).slice() }
+    : { type:'normal', rounds:20, hold:[] };
+  ed.funds = {};
+  if(data.funds){ for(var fk in data.funds){ if(typeof data.funds[fk] === 'number') ed.funds[fk] = data.funds[fk]; } }
   ed.fow = !!data.fow;
   ed.dayNightCycle = !!data.dayNightCycle;
   ed.dayLength = data.dayLength || 2;
@@ -19116,6 +19276,7 @@ function edDeserialize(data){
   edUpdateStageSettings();
   edRenderTeams();
   edRenderLimits();
+  edRenderVictory();
   edRenderBoard();
 }
 
