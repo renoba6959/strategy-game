@@ -2233,6 +2233,16 @@ function autoRoutePick(u, want){
   // 敵の近くのマスは通らない・目的地にしない
   var avoid = enemyProximityTiles(u.owner, AUTO_ROUTE_ENEMY_RADIUS);
   var reach = bfsPathDistances(u.x, u.y, u, avoid);
+  // 他の自動巡回の補給ユニットがすでに向かっている拠点は避ける。
+  // 降ろし先が同じだと2台で同じ都市に運んで片方が無駄になり、積み元が同じだと備蓄の取り合いになる。
+  // (降ろし先は他に候補がある限り選ばない。積み元は在庫がずっと多いときだけ同じ所を選ぶ)
+  var toTaken = {}, fromTaken = {};
+  for(var oi=0; oi<units.length; oi++){
+    var ou = units[oi];
+    if(ou.id === u.id || ou.owner !== u.owner || ou.hp <= 0 || !ou.route || !ou.route.auto) continue;
+    if(ou.routeTarget === 'to' && ou.route.to) toTaken[ou.route.to.x+','+ou.route.to.y] = true;
+    if(ou.routeTarget === 'from' && ou.route.from) fromTaken[ou.route.from.x+','+ou.route.from.y] = true;
+  }
   var best = null, bestScore = 0;
   for(var k in captures){
     var cap = captures[k];
@@ -2253,10 +2263,12 @@ function autoRoutePick(u, want){
       if(!makes) continue;                        // 積むのは備蓄を作れる施設だけ
       if(ratio <= 0) continue;                    // 空の施設では積めない
       score = -ratio * 100 + d;                   // 在庫が多く、近いものを優先
+      if(fromTaken[k]) score += 60;               // 他の補給車が積みに向かっている施設は後回し
     } else {
       if(makes) continue;                         // 工場などは降ろし先にしない
       if(ratio >= 1) continue;                    // 満タンの拠点は用がない
       score = ratio * 100 + d * 0.5;              // 乏しく、近いものを優先
+      if(toTaken[k]) score += 1000;               // 他の補給車が降ろしに向かっている拠点は、他に無いときだけ
     }
     if(best === null || score < bestScore){ bestScore = score; best = f; }
   }
@@ -15885,7 +15897,7 @@ function renderSupplyTab(){
   html += '<li>積み元・降ろし先を敵に取られると、ルートは自動で解除される</li>';
   html += '<li><b>空中給油機</b>は空港系でしか積み降ろしできない。燃料が減ると最寄りの空港・空母へ帰投し、8割まで戻るとルートを再開する (墜落防止)</li>';
   html += '<li>自走できない補給ユニット (補給貨車) はルートを持てない — 機関車が運ぶ</li>';
-  html += '<li><b>🔄 自動巡回</b>: 積み元・降ろし先を指定せず、<b>備蓄の乏しい拠点へ自動で運ぶ</b>。毎ターン行き先を選び直すので、拠点を取られても設定し直さなくてよい。<b>見えている敵の3マス以内には近づかず</b>、敵のそばの拠点には行かない (前線へ据え置くなら駐留地点を使う)。解除は情報パネルの「🚚 ルート解除」<br>'
+  html += '<li><b>🔄 自動巡回</b>: 積み元・降ろし先を指定せず、<b>備蓄の乏しい拠点へ自動で運ぶ</b>。毎ターン行き先を選び直すので、拠点を取られても設定し直さなくてよい。<b>見えている敵の3マス以内には近づかず</b>、敵のそばの拠点には行かない (前線へ据え置くなら駐留地点を使う)。複数台を自動巡回にすると、<b>他の車が向かっている降ろし先・積み元は避けて</b>手分けする。解除は情報パネルの「🚚 ルート解除」<br>'
         + '　・降ろし先は<b>都市・中都市・大都市・首都</b>（備蓄を自分では作れない拠点）だけ。工場などを降ろし先にすると、積んだ拠点にそのまま降ろす堂々巡りになるため<br>'
         + '　・積み元は<b>備蓄を作れる施設</b>（工場系・港系・空港系・弾薬工廠）で、在庫が多く近いもの<br>'
         + '　・在庫が2割以下になったら積みに戻る。前線に据え置きたいときは従来どおり<b>駐留地点</b>を指定する</li>';
