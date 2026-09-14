@@ -12016,6 +12016,26 @@ function showCommandPanel(unit, justMoved){
   // 解除はここには置かない。ルート設定済みのユニットはターン開始時に自動で動いて
   // 行動済みになり、そもそも選択できない = このパネルが出ないため。
   // 解除は右のユニット詳細パネルのボタンで行う。
+  // 同じ編成の補給貨車が拠点の隣にいれば、機関車を選んだままでも積み降ろしできる
+  var chainForCars = trainOf(unit);
+  if(chainForCars && !canCarrySupplyStock(unit)){
+    for(var cci=0; cci<chainForCars.length; cci++){
+      (function(car){
+        if(car.id === unit.id || car.acted || !canCarrySupplyStock(car)) return;
+        var crfs = routeFacilitiesAround(car);
+        if(crfs.length === 0) return;
+        var cname = TYPE[car.type].name;
+        addBtn('📦 ' + cname + 'に積む', function(){
+          pendingUnit = car;   // 貨車の操作として扱う (貨車が行動済みになる。機関車はそのまま)
+          if(crfs.length === 1) doManualLoad(crfs[0]); else showFacilityChoice('load', crfs);
+        });
+        addBtn('📦 ' + cname + 'から降ろす', function(){
+          pendingUnit = car;
+          if(crfs.length === 1) doManualUnload(crfs[0]); else showFacilityChoice('unload', crfs);
+        }, true);
+      })(chainForCars[cci]);
+    }
+  }
   if(canCarrySupplyStock(unit)){
     // 自走できないもの (補給貨車) は機関車が運ぶのでルートを持てない
     if(TYPE[unit.type].move > 0) addBtn(unit.route ? '🚚 補給ルートを設定し直す' : '🚚 補給ルート設定', enterRouteSetMode, true);
@@ -13757,7 +13777,7 @@ function onCellClick(x, y){
     if(x === selected.x && y === selected.y){
       setClear(movableSet); setClear(attackableSet);
       var tStay = selected; selected = null;
-      showCommandPanel(tStay, false);
+      showCommandPanel(tStay, !!tStay.moved);   // 編成で動いたあとの車輌は「移動後」扱い (間接砲は撃てない)
       return;
     }
     var tDrv = trainDriver(tChain, selected);
@@ -13773,8 +13793,15 @@ function onCellClick(x, y){
     if(window.plog && tRes.moved){
       plog('🚂 ' + trainLabel(tChain) + ' が (' + tRes.lead.x + ',' + tRes.lead.y + ') へ移動' + (tRes.stoppedEarly ? ' (伏兵察知で停止)' : ''));
     }
-    // 操作した車輌以外は行動終了 (編成は1回の移動で全車が動くため)
-    for(var tI=0; tI<tChain.length; tI++){ if(tChain[tI].id !== tSel.id) tChain[tI].acted = true; }
+    // 操作した車輌以外の「自走できる車輌」は行動終了 (編成は1回の移動で全車が動くため)。
+    // 牽かれる車輌 (補給貨車・列車砲・対空列車) は自分では動けないので行動済みにしない。
+    // 機関車で動かしたあとに貨車を選んで「📦 降ろす」や、対空列車で撃つ、ができるように。
+    // (moved は付いているので、列車砲のような間接砲は動いたターンには撃てない)
+    for(var tI=0; tI<tChain.length; tI++){
+      if(tChain[tI].id === tSel.id) continue;
+      if(TYPE[tChain[tI].type].isTowed) continue;
+      tChain[tI].acted = true;
+    }
     if(tRes.ambushAt){
       tSel.acted = true;
       var tAmb = performAmbush(tRes.lead, function(){
