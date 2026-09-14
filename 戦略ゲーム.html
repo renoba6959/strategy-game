@@ -1219,7 +1219,7 @@ var production = [];
 var currentStage = null, W = 0, H = 0, M = [];
 var units = [], captures = {}, nextId = 1;
 var turn = 'P', selected = null, pendingUnit = null, pendingJustMoved = false, attackMode = false, unloadMode = false, unloadCargoIdx = -1, unloadValidSet = {}, unloadStarted = false, facilityAttackMode = false, facilityAttackableSet = {}, bridgeMode = false, bridgeValidSet = {}, railRepairMode = false, railRepairSet = {}, coupleMode = false, coupleValidSet = {}, uncoupleMode = false, uncoupleValidSet = {},
-    deployMode = false, deployValidSet = {}, deployPendingIdx = -1;
+    deployMode = false, deployValidSet = {}, deployPendingIdx = -1, deployPendingKind = 'prod';
 // 線路を敷く前の地形を覚えておく (破壊されたら元に戻す)。キーは "x,y"
 var railBase = {};
 // 線路の耐久 (施設HPに相当)。線路・鉄橋は20、廃線・損傷鉄橋は10
@@ -15656,7 +15656,7 @@ function renderRulesTab(){
     + '　<b>塞がっている施設マス自体には出られません</b>。周囲の空きマスまで出撃する形になります<br>'
     + '・施設マスに<b>敵がいる</b>ときは取り出せません。撃破してからになります<br>'
     + '・出撃できる空きマスが1つも無いときは取り出しが保留されます。生産口は空けておくのが基本です<br>'
-    + '・修理スロットから取り出す場合は、今までどおり<b>施設マスが空いていないと取り出せません</b>'
+    + '・修理スロットに収容したユニットも同じで、施設マスが塞がっていれば<b>出撃で隣へ出せます</b> (収容したラウンドは取り出せません)'
     + '</div>'
     + '<h4>移動の操作</h4>'
     + '緑のマスに<b>カーソルを合わせると、そこまで通る経路</b>が琥珀色で表示されます。そのまま<b>クリックすれば移動</b>します。編成 (列車) も同じです。<br>'
@@ -17242,6 +17242,7 @@ function takeOutProduction(idx){
     deployMode = true;
     deployValidSet = cand;
     deployPendingIdx = idx;
+    deployPendingKind = 'prod';
     closeProductionMenu();
     setStatus('🚩 ' + TYPE[p.type].name + 'の出撃先を選んでください（施設マスは塞がっているので出られません。移動扱いなので、出た先で伏兵に遭うことがあります）');
     render();
@@ -17264,8 +17265,18 @@ function takeOutProduction(idx){
 // (ZOCで途中停止する・伏兵の奇襲を受ける・燃料を使う・移動済みになる)
 function executeDeploy(x, y){
   if(deployPendingIdx < 0) return;
-  var p = production[deployPendingIdx];
-  if(!p || !p.ready){ exitDeployMode(); return; }
+  var isStored = (deployPendingKind === 'stored');
+  var p, cgS = null, capS = null;
+  if(isStored){
+    // 収容中のユニット (修理スロット) を出す
+    capS = captures[prodFacilityX+','+prodFacilityY];
+    cgS = capS && capS.cargo ? capS.cargo[deployPendingIdx] : null;
+    if(!cgS){ exitDeployMode(); return; }
+    p = { type: cgS.type, owner: cgS.owner, x: prodFacilityX, y: prodFacilityY };
+  } else {
+    p = production[deployPendingIdx];
+    if(!p || !p.ready){ exitDeployMode(); return; }
+  }
   // 経路をたどって実際に止まる位置を求める (伏兵察知・ZOCで手前に止まる)
   var tmpUnit = makeUnit(p.type, p.owner, p.x, p.y);
   tmpUnit.id = -1;
@@ -17282,9 +17293,18 @@ function executeDeploy(x, y){
   newU.acted = false;
   newU.deployedFromFacility = true;   // 戻り先の施設マスは塞がっているので移動キャンセル不可
   newU.spawnedThisTurn = true;        // 出てきたターンは探知できない
-  emptySupplyStockOnBuild(newU);
-  units.push(newU);
-  production.splice(deployPendingIdx, 1);
+  if(isStored){
+    // 収容中のユニット: HP・積載を引き継ぎ、燃料・弾薬の補給ぶんは施設の備蓄から払う
+    newU.hp = cgS.hp;
+    payTakeOutSupply(newU, cgS, p.x, p.y);
+    if(cgS.cargo && cgS.cargo.length > 0) newU.cargo = cgS.cargo.slice();
+    units.push(newU);
+    capS.cargo.splice(deployPendingIdx, 1);
+  } else {
+    emptySupplyStockOnBuild(newU);
+    units.push(newU);
+    production.splice(deployPendingIdx, 1);
+  }
   consumeFuelForMove(newU, p.x, p.y);
   var stopped = (res.x !== x || res.y !== y);
   if(window.plog) try{ plog('🚩 ' + TYPE[newU.type].name + ' が (' + p.x + ',' + p.y + ') から (' + newU.x + ',' + newU.y + ') へ出撃' + (stopped ? '（伏兵察知で停止）' : '')); }catch(e){}
@@ -17325,6 +17345,7 @@ function exitDeployMode(){
   deployMode = false;
   setClear(deployValidSet);
   deployPendingIdx = -1;
+  deployPendingKind = 'prod';
 }
 
 function takeOutFromFacility(idx){
@@ -17343,9 +17364,25 @@ function takeOutFromFacility(idx){
     alert('このラウンドに収容されたユニットは取り出せません。次のラウンドまでお待ちください。');
     return;
   }
-  // 施設マスにユニットがいれば不可
-  if(unitAt(prodFacilityX, prodFacilityY)){
-    alert('施設マスに既にユニットがいます。先に動かしてください。');
+  // 施設マスにユニットがいれば、生産品と同じく「出撃」で隣へ出す
+  var occ = unitAt(prodFacilityX, prodFacilityY);
+  if(occ){
+    if(!isAlly(occ.owner, cg.owner)){
+      alert('施設マスに敵ユニットがいます。撃破してから取り出してください。');
+      return;
+    }
+    var candS = deployCandidates(cg.type, cg.owner, prodFacilityX, prodFacilityY);
+    if(Object.keys(candS).length === 0){
+      alert('出撃できる空きマスがありません。先に周囲のユニットを動かしてください。');
+      return;
+    }
+    deployMode = true;
+    deployValidSet = candS;
+    deployPendingIdx = idx;
+    deployPendingKind = 'stored';
+    closeProductionMenu();
+    setStatus('🚩 ' + TYPE[cg.type].name + 'の出撃先を選んでください（施設マスは塞がっているので出られません。移動扱いなので、出た先で伏兵に遭うことがあります）');
+    render();
     return;
   }
   // 新ユニットとして配置(HP保持、取り出した時点で動ける)
