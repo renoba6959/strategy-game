@@ -5563,7 +5563,7 @@ function endTurn(){
   // 天候の進行 (1ラウンドごとに各雲が1マス流れる)
   if(roundEnded) advanceWeather();
   applyTurnStart(turn);
-  for(var i=0; i<units.length; i++){ if(units[i].owner === turn){ units[i].moved = false; units[i].acted = false; units[i].deployedFromFacility = false; units[i].spawnedThisTurn = false; } }
+  for(var i=0; i<units.length; i++){ if(units[i].owner === turn){ units[i].moved = false; units[i].acted = false; units[i].deployedFromFacility = false; units[i].spawnedThisTurn = false; units[i].moveFixed = false; } }
   // 補給ルート (段階3): AI 陣営はルートを自動で組み直してから往復させる
   if(!isPlayerFaction(turn) || playerIsAI) aiAssignSupplyRoutes(turn);
   runSupplyRoutes(turn);
@@ -12199,7 +12199,8 @@ function showCommandPanel(unit, justMoved){
   addBtn('待機', doWait);
   // 動いていないときも押せるようにする。これを隠すと「待機(=そのターンを捨てる)」しか
   // 出口が無くなるため。動いていなければ選択を解いて元の状態に戻すだけ。
-  addBtn((justMoved && !unit.deployedFromFacility) ? '移動キャンセル' : '選択解除', cancelMove);
+  // 動いたあとに連結・切り離しをした車輌 (moveFixed) も位置が確定しているので戻せない
+  addBtn((justMoved && !unit.deployedFromFacility && !unit.moveFixed) ? '移動キャンセル' : '選択解除', cancelMove);
   panel.style.visibility = 'visible';
   setClear(attackableSet);
   setStatus(TYPE[unit.type].name + 'のコマンドを選択してください');
@@ -12391,6 +12392,7 @@ function doManualLoad(pos){
   if(!pendingUnit) return;
   var got = supplyRouteLoad(pendingUnit, pos);
   setStatus(got > 0 ? ('📦 ' + TER[M[pos.y][pos.x]].name + 'から積み込みました (合計'+got+')') : '📦 積み込めるものがありません');
+  fixTrainMove(pendingUnit);
   pendingUnit.acted = true;
   pendingUnit = null;
   setClear(attackableSet); hideCommandPanel();
@@ -12401,6 +12403,7 @@ function doManualUnload(pos){
   if(!pendingUnit) return;
   var put = supplyRouteUnload(pendingUnit, pos);
   setStatus(put > 0 ? ('📦 ' + TER[M[pos.y][pos.x]].name + 'に降ろしました (合計'+put+')') : '📦 降ろせるものがありません (在庫が空か、備蓄が満杯)');
+  fixTrainMove(pendingUnit);
   pendingUnit.acted = true;
   pendingUnit = null;
   setClear(attackableSet); hideCommandPanel();
@@ -12989,15 +12992,30 @@ function trainHasLoco(chain){
   for(var i=0; i<chain.length; i++){ if(TYPE[chain[i].type].isCoupler) return true; }
   return false;
 }
-function trainAllReady(chain){
+// 編成が発車できるか: 行動済みの車輌が無く、引く機関車がこのターンまだ動いていないこと。
+// (連結・切り離しは行動を消費しないので、動いたあとに連結した機関車がもう一度
+//  動けてしまわないよう、機関車の moved も見る。牽かれる側の moved は問わない =
+//  出撃したばかりの貨車を、待っていた機関車が連結してそのまま運べる)
+function trainAllReady(chain, drv){
   if(!chain) return false;
   for(var i=0; i<chain.length; i++){ if(chain[i].acted) return false; }
+  if(drv && unitUsedMove(drv)) return false;
   return true;
 }
-// 編成を引く/押す機関車 (選んだ車輌が機関車ならそれ、違えば編成内の機関車)
+// このターン、実際に場所を変えたか (出撃も移動のうち)。
+// `moved` は「その場で待機」を選んだだけでも立つ (探知が切れる扱いのため) ので、
+// 移動をもう使ったかどうかは位置が変わったかで見る
+function unitUsedMove(u){
+  if(!u || !u.moved) return false;
+  if(u.deployedFromFacility) return true;
+  return (typeof u.preMoveX === 'number') && (u.x !== u.preMoveX || u.y !== u.preMoveY);
+}
+// 編成を引く/押す機関車 (選んだ車輌が機関車ならそれ、違えば編成内の機関車)。
+// まだ動いていない機関車を優先し、無ければ最初の機関車 (情報パネルの表示用)
 function trainDriver(chain, prefer){
   if(!chain) return null;
-  if(prefer && TYPE[prefer.type].isCoupler && !prefer.acted) return prefer;
+  if(prefer && TYPE[prefer.type].isCoupler && !prefer.acted && !unitUsedMove(prefer)) return prefer;
+  for(var i=0; i<chain.length; i++){ if(TYPE[chain[i].type].isCoupler && !chain[i].acted && !unitUsedMove(chain[i])) return chain[i]; }
   for(var i=0; i<chain.length; i++){ if(TYPE[chain[i].type].isCoupler) return chain[i]; }
   return null;
 }
@@ -13274,16 +13292,39 @@ function executeCouple(x, y){
   syncTrains();
   var names = [];
   for(var i=0; i<added.length; i++) names.push(TYPE[added[i].type].name);
-  setStatus('🔗 ' + names.join('・') + 'を連結しました（' + ids.length + '両編成）');
   if(loco.owner === 'P' && window.plog){
     plog('🔗 ' + TYPE[loco.type].name + '@('+loco.x+','+loco.y+') が ' + names.join('・') + 'を連結（'+ids.length+'両編成）');
   }
-  loco.acted = true;
-  pendingUnit = null;
-  coupleMode = false;
-  coupleValidSet = {};
-  hideCommandPanel();
-  afterAction();
+  afterCoupling(loco, ids, '🔗 ' + names.join('・') + 'を連結しました（' + ids.length + '両編成）');
+}
+
+// 動いたあとの車輌の位置を確定する (移動キャンセル不可にする)。
+// 編成の一部だけが仕事をしたあとで残りを元の位置に戻せると、編成がばらばらになったり
+// 仕事をした車輌の行動済みまで解けてしまうため。onlySelf を付けなければ同じ編成の全車輌に付ける
+function fixTrainMove(unit, onlySelf){
+  if(!unit) return;
+  var list = onlySelf ? [unit] : (trainOf(unit) || [unit]);
+  for(var i=0; i<list.length; i++){ if(unitUsedMove(list[i])) list[i].moveFixed = true; }
+}
+
+// 連結・切り離しのあと処理。連結・切り離しは行動を消費しない。
+// - まだ動いていなければ、その車輌を選び直した状態にして、そのまま編成を動かせるようにする
+// - もう動いたあとなら、位置を確定して (移動キャンセル不可) コマンドパネルに戻る。
+//   ここで戻せてしまうと、動いた車輌だけが元の位置に飛んで編成がばらばらになる
+function afterCoupling(unit, ids, msg){
+  for(var i=0; i<ids.length; i++) fixTrainMove(unitById(ids[i]), true);
+  coupleMode = false; coupleValidSet = {};
+  uncoupleMode = false; uncoupleValidSet = {};
+  if(pendingJustMoved || unitUsedMove(unit)){
+    showCommandPanel(unit, true);
+    setStatus(msg + '（行動は消費しません）');
+  } else {
+    pendingUnit = null;
+    hideCommandPanel();
+    onCellClick(unit.x, unit.y);   // 選び直し (動ける編成なら緑マスが出る)
+    setStatus(msg + '（行動は消費しません。そのまま動かせます）');
+  }
+  updateInfoPanel();
 }
 
 // ===== 切り離し =====
@@ -13343,16 +13384,10 @@ function executeUncouple(x, y){
   if(keep.length >= 2) trains.push(keep);
   if(cut.length >= 2) trains.push(cut);
   syncTrains();
-  setStatus('🔗 ' + cut.length + '両を切り離しました');
   if(pendingUnit.owner === 'P' && window.plog){
     plog('🔗 ' + TYPE[pendingUnit.type].name + '@('+pendingUnit.x+','+pendingUnit.y+') が '+cut.length+'両を切り離し');
   }
-  pendingUnit.acted = true;
-  pendingUnit = null;
-  uncoupleMode = false;
-  uncoupleValidSet = {};
-  hideCommandPanel();
-  afterAction();
+  afterCoupling(pendingUnit, allIds, '🔗 ' + cut.length + '両を切り離しました');
 }
 
 function enterRailRepairMode(){
@@ -13759,6 +13794,7 @@ function cancelMove(){
     var cu = cancelList[ci];
     if(!cu.moved) continue;   // 動いていない車輌はそのまま
     if(cu.deployedFromFacility) continue;   // 施設から出撃した車輌は戻さない (施設マスが塞がっている)
+    if(cu.moveFixed) continue;   // 動いたあとに連結・切り離しをした車輌は戻さない (編成がばらばらになる)
     cancelMoved = true;
     if(typeof cu.preMoveX === 'number' && typeof cu.preMoveY === 'number'){
       cu.x = cu.preMoveX; cu.y = cu.preMoveY;
@@ -13920,12 +13956,12 @@ function onCellClick(x, y){
     if(x === selected.x && y === selected.y){
       setClear(movableSet); setClear(attackableSet);
       var tStay = selected; selected = null;
-      showCommandPanel(tStay, !!tStay.moved);   // 編成で動いたあとの車輌は「移動後」扱い (間接砲は撃てない)
+      showCommandPanel(tStay, unitUsedMove(tStay));   // 編成で動いたあとの車輌は「移動後」扱い (間接砲は撃てない)
       return;
     }
     var tDrv = trainDriver(tChain, selected);
     if(!tDrv){ setStatus('機関車がいないため、この編成は動かせません'); return; }
-    if(!trainAllReady(tChain)){ setStatus('行動済みの車輌があるため、この編成は発車できません'); return; }
+    if(!trainAllReady(tChain, tDrv)){ setStatus(tDrv.moved ? '機関車はこのターンもう動いたため、この編成は発車できません' : '行動済みの車輌があるため、この編成は発車できません'); return; }
     var tInfo = (selectedTrainInfo && selectedTrainInfo.unitId === selected.id)
       ? selectedTrainInfo.info : trainMovableInfo(tChain, tDrv);
     movePreview = null;
@@ -14086,7 +14122,7 @@ function onCellClick(x, y){
       movableSet = {};
       setAdd(movableSet, clicked.x+','+clicked.y);
       var selDrv = trainDriver(selChain, clicked);
-      var selReady = (selDrv && trainAllReady(selChain));
+      var selReady = (selDrv && trainAllReady(selChain, selDrv));
       selectedTrainInfo = null;
       if(selReady){
         var selInfo = trainMovableInfo(selChain, selDrv);
@@ -14097,7 +14133,8 @@ function onCellClick(x, y){
       attackableSet = computeAttackable(clicked, clicked.x, clicked.y, false);
       setStatus(TYPE[clicked.type].name + '選択中: ' +
         (selReady ? '緑=編成の先頭が止まれるマス' :
-         (!selDrv ? '機関車がいないため動けません' : '行動済みの車輌があるため発車できません')) +
+         (!selDrv ? '機関車がいないため動けません' :
+          (selDrv.moved ? '機関車はこのターンもう動いたため発車できません' : '行動済みの車輌があるため発車できません'))) +
         '（' + selChain.length + '両編成: ' + trainLabel(selChain) + '）');
       render();
       return;
@@ -14986,7 +15023,7 @@ function buildMovePreview(unit, x, y){
     var info = (selectedTrainInfo && selectedTrainInfo.unitId === unit.id) ? selectedTrainInfo.info : null;
     if(!info){
       var drv = trainDriver(chain, unit);
-      if(!drv || !trainAllReady(chain)) return null;
+      if(!drv || !trainAllReady(chain, drv)) return null;
       info = trainMovableInfo(chain, drv);
       selectedTrainInfo = { unitId: unit.id, info: info };
     }
@@ -15791,6 +15828,7 @@ function renderRulesTab(){
     + '<div style="background:#f6f2e8; border-left:3px solid #7A5A10; padding:6px 10px; margin:6px 0; font-size:12px;">'
     + '<b style="color:#7A5A10;">🔗 編成の作り方と動かし方</b><br>'
     + '線路の上で隣り合った自軍の列車を「🔗 連結」で繋ぎます。<b>その方向に並んでいる車輌はまとめて連結</b>され、切るときは「🔗 切り離し」でその車輌から先が外れます。すでに編成になっているときは、<b>編成のどちらの端に続く車輌でも</b>足せます (機関車を選んだまま、貨車の先の貨車を足せる)。<br>'
+    + '・<b>連結・切り離しは行動を消費しません</b>。まだ動いていなければ連結してそのまま発車できます (出撃したばかりの貨車を、待っていた機関車が繋いで運べる)。動いたあとに連結・切り離しをすると位置が確定し、移動キャンセルはできなくなります。<b>このターンもう動いた機関車では発車できません</b> (出撃も移動に数えます)<br>'
     + '・<b>編成は最大5両</b>。牽引できるのは<b>機関車が4両、装甲列車が2両</b>まで<br>'
     + '・<b>並び順は絶対に変わりません</b>。機関車が引いても押しても1・2・3・4のままです<br>'
     + '・<b>機関車か装甲列車が1両でも編成にいれば、前後どちらへも動けます</b>。両端に機関車を付けておけば片方をやられても反対側へ逃げられます<br>'
@@ -16884,7 +16922,7 @@ function renderTodoTab(){
     ['奇襲判定の一本化', '「画面で見えるか」と「奇襲されるか」を同じルールに統一。潜航中の潜水艦は探知範囲 (潜水艦3/駆逐艦・フリゲート2/対潜哨戒機3) で発見、隣接なら対潜能力がなくても発見。奇襲は動く前の位置で判定する'],
     ['鉄道 (線路・鉄橋・耐久制)', '線路は新規に敷けず、マップに置かれたものを奪い合う。線路・鉄橋・橋は耐久0〜30で、工兵の工事 (工兵の表示HP分) で開通し、施設攻撃で叩ける。線路・鉄橋は路盤・橋脚で止まり更地にならない'],
     ['海上鉄橋・可動橋', '島と島を結ぶ高架橋 (マップエディタからのみ配置)。列車0.5・工兵3。桁下を抜けられるのは潜水艦・攻撃型潜水艦・駆潜艇・輸送船・給油艦・補給艦だけで、可動橋だけが全艦船の通れる海峡の関所になる'],
-    ['列車ユニットと編成', '機関車・装甲列車・列車砲・補給貨車・対空列車の5種。連結すると線路の上に一列に並び (最大5両)、機関車が1両あれば前後どちらへも動ける。並び順は変わらない。単線なので味方の上もすり抜けられない。補給貨車は連結したまま補給でき、列車砲は停車していれば連結したまま撃てる。機関車を失うと貨車は線路に取り残される'],
+    ['列車ユニットと編成', '機関車・装甲列車・列車砲・補給貨車・対空列車の5種。連結すると線路の上に一列に並び (最大5両)、機関車が1両あれば前後どちらへも動ける。並び順は変わらない。連結・切り離しは行動を消費しない (動いていなければ連結してそのまま発車できる)。単線なので味方の上もすり抜けられない。補給貨車は連結したまま補給でき、列車砲は停車していれば連結したまま撃てる。機関車を失うと貨車は線路に取り残される'],
     ['伏兵検知システム', '見えない敵(森・山・雲・雨雲下、潜水艦・ステルス爆)がいるマスはプレイヤー視点で空きマスとして移動範囲に含む。移動経路で伏兵に隣接した瞬間にZOC発動で停止+発見+行動終了。<b>目的地が伏兵マスだった場合のみ奇襲発動</b>。自分の移動で初めて発見した敵への同ターン攻撃は不可(潜水艦・ステルス機ルールを全伏兵に拡張)']
   ];
   var categories = [
