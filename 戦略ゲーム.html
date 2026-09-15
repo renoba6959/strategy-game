@@ -12207,10 +12207,92 @@ function showCommandPanel(unit, justMoved){
   // 列車砲のように常に範囲攻撃の武器は、着弾点になるマス (空マス含む) を赤にする
   quickTarget = null;
   attackableSet = quickAttackSetFor(unit, justMoved);
+  // 積み降ろしできる拠点は盤面で 📦 を付けて見せ、クリックでその場に「積む / 降ろす」を出す
+  supplyPopup = null;
+  supplyFacMap = computeSupplyFacMap(unit);
+  var hasFac = false; for(var sfk in supplyFacMap){ hasFac = true; break; }
   setStatus(TYPE[unit.type].name + 'のコマンドを選択してください'
     + (setSize(attackableSet) > 0 ? '（赤マスの敵をクリック→もう一度クリックで攻撃）' : '')
+    + (hasFac ? '（📦 の拠点をクリックで積み降ろし）' : '')
     + '（自分のマスをクリックで待機）');
   render();
+}
+// パネルを出しているユニット (と同じ編成の貨車) が積み降ろしできる拠点: 'x,y' → [ユニット…]
+// パネルの「📦 積む / 降ろす」「📦 補給貨車に積む…」と同じ条件
+var supplyFacMap = {};
+var supplyPopup = null;   // {x, y}: 拠点をクリックして「積む / 降ろす」を出している場所
+function computeSupplyFacMap(unit){
+  var map = {};
+  function addFor(u){
+    if(!canCarrySupplyStock(u)) return;
+    var rfs = routeFacilitiesAround(u);
+    for(var i=0; i<rfs.length; i++){
+      var key = rfs[i].x + ',' + rfs[i].y;
+      if(!map[key]) map[key] = [];
+      map[key].push(u);
+    }
+  }
+  addFor(unit);
+  var chain = trainOf(unit);
+  if(chain){
+    for(var ci=0; ci<chain.length; ci++){
+      var car = chain[ci];
+      if(car.id === unit.id || car.acted) continue;
+      addFor(car);
+    }
+  }
+  return map;
+}
+// 拠点をクリックしたときに、そのマスの横に出す「積む / 降ろす」
+function renderSupplyPopup(cell, x, y){
+  var list = supplyFacMap[x+','+y];
+  if(!list || !pendingUnit) return;
+  var pos = { x: x, y: y };
+  var box = document.createElement('div');
+  var toLeft = (x >= W - 3);
+  box.style.cssText = 'position:absolute; top:-2px; ' + (toLeft ? 'right:44px;' : 'left:44px;')
+    + ' z-index:40; background:#FFFDF6; border:1.5px solid #BA7517; border-radius:6px; padding:5px 6px;'
+    + ' box-shadow:0 2px 6px rgba(0,0,0,0.25); display:flex; flex-direction:column; gap:4px; white-space:nowrap; font-size:12px;';
+  box.onclick = function(e){ e.stopPropagation(); };
+  box.onmouseenter = function(e){ e.stopPropagation(); };
+  var title = document.createElement('div');
+  title.style.cssText = 'color:#7A5A10; font-weight:600; font-size:11px;';
+  title.textContent = '📦 ' + TER[M[y][x]].name + ' (' + x + ',' + y + ')';
+  box.appendChild(title);
+  for(var i=0; i<list.length; i++){
+    (function(u){
+      var who = (u.id === pendingUnit.id) ? '' : TYPE[u.type].name;   // 同じ編成の貨車なら名前を付ける
+      var row = document.createElement('div');
+      row.style.cssText = 'display:flex; gap:4px;';
+      function mk(text, handler){
+        var b = document.createElement('button');
+        b.textContent = text;
+        b.style.cssText = 'font-size:12px; padding:3px 8px; cursor:pointer;';
+        b.onclick = function(e){ e.stopPropagation(); pendingUnit = u; handler(); };
+        row.appendChild(b);
+      }
+      mk('📦 ' + (who ? who + 'に' : '') + '積む', function(){ doManualLoad(pos); });
+      mk('📦 ' + (who ? who + 'から' : '') + '降ろす', function(){ doManualUnload(pos); });
+      box.appendChild(row);
+    })(list[i]);
+  }
+  var foot = document.createElement('div');
+  foot.style.cssText = 'display:flex; gap:4px; justify-content:flex-end;';
+  // 拠点の上に乗っているときは自分のマス＝この拠点なので、待機もここから押せるようにする
+  if(pendingUnit.x === x && pendingUnit.y === y){
+    var waitB = document.createElement('button');
+    waitB.textContent = '待機';
+    waitB.style.cssText = 'font-size:11px; padding:2px 6px; cursor:pointer;';
+    waitB.onclick = function(e){ e.stopPropagation(); doWait(); };
+    foot.appendChild(waitB);
+  }
+  var close = document.createElement('button');
+  close.textContent = '閉じる';
+  close.style.cssText = 'font-size:11px; padding:2px 6px; cursor:pointer;';
+  close.onclick = function(e){ e.stopPropagation(); supplyPopup = null; render(); };
+  foot.appendChild(close);
+  box.appendChild(foot);
+  cell.appendChild(box);
 }
 // パネルを出しているときに赤で見せる「撃てるマス」
 function quickAttackSetFor(unit, justMoved){
@@ -12294,6 +12376,7 @@ function fireQuickAttack(mode){
 function hideCommandPanel(){
   // 場所は残したまま隠す (出し入れで盤面が上下しないように)
   quickTarget = null;
+  supplyFacMap = {}; supplyPopup = null;
   var p = document.getElementById('command-panel');
   p.style.visibility = 'hidden';
   document.getElementById('command-label').textContent = '';
@@ -14038,6 +14121,8 @@ function onCellClick(x, y){
   // コマンドパネルを出しているとき (どのモードでもない):
   //   自分のマス = 待機、赤マス = 攻撃の仮決定 → もう一度で発射 (quickAttackClick)
   if(pendingUnit && !selected){
+    if(supplyPopup){ supplyPopup = null; render(); }   // 別のマスを押したら「積む / 降ろす」は閉じる
+    if(supplyFacMap[k]){ supplyPopup = { x: x, y: y }; render(); return; }   // 📦 の拠点 = その場に積む / 降ろす
     if(x === pendingUnit.x && y === pendingUnit.y){ doWait(); return; }
     if(setHas(attackableSet, k)){ quickAttackClick(x, y); return; }
   }
@@ -14890,6 +14975,7 @@ function render(){
           border = '1px dashed #BA7517';
         }
       }
+      if(pendingUnit && supplyFacMap[k]) border = '2px dashed #BA7517';   // 積み降ろしできる拠点
       if(selected && selected.x === x && selected.y === y) border = '2px solid #BA7517';
       if(pendingUnit && pendingUnit.x === x && pendingUnit.y === y) border = '2px solid #BA7517';
       cell.style.cssText = 'width:42px;height:42px;background:'+bg+';border:'+border+';box-sizing:border-box;display:flex;align-items:center;justify-content:center;cursor:pointer;position:relative;';
@@ -14961,6 +15047,14 @@ function render(){
         var night = document.createElement('div');
         night.style.cssText = 'position:absolute;inset:0;background:rgba(20,30,60,0.18);pointer-events:none;z-index:1;mix-blend-mode:multiply;';
         cell.appendChild(night);
+      }
+      // 積み降ろしできる拠点の 📦 印と、クリックしたときの「積む / 降ろす」
+      if(pendingUnit && supplyFacMap[k]){
+        var facMark = document.createElement('div');
+        facMark.style.cssText = 'position:absolute; top:-5px; right:-3px; z-index:10; pointer-events:none; font-size:13px; filter:drop-shadow(0 1px 1px rgba(0,0,0,0.5));';
+        facMark.textContent = '📦';
+        cell.appendChild(facMark);
+        if(supplyPopup && supplyPopup.x === x && supplyPopup.y === y) renderSupplyPopup(cell, x, y);
       }
       board.appendChild(cell);
     }
@@ -15936,7 +16030,8 @@ function renderRulesTab(){
     + '・<b>自分のマスをもう一度クリックすると待機</b> (移動確定) です<br>'
     + '・砲兵・列車砲のように撃ち方を選べるユニットは、仮決定のときに「観測射撃」「効力射」「砲撃」のボタンも出ます。押せばその撃ち方で発射、もう一度クリックなら通常攻撃 (列車砲は砲撃) です<br>'
     + '・まだ動いていないユニットでも、<b>その場から撃てる敵をクリックすれば</b>その場に留まって仮決定になります (砲兵は選んで敵を2回クリックするだけで撃てる)<br>'
-    + '・占領・降下・積み降ろし・連結などは今までどおりボタンから。施設攻撃も「施設攻撃」ボタンからです'
+    + '・<b>補給車・補給貨車が拠点の上か隣にいると、その拠点に 📦 が付きます</b>。クリックするとその場に「📦 積む」「📦 降ろす」が出ます (機関車を選んでいても、同じ編成の補給貨車のぶんが出る)。拠点の上に乗っているときは「待機」もそこから押せます<br>'
+    + '・占領・降下・連結などは今までどおりボタンから。施設攻撃も「施設攻撃」ボタンからです (パネルの「📦 積む / 降ろす」も残っています)'
     + '</div>'
     + '<h4>連結と編成 (列車)</h4>'
     + '<div style="background:#f6f2e8; border-left:3px solid #7A5A10; padding:6px 10px; margin:6px 0; font-size:12px;">'
