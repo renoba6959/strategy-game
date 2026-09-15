@@ -4751,12 +4751,12 @@ function updateInfoPanel(){
   }
   if(defParts.length > 0){
     armorLine += ' <span style="color:#0F6E56;">' + defParts.join(' ') + '</span>'
-      + ' <span style="font-size:11px;color:#666;">→ 合計 ' + (t.armor + terDefNow) + '</span>';
+      + ' <span style="font-size:11px;color:#666;">→ 合計 ' + (unitArmor(u) + terDefNow) + '</span>';   // ⭐ の装甲ぶんも含める (戦闘計算と同じ unitArmor)
   }
   uhtml += '<div>' + armorLine + '</div>';
   // ヘリが森・山を遮蔽に使っている場合、固定翼機の攻撃には地形防御が効かない
   if(terOnlyDef > 0 && heliHidesInTerrain(u)){
-    uhtml += '<div style="font-size:11px;color:#666;padding-left:8px;">※ 固定翼機の攻撃には地形の分は効きません（装甲 ' + t.armor + (weaDefNow > 0 ? ' +' + weaDefNow : '') + '）</div>';
+    uhtml += '<div style="font-size:11px;color:#666;padding-left:8px;">※ 固定翼機の攻撃には地形の分は効きません（装甲 ' + unitArmor(u) + (weaDefNow > 0 ? ' +' + weaDefNow : '') + '）</div>';
   }
   uhtml += '<div>移動: ' + moveLabel(t) + ' · 視界: ' + getEffectiveSight(u) + ((t.sight||2) !== getEffectiveSight(u) ? '<span style="font-size:10px;color:#888;">(基本'+(t.sight||2)+')</span>' : '') + ' · 分類: ' + ARMOR_LABELS[t.armorClass] + '</div>';
   // 燃料表示
@@ -12201,7 +12201,9 @@ function showCommandPanel(unit, justMoved){
   // 出口が無くなるため。動いていなければ選択を解いて元の状態に戻すだけ。
   // 動いたあとに連結・切り離しをした車輌 (moveFixed) や、同じ編成の他の車輌が
   // もう行動した (対空列車が撃った・機関車が待機した) 編成も、位置が確定しているので戻せない
-  addBtn((justMoved && !unit.deployedFromFacility && !unit.moveFixed && !trainMoveLocked(unit)) ? '移動キャンセル' : '選択解除', cancelMove);
+  // 牽かれる車輌 (列車砲・補給貨車・対空列車) は自分で動いたわけではないので、そこから編成の移動は戻せない
+  // (戻せるのは動かした機関車のパネルにいる間だけ)
+  addBtn((justMoved && !unit.deployedFromFacility && !unit.moveFixed && !TYPE[unit.type].isTowed && !trainMoveLocked(unit)) ? '移動キャンセル' : '選択解除', cancelMove);
   panel.style.visibility = 'visible';
   // 赤マス (撃てる相手) はパネルを出した時点で見せておき、「攻撃」を押さなくても
   // 敵をクリック → もう一度クリックで撃てるようにする (quickAttackClick)。
@@ -13954,7 +13956,7 @@ function cancelMove(){
   // 触ってしまうと、連結相手が以前の移動の分まで巻き戻されて別の場所へ吹き飛び、
   // しかも moved が消えるので、その機関車がもう一度動けてしまう。
   // 編成の他の車輌がもう行動しているときも同じ (位置は確定)。
-  if(!pendingJustMoved || trainMoveLocked(pendingUnit)){
+  if(!pendingJustMoved || TYPE[pendingUnit.type].isTowed || trainMoveLocked(pendingUnit)){
     pendingUnit = null;
     setClear(attackableSet); setClear(unloadValidSet);
     unloadMode = false; unloadCargoIdx = -1; unloadStarted = false;
