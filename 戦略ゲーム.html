@@ -1121,6 +1121,34 @@ var STAGES = {
 
 var CAP_MAX = 20;
 var HP_MAX = 100;
+// ===== 部隊の編成 (⭐なし / ⭐1 小隊 / ⭐2 中隊 / ⭐3 大隊) =====
+// 陸上ユニット (列車・補給車を除く) は、生産時に何個分の部隊にまとめるかを選べる。
+//   人数比 (size) = 星の数 + 1。価格・HP・弾薬 (上限と消費) は size 倍。
+//   火力は星ごとに ×1.5 / ×2.0 / ×2.5、装甲は +1 ずつ。燃料・移動・視界は据え置き。
+//   撃つ強さは「火力 × (残りHP ÷ その部隊の最大HP) × 火力倍率」で決まる。
+//   星なしは最大HPが100のままなので、これまでの計算とまったく同じになる。
+var FORMATIONS = [
+  { name:'',     star:0, mult:1.0, armor:0 },
+  { name:'小隊', star:1, mult:1.5, armor:1 },
+  { name:'中隊', star:2, mult:2.0, armor:2 },
+  { name:'大隊', star:3, mult:2.5, armor:3 }
+];
+function unitRank(u){ return (u && typeof u.rank === 'number') ? Math.max(0, Math.min(3, u.rank)) : 0; }
+function unitSize(u){ return unitRank(u) + 1; }
+function unitMaxHp(u){ return HP_MAX * unitSize(u); }
+// 残りHPの割合 (0〜1)。ダメージ計算・退避判断に使う
+function unitStrength(u){
+  var hp = (u && typeof u.hp === 'number') ? u.hp : HP_MAX;
+  return Math.max(0, Math.min(1, hp / unitMaxHp(u)));
+}
+function unitFireMult(u){ return FORMATIONS[unitRank(u)].mult; }
+function unitArmor(u){ if(!u || !TYPE[u.type]) return 0; return (TYPE[u.type].armor || 0) + FORMATIONS[unitRank(u)].armor; }
+// 武器の弾数の上限 (部隊の人数比で増える)
+function weaponAmmoMax(u, w){ return (w.ammo !== undefined ? w.ammo : 6) * unitSize(u); }
+function formationLabel(u){ var r = unitRank(u); return r ? FORMATIONS[r].name + ' ' + '⭐'.repeat(r) : ''; }
+function canFormUp(typeKey){ var t = TYPE[typeKey]; return !!(t && t.cat === 'LAND' && !t.isTrain && !t.isSupply); }
+function formationPrice(typeKey, rank){ return TYPE[typeKey].price * (rank + 1); }
+function formationTurns(typeKey, rank){ return TYPE[typeKey].prodTurns + (rank >= 2 ? 1 : 0); }
 var INITIAL_FUNDS = 3000;
 
 // ===== 陣営システム (2〜4陣営対応) =====
@@ -1625,20 +1653,23 @@ function advanceWeather(){
   }
 }
 
-function makeUnit(type, owner, x, y){
+function makeUnit(type, owner, x, y, rank){
   var t = TYPE[type];
+  var r = (typeof rank === 'number' && canFormUp(type)) ? Math.max(0, Math.min(3, rank)) : 0;
+  var size = r + 1;
   var ammo = [];
   for(var i=0; i<t.weapons.length; i++){
     var w = t.weapons[i];
     if(w.infiniteAmmo) ammo.push(-1); // -1 は無限弾を意味する
-    else ammo.push(w.ammo !== undefined ? w.ammo : 6); // デフォルト6発
+    else ammo.push((w.ammo !== undefined ? w.ammo : 6) * size); // デフォルト6発 × 人数比
   }
   var unit = {
     id: nextId++,
     type: type,
     owner: owner,
     x: x, y: y,
-    hp: HP_MAX,
+    rank: r,               // 0=星なし 1=小隊 2=中隊 3=大隊
+    hp: HP_MAX * size,
     fuel: (t.fuelMax === undefined) ? undefined : t.fuelMax,   // fuelMax が無い = 燃料を持たない (自走しない車輌)
     ammo: ammo,
     moved: false,
@@ -1683,7 +1714,7 @@ function carrierResupplyOnLoad(carrier, cargoUnit){
     for(var i=0; i<ut.weapons.length; i++){
       var w = ut.weapons[i];
       if(w.infiniteAmmo) continue;
-      var ammoMax = (w.ammo !== undefined ? w.ammo : 6);
+      var ammoMax = weaponAmmoMax(cargoUnit, w);
       var curAmmo = cargoUnit.ammo[i];
       var ammoNeed = ammoMax - curAmmo;
       if(ammoNeed > 0){
@@ -1727,7 +1758,7 @@ function consumeAmmoForAttack(unit, weaponIdx){
   if(!unit.ammo) return;
   var current = unit.ammo[weaponIdx];
   if(current === undefined || current === -1) return; // 無限弾
-  var newVal = Math.max(0, current - 1);
+  var newVal = Math.max(0, current - unitSize(unit));   // 部隊が大きいほど1回に使う弾も多い
   unit.ammo[weaponIdx] = newVal;
   // バケット共有: 同じ bucket名の他の武器も同じ値に
   var t = TYPE[unit.type];
@@ -1748,7 +1779,7 @@ function hasAmmoForWeapon(unit, weaponIdx){
   if(!unit.ammo) return true;
   var current = unit.ammo[weaponIdx];
   if(current === undefined || current === -1) return true; // 無限弾
-  return current > 0;
+  return current >= unitSize(unit);
 }
 
 // 全弾と燃料を満タンに補給
@@ -1764,7 +1795,7 @@ function fullySupply(unit, opts){
     for(var i=0; i<t.weapons.length; i++){
       var w = t.weapons[i];
       if(w.infiniteAmmo) unit.ammo[i] = -1;
-      else unit.ammo[i] = w.ammo !== undefined ? w.ammo : 6;
+      else unit.ammo[i] = weaponAmmoMax(unit, w);
     }
   }
 }
@@ -2493,7 +2524,7 @@ function payTakeOutSupply(newU, cg, fx, fy){
     for(var i=0; i<t.weapons.length; i++){
       var w = t.weapons[i];
       if(w.infiniteAmmo){ newU.ammo[i] = -1; continue; }
-      var maxA = (w.ammo !== undefined ? w.ammo : 6);
+      var maxA = weaponAmmoMax(newU, w);
       var had = (typeof cg.ammo[i] === 'number' && cg.ammo[i] !== -1) ? cg.ammo[i] : maxA;
       var needA = Math.max(0, maxA - had);
       if(needA > 0){
@@ -3687,7 +3718,7 @@ function canUseFireForEffect(attacker){
   for(var i=0; i<t.weapons.length; i++){
     if(!isSurfaceIndirectWeapon(t.weapons[i])) continue;
     var ammoLeft = (typeof attacker.ammo[i] === 'number') ? attacker.ammo[i] : 0;
-    if(ammoLeft >= 2) return true;
+    if(ammoLeft >= 2 * unitSize(attacker)) return true;
   }
   return false;
 }
@@ -3753,7 +3784,7 @@ function effectiveAtkW(unit, weapon, def, attackMode){
       baseAtk = Math.floor(baseAtk * mult);
     }
   }
-  return Math.round(baseAtk * unit.hp / HP_MAX);
+  return Math.round(baseAtk * unitStrength(unit) * unitFireMult(unit));
 }
 // 守備側ユニットが現在マスから受ける地形防御値を返す
 // - 地上ユニット: 全地形・施設の def を享受 (森/山/都市/工場/空港/港 など)
@@ -3875,7 +3906,7 @@ function bestAttackOn(att, def, fromX, fromY, justMoved, attackMode){
     // 効力射のとき、間接武器は弾薬2発消費するので2発以上必要
     if(attackMode === 'fire_for_effect' && w.indirect && att.ammo){
       var ammoLeft = (typeof att.ammo[i] === 'number') ? att.ammo[i] : 0;
-      if(ammoLeft < 2) continue;
+      if(ammoLeft < 2 * unitSize(att)) continue;
     }
     var eAtk = effectiveAtkW(att, w, def, attackMode);
     if(eAtk === 0) continue;
@@ -3883,7 +3914,7 @@ function bestAttackOn(att, def, fromX, fromY, justMoved, attackMode){
     var bonus = (!w.indirect) ? encircleAttack : 0;
     // 観測兵ボーナス記録 (表示用)
     var obsMult = getObserverMultiplier(att, w, def, attackMode);
-    var armor = TYPE[def.type].armor;
+    var armor = unitArmor(def);
     // 地形防御: 守備側カテゴリで判定 (地上=全効果, 海上=港系のみ, 航空=無し) + 天候
     var terrainDef = getTerrainDefFor(def, att);
     var dmg = eAtk + bonus - armor - terrainDef;
@@ -3971,7 +4002,7 @@ function computeAttackable(unit, fromX, fromY, justMoved){
         if(md !== 1) continue;
       }
       // ammo も引き継ぐ (弾切れ武器を攻撃候補から除外するため)
-      var fakeAtt = { type: unit.type, hp: unit.hp, x: fromX, y: fromY, ammo: unit.ammo, owner: unit.owner, id: unit.id };
+      var fakeAtt = { type: unit.type, hp: unit.hp, rank: unit.rank, x: fromX, y: fromY, ammo: unit.ammo, owner: unit.owner, id: unit.id };
       var best = bestAttackOn(fakeAtt, u, fromX, fromY, justMoved);
       if(best) setAdd(set, nx+','+ny);
     }
@@ -4188,7 +4219,7 @@ function performFireForEffect(att, defOrTarget, justMoved, wide){
     var dist = manhattan(att.x, att.y, defX, defY);
     var rng = getEffectiveRange(att, w);
     if(dist < rng[0] || dist > rng[1]) continue;
-    var need = areaShotCost(w, wide);
+    var need = areaShotCost(w, wide) * unitSize(att);
     if(att.ammo){
       var ammoLeft = (typeof att.ammo[i] === 'number') ? att.ammo[i] : 0;
       if(ammoLeft < need) continue;
@@ -4198,7 +4229,8 @@ function performFireForEffect(att, defOrTarget, justMoved, wide){
   if(!bestW) return { r1: null, r2: null };
   // 必要な弾薬を消費 (通常の効力射は2、列車砲は砲撃5 / 効力射10)
   if(bestIdx >= 0){
-    for(var ci=0; ci<bestCost; ci++) consumeAmmoForAttack(att, bestIdx);
+    // consumeAmmoForAttack は人数比ぶん減らすので、回数は基本の弾数ぶんでよい
+    for(var ci=0; ci<bestCost / unitSize(att); ci++) consumeAmmoForAttack(att, bestIdx);
   }
   // マンハッタン距離2の外周 (斜め4 + 直線2マス先4 = 8マス) に80%で当たるか
   var useRing2 = !!(wide && bestW.areaShot);
@@ -4219,8 +4251,8 @@ function performFireForEffect(att, defOrTarget, justMoved, wide){
   if(centerUnit && centerUnit.hp > 0){
     var fakeTarget = centerUnit;
     var baseC = bestW.atk[getArmorClass(fakeTarget)] || 0;
-    var eAtk = Math.round(Math.floor(baseC * ratioCenter) * att.hp / HP_MAX);
-    var armor = TYPE[fakeTarget.type].armor;
+    var eAtk = Math.round(Math.floor(baseC * ratioCenter) * unitStrength(att) * unitFireMult(att));
+    var armor = unitArmor(fakeTarget);
     var terrainDef = getTerrainDefFor(fakeTarget, att);
     var dmg = Math.max(0, eAtk - armor - terrainDef);
     fakeTarget.hp = Math.max(0, fakeTarget.hp - dmg * 10);
@@ -4242,8 +4274,8 @@ function performFireForEffect(att, defOrTarget, justMoved, wide){
     var baseAtk = bestW.atk[cat] || 0;
     if(baseAtk === 0) continue;
     baseAtk = Math.floor(baseAtk * ratioAdj);
-    var eAtk = Math.round(baseAtk * att.hp / HP_MAX);
-    var armor = TYPE[fakeT.type].armor;
+    var eAtk = Math.round(baseAtk * unitStrength(att) * unitFireMult(att));
+    var armor = unitArmor(fakeT);
     var terrainDef = getTerrainDefFor(fakeT, att);
     var dmg = Math.max(0, eAtk - armor - terrainDef);
     fakeT.hp = Math.max(0, fakeT.hp - dmg * 10);
@@ -4264,8 +4296,8 @@ function performFireForEffect(att, defOrTarget, justMoved, wide){
       var base2 = bestW.atk[cat2] || 0;
       if(base2 === 0) continue;
       base2 = Math.floor(base2 * ratioRing);         // 外周は80%
-      var eAtk2 = Math.round(base2 * att.hp / HP_MAX);
-      var dmg2 = Math.max(0, eAtk2 - TYPE[u2.type].armor - getTerrainDefFor(u2, att));
+      var eAtk2 = Math.round(base2 * unitStrength(att) * unitFireMult(att));
+      var dmg2 = Math.max(0, eAtk2 - unitArmor(u2) - getTerrainDefFor(u2, att));
       u2.hp = Math.max(0, u2.hp - dmg2 * 10);
       hits.push({ unit: u2, dmg: dmg2, role: 'splash2' });
       if(u2.hp === 0 && u2.cargo && u2.cargo.length > 0) u2.cargo = [];
@@ -4283,7 +4315,7 @@ function performFireForEffect(att, defOrTarget, justMoved, wide){
     for(var fz=0; fz<facZones.length; fz++){
       var zone = facZones[fz];
       var baseF = Math.floor(bestW.vsFacility * zone.ratio);
-      var effF = Math.round(baseF * att.hp / HP_MAX);
+      var effF = Math.round(baseF * unitStrength(att) * unitFireMult(att));
       for(var ft=0; ft<zone.tiles.length; ft++){
         var fx = defX + zone.tiles[ft][0], fy = defY + zone.tiles[ft][1];
         if(!inBounds(fx, fy)) continue;
@@ -4689,7 +4721,7 @@ function updateInfoPanel(){
   var t = TYPE[u.type];
   var c = FACTION_COLORS[u.owner] || '#A32D2D';
   var dHP = displayHP(u.hp);
-  var hpRatio = u.hp / HP_MAX;
+  var hpRatio = u.hp / unitMaxHp(u);
   var uhtml = '<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">';
   var infoIconSvg;
   if(u.submerged && u.type === 'SUBMARINE') infoIconSvg = ICONS.SUBMARINE_OUTLINE;
@@ -4697,14 +4729,16 @@ function updateInfoPanel(){
   else infoIconSvg = ICONS[u.type];
   uhtml += '<span style="display:inline-block;width:24px;height:24px;color:' + c + ';">' + infoIconSvg + '</span>';
   uhtml += '<b style="color:' + c + ';">' + t.name + '</b>';
+  if(unitRank(u)) uhtml += '<span style="font-size:11px;color:#7A5A10;font-weight:600;">' + formationLabel(u) + '</span>';
   uhtml += '<span style="font-size:11px;color:#666;">(' + ownerName(u.owner) + ')</span></div>';
+  if(unitRank(u)) uhtml += '<div style="font-size:11px;color:#7A5A10;">部隊: ' + FORMATIONS[unitRank(u)].name + ' (' + unitSize(u) + '個分) — 火力×' + unitFireMult(u) + ' ・ 装甲+' + FORMATIONS[unitRank(u)].armor + ' ・ 弾薬×' + unitSize(u) + '</div>';
   // 装甲の内訳: 素の装甲 + 地形/施設 + 天候
   // getTerrainDefFor は攻撃側で変わる場合があるので (森・山のヘリは固定翼機に効かない)、
   // ここでは攻撃側なしの値 = 地上/ヘリから撃たれたときの値を出し、必要なら注記する
   var terDefNow = getTerrainDefFor(u);
   var weaDefNow = weatherDefFor(u);
   var terOnlyDef = terDefNow - weaDefNow;
-  var armorLine = 'HP: <b>' + dHP + '</b>/10 · 装甲: <b>' + t.armor + '</b>';
+  var armorLine = 'HP: <b>' + dHP + '</b>/' + (unitMaxHp(u) / 10) + ' · 装甲: <b>' + unitArmor(u) + '</b>' + (unitRank(u) ? ' <span style="font-size:10px;color:#888;">(素' + t.armor + '+' + FORMATIONS[unitRank(u)].armor + ')</span>' : '');
   var defParts = [];
   if(terOnlyDef > 0){
     var terHereName = (TER[M[u.y][u.x]] ? TER[M[u.y][u.x]].name : '地形');
@@ -4743,7 +4777,7 @@ function updateInfoPanel(){
     if(u.ammo && u.ammo[i] !== undefined){
       if(u.ammo[i] === -1) ammoStr = ' · <span style="color:#888;">∞</span>';
       else {
-        var maxAmmo = w.ammo !== undefined ? w.ammo : 6;
+        var maxAmmo = weaponAmmoMax(u, w);
         var ammoColor = u.ammo[i] === 0 ? '#A32D2D' : (u.ammo[i] < maxAmmo / 2 ? '#BA7517' : '#0F6E56');
         // バケット共有の表示
         var sharedNote = w.ammoBucket ? ' <span style="color:#888;font-size:10px;">(共有)</span>' : '';
@@ -5089,8 +5123,8 @@ function applyTurnStart(owner){
     if(!carr.cargo || carr.cargo.length === 0) continue;
     for(var cj=0; cj<carr.cargo.length; cj++){
       var cg = carr.cargo[cj];
-      if(typeof cg.hp === 'number' && cg.hp < HP_MAX){
-        cg.hp = Math.min(HP_MAX, cg.hp + 1);
+      if(typeof cg.hp === 'number' && cg.hp < unitMaxHp(cg)){
+        cg.hp = Math.min(unitMaxHp(cg), cg.hp + 1);
       }
     }
   }
@@ -5142,7 +5176,7 @@ function applyTurnStart(owner){
       for(var j=0; j<t.weapons.length; j++){
         var w = t.weapons[j];
         if(w.infiniteAmmo) continue;
-        if(u.ammo[j] < (w.ammo !== undefined ? w.ammo : 6)){ needAmmo = true; break; }
+        if(u.ammo[j] < weaponAmmoMax(u, w)){ needAmmo = true; break; }
       }
     }
     // 空母の弾薬庫・補給ユニットの積載庫が満タンでなければ、それも補給対象
@@ -5229,7 +5263,7 @@ function applyTurnStart(owner){
         for(var j=0; j<t.weapons.length; j++){
           var w = t.weapons[j];
           if(w.infiniteAmmo){ u.ammo[j] = -1; continue; }
-          var maxAmmo = (w.ammo !== undefined ? w.ammo : 6);
+          var maxAmmo = weaponAmmoMax(u, w);
           var current = (u.ammo[j] !== undefined && u.ammo[j] !== -1) ? u.ammo[j] : maxAmmo;
           var needed = maxAmmo - current;
           if(needed <= 0) continue;
@@ -5245,7 +5279,7 @@ function applyTurnStart(owner){
         // 残り武器を埋める処理 (補給対象外の武器は ammo を初期化していないと未定義のまま)
         for(var j=0; j<t.weapons.length; j++){
           var w = t.weapons[j];
-          if(u.ammo[j] === undefined) u.ammo[j] = w.infiniteAmmo ? -1 : (w.ammo !== undefined ? w.ammo : 6);
+          if(u.ammo[j] === undefined) u.ammo[j] = w.infiniteAmmo ? -1 : weaponAmmoMax(u, w);
         }
         // 補給先が空母なら、その弾薬庫も補充する (1ポイント = 1ポイント、補給艦の1から空母の1へ)
         // 補給ユニット同士で在庫を移し替えるのは、運搬の意味がなくなるので行わない
@@ -5266,7 +5300,7 @@ function applyTurnStart(owner){
           for(var j=0; j<t.weapons.length; j++){
             var w = t.weapons[j];
             if(w.infiniteAmmo) continue;
-            var maxA = (w.ammo !== undefined ? w.ammo : 6);
+            var maxA = weaponAmmoMax(u, w);
             if(u.ammo[j] < maxA){ partial = true; break; }
           }
           // 弾薬庫もまだ満タンでないなら部分補給フラグ
@@ -5282,7 +5316,7 @@ function applyTurnStart(owner){
         for(var j=0; j<t.weapons.length; j++){
           var w = t.weapons[j];
           if(w.infiniteAmmo){ u.ammo[j] = -1; continue; }
-          var maxA = (w.ammo !== undefined ? w.ammo : 6);
+          var maxA = weaponAmmoMax(u, w);
           var cur = (u.ammo[j] !== undefined && u.ammo[j] !== -1) ? u.ammo[j] : maxA;
           if(cur >= maxA) continue;
           // 補給量 = 最大値 × rate (切り上げ)。段階2: 施設の備蓄から引く
@@ -5294,7 +5328,7 @@ function applyTurnStart(owner){
         // 残り武器を埋める処理 (補給対象外の武器の初期化)
         for(var j=0; j<t.weapons.length; j++){
           var w = t.weapons[j];
-          if(u.ammo[j] === undefined) u.ammo[j] = w.infiniteAmmo ? -1 : (w.ammo !== undefined ? w.ammo : 6);
+          if(u.ammo[j] === undefined) u.ammo[j] = w.infiniteAmmo ? -1 : weaponAmmoMax(u, w);
         }
         // 空母の弾薬庫・補給ユニットの積載庫も rate に応じて補給
         if(t.supplyAmmo && typeof t.supplyAmmoMax === 'number' && holdAmmoOK){
@@ -5375,10 +5409,10 @@ function applyTurnStart(owner){
       if(!ter.healCat || ter.healCat === TYPE[u.type].cat){
         // 待機修理: +2回復、費用は失HP×単価
         var beforeHp = u.hp;
-        var afterHp = Math.min(HP_MAX, u.hp + 2 * 10); // +2回復
+        var afterHp = Math.min(unitMaxHp(u), u.hp + 2 * 10 * unitSize(u)); // +2回復 × 人数比
         var actualRecover = Math.ceil((afterHp - beforeHp) / 10); // 表示HPでの回復量
         if(actualRecover > 0){
-          var unitPrice = TYPE[u.type].price || 0;
+          var unitPrice = (TYPE[u.type].price || 0) * unitSize(u);   // 部隊が大きいほど修理費も人数比
           var cost = actualRecover * Math.floor(unitPrice / 10 / 2);
           if(funds[owner] >= cost){
             funds[owner] -= cost;
@@ -5389,7 +5423,7 @@ function applyTurnStart(owner){
             if(maxAffordable > 0){
               var realRecover = Math.min(actualRecover, maxAffordable);
               funds[owner] -= realRecover * Math.floor(unitPrice / 10 / 2);
-              u.hp = Math.min(HP_MAX, u.hp + realRecover * 10);
+              u.hp = Math.min(unitMaxHp(u), u.hp + realRecover * 10);
             }
           }
         }
@@ -5468,10 +5502,10 @@ function applyTurnStart(owner){
 // cargo を再帰的に回復(スロット修理 +3)
 function repairCargoRecursive(cg, healAmt, owner){
   var beforeHp = cg.hp;
-  var afterHp = Math.min(HP_MAX, cg.hp + healAmt * 10);
+  var afterHp = Math.min(unitMaxHp(cg), cg.hp + healAmt * 10 * unitSize(cg));
   var actualRecover = Math.ceil((afterHp - beforeHp) / 10);
   if(actualRecover > 0){
-    var unitPrice = TYPE[cg.type].price || 0;
+    var unitPrice = (TYPE[cg.type].price || 0) * unitSize(cg);
     var cost = actualRecover * Math.floor(unitPrice / 10 / 2);
     if(funds[owner] >= cost){
       funds[owner] -= cost;
@@ -5481,7 +5515,7 @@ function repairCargoRecursive(cg, healAmt, owner){
       if(maxAffordable > 0){
         var realRecover = Math.min(actualRecover, maxAffordable);
         funds[owner] -= realRecover * Math.floor(unitPrice / 10 / 2);
-        cg.hp = Math.min(HP_MAX, cg.hp + realRecover * 10);
+        cg.hp = Math.min(unitMaxHp(cg), cg.hp + realRecover * 10);
       }
     }
   }
@@ -6650,10 +6684,10 @@ function _aiPickAirUnit(facility, aiFaction, counts, mapInfo, fundsAvailable){
 // ただし生産が完全に止まらないよう、所持金の70%を上限にする。
 var AI_RESERVE_MAX_RATIO = 0.7;
 function _aiRepairCostFor(u, healAmount){
-  if(!u || u.hp === undefined || u.hp >= HP_MAX) return 0;
-  var recover = Math.min(healAmount, Math.ceil((HP_MAX - u.hp) / 10));
+  if(!u || u.hp === undefined || u.hp >= unitMaxHp(u)) return 0;
+  var recover = Math.min(healAmount * unitSize(u), Math.ceil((unitMaxHp(u) - u.hp) / 10));
   if(recover <= 0) return 0;
-  var price = (TYPE[u.type] && TYPE[u.type].price) || 0;
+  var price = ((TYPE[u.type] && TYPE[u.type].price) || 0) * unitSize(u);
   return recover * Math.floor(price / 10 / 2);
 }
 function _aiRepairCostRecursive(u, healAmount){
@@ -6718,6 +6752,13 @@ function _aiUpkeepReserve(aiFaction){
   return Math.max(0, reserve);
 }
 
+// AI が陸上ユニットを作るときの部隊の大きさ。使える資金が価格の何倍あるかで決める
+//   価格の3倍 → 小隊、4倍 → 中隊、5倍以上 → 大隊 (資金が余っているほど大きな部隊にまとめる)
+function _aiFormationRank(typeKey, spendable){
+  if(!canFormUp(typeKey)) return 0;
+  var price = TYPE[typeKey].price || 1;
+  return Math.max(0, Math.min(3, Math.floor(spendable / price) - 2));
+}
 function aiProduceAndTakeOut(aiFaction, phase){
   if(!aiFaction) aiFaction = 'E'; // 互換: 引数なしなら旧仕様
   if(!phase) phase = 'all'; // 引数なしなら従来通り (全部)
@@ -6756,14 +6797,14 @@ function aiProduceAndTakeOut(aiFaction, phase){
     var newU;
     if(deployed){
       // 出撃 = 施設マスからの移動。ZOCで途中停止し、伏兵の奇襲も受ける
-      var tmpMove = makeUnit(p.type, aiFaction, p.x, p.y);
+      var tmpMove = makeUnit(p.type, aiFaction, p.x, p.y, p.rank);
       tmpMove.id = -1;
       var dres = findActualMoveEndpoint(tmpMove, spawnX, spawnY);
       if(dres.x === p.x && dres.y === p.y){
         if(window.AI_DEBUG) try{ console.log('  → 生産取り出し保留: '+p.type+'@('+p.x+','+p.y+') 敵が隣接していて出られない'); }catch(e){}
         continue;
       }
-      newU = makeUnit(p.type, aiFaction, dres.x, dres.y);
+      newU = makeUnit(p.type, aiFaction, dres.x, dres.y, p.rank);
       newU.preMoveX = p.x; newU.preMoveY = p.y;
       newU.moved = true;    // 出撃は移動なので、このターンはもう動けない
       newU.acted = false;
@@ -6781,7 +6822,7 @@ function aiProduceAndTakeOut(aiFaction, phase){
       }
       continue;
     }
-    newU = makeUnit(p.type, aiFaction, spawnX, spawnY);
+    newU = makeUnit(p.type, aiFaction, spawnX, spawnY, p.rank);
     newU.acted = false;
     newU.moved = false;
     newU.spawnedThisTurn = true;   // 出てきたターンは探知できない (出港も行動のうち)
@@ -6804,11 +6845,11 @@ function aiProduceAndTakeOut(aiFaction, phase){
       // 収容した同ラウンド中は取り出せない
       if(typeof rcg.storedRound === 'number' && rcg.storedRound === roundNumber) continue;
       // HP 満タンまで回復したら取り出す (回復途中なら収容継続)
-      if((rcg.hp || 0) < HP_MAX) continue;
+      if((rcg.hp || 0) < unitMaxHp(rcg)) continue;
       // 展開先: 施設マスが空いていればそこ、埋まっていれば隣接空きマス
       var rSpawnX = rfx, rSpawnY = rfy;
       if(unitAt(rfx, rfy)){
-        var rTmp = makeUnit(rcg.type, aiFaction, rfx, rfy);
+        var rTmp = makeUnit(rcg.type, aiFaction, rfx, rfy, rcg.rank);
         rTmp.id = -1;
         var rMov = computeMovable(rTmp);
         var rBest = null, rBestD = Infinity;
@@ -6823,7 +6864,7 @@ function aiProduceAndTakeOut(aiFaction, phase){
         if(!rBest) continue; // 展開先なし → 取り出し保留
         rSpawnX = rBest.x; rSpawnY = rBest.y;
       }
-      var rOut = makeUnit(rcg.type, aiFaction, rSpawnX, rSpawnY);
+      var rOut = makeUnit(rcg.type, aiFaction, rSpawnX, rSpawnY, rcg.rank);
       rOut.hp = rcg.hp;
       rOut.acted = false;
       rOut.moved = false;
@@ -6887,7 +6928,7 @@ function aiProduceAndTakeOut(aiFaction, phase){
         continue;
       }
       // 発艦実行
-      var deployedU = makeUnit(cg.type, aiFaction, bestDeploy.x, bestDeploy.y);
+      var deployedU = makeUnit(cg.type, aiFaction, bestDeploy.x, bestDeploy.y, cg.rank);
       deployedU.hp = cg.hp;
       if(typeof cg.fuel === 'number') deployedU.fuel = cg.fuel;
       if(cg.ammo) deployedU.ammo = cg.ammo.slice();
@@ -7217,14 +7258,16 @@ function aiProduceAndTakeOut(aiFaction, phase){
         continue;
       }
       var pickT2 = TYPE[pickKey2];
-      funds[aiFaction] -= pickT2.price;
+      var rank2 = _aiFormationRank(pickKey2, _spendable());
+      funds[aiFaction] -= formationPrice(pickKey2, rank2);
       producedInPass = true;
       var bonus3 = (ter && ter.prodTurnBonus) ? ter.prodTurnBonus : 0;
-      var actualTurns3 = Math.max(1, pickT2.prodTurns + bonus3);
+      var actualTurns3 = Math.max(1, formationTurns(pickKey2, rank2) + bonus3);
       production.push({
-        x: fx, y: fy, type: pickKey2, owner: aiFaction,
+        x: fx, y: fy, type: pickKey2, rank: rank2, owner: aiFaction,
         remaining: actualTurns3, ready: false
       });
+      if(rank2 && window.AI_DEBUG) try{ console.log('  → 部隊編成: '+pickT2.name+' '+FORMATIONS[rank2].name+' ('+formationPrice(pickKey2, rank2)+'G)'); }catch(e){}
       // 上限カウントを更新 (次のスロット抽選で正しい値を使うため)
       unitTypeCount[pickKey2] = (unitTypeCount[pickKey2] || 0) + 1;
       totalUnitCount++;
@@ -7528,13 +7571,14 @@ function aiProduceAndTakeOut(aiFaction, phase){
       pickKey = affordableForNormal[pickIdx];
     }
     var pickT = TYPE[pickKey];
-    funds[aiFaction] -= pickT.price;
+    var rankP = _aiFormationRank(pickKey, _spendable());
+    funds[aiFaction] -= formationPrice(pickKey, rankP);
     // 兵器廠など prodTurnBonus を持つ施設は生産ターン-1 (最低1)
     var prodTer2 = TER[M[fy][fx]];
     var bonus2 = (prodTer2 && prodTer2.prodTurnBonus) ? prodTer2.prodTurnBonus : 0;
-    var actualTurns2 = Math.max(1, pickT.prodTurns + bonus2);
+    var actualTurns2 = Math.max(1, formationTurns(pickKey, rankP) + bonus2);
     production.push({
-      x: fx, y: fy, type: pickKey, owner: aiFaction,
+      x: fx, y: fy, type: pickKey, rank: rankP, owner: aiFaction,
       remaining: actualTurns2, ready: false
     });
     producedInPass = true;
@@ -8449,7 +8493,7 @@ function _aiNeedsRepair(unit, aiFaction){
   var t = TYPE[unit.type];
   // 仕様: 表示HP < 5 で撤退モード (内部HP は表示HP × 10 換算なので 50 が閾値)
   // つまり HP > 50 (内部) なら撤退不要、HP <= 50 (内部) = 表示HP <= 5 で撤退発動
-  if(unit.hp > 50) return false;
+  if(unitStrength(unit) > 0.5) return false;
   // 既に自軍の修理可能施設マス上にいる場合は不要
   var capHere = captures[unit.x+','+unit.y];
   var terHere = TER[M[unit.y][unit.x]];
@@ -8484,7 +8528,7 @@ function _aiWantsFacilityResupply(u){
     for(var i=0; i<t.weapons.length; i++){
       var w = t.weapons[i];
       if(w.infiniteAmmo) continue; // 無限弾 (弱い予備) は判定に数えない
-      var maxA = (w.ammo !== undefined ? w.ammo : 6);
+      var maxA = weaponAmmoMax(u, w);
       if(typeof u.ammo[i] === 'number' && u.ammo[i] <= maxA * 0.5) return true;
     }
   }
@@ -8636,7 +8680,7 @@ function _aiMoveToSupplyPoint(unit, aiFaction, reason){
       unit.preMoveX = fromXc; unit.preMoveY = fromYc;
       consumeFuelForMove(unit, fromXc, fromYc);
       var cargoEntryC = {
-        type: unit.type, hp: unit.hp, owner: unit.owner, originalId: unit.id,
+        type: unit.type, rank: unit.rank, hp: unit.hp, owner: unit.owner, originalId: unit.id,
         fuel: unit.fuel, ammo: unit.ammo ? unit.ammo.slice() : null,
         cargo: unit.cargo ? unit.cargo.slice() : [],
         loadedRound: roundNumber
@@ -8744,7 +8788,7 @@ function aiExecuteRetreat(u, aiFaction, shovedIds){
     if(!F) continue;                                    // 空きマスは A)/B) で処理済み
     if(F.owner !== aiFaction || F.hp <= 0) continue;    // 敵/死亡はこじ開け対象外 (=フェーズ3)
     if(F.acted || shovedIds[F.id]) continue;            // 既に動いた味方は動かせない
-    if(F.hp <= 50) continue;                            // 負傷した味方は犠牲にしない (自身も退避対象)
+    if(unitStrength(F) <= 0.5) continue;                // 負傷した味方は犠牲にしない (自身も退避対象)
     // F の退避先 (脇へどく空きマス) を探す
     var fMov = computeMovable(F);
     var aside = null, asideBest = -Infinity;
@@ -8800,7 +8844,7 @@ function aiStoreInFacilityForService(u, aiFaction){
   // 収容実行
   if(!cap.cargo) cap.cargo = [];
   cap.cargo.push({
-    type: u.type, hp: u.hp, owner: u.owner,
+    type: u.type, rank: u.rank, hp: u.hp, owner: u.owner,
     cargo: u.cargo ? u.cargo.slice() : [],
     // 段階2: 取り出し時の補給を施設の備蓄から払うため、収容時の燃料・弾薬を記録する
     fuel: u.fuel,
@@ -9024,7 +9068,7 @@ function aiUnload(carrier, idx, x, y){
   if(unitAt(x, y)) return false;
   var cargo = carrier.cargo[idx];
   var carrierT = TYPE[carrier.type];
-  var newU = makeUnit(cargo.type, cargo.owner, x, y);
+  var newU = makeUnit(cargo.type, cargo.owner, x, y, cargo.rank);
   newU.hp = cargo.hp;
   // 乗艦中に保存していた fuel/ammo を引き継ぐ
   if(typeof cargo.fuel === 'number') newU.fuel = cargo.fuel;
@@ -9118,7 +9162,7 @@ function aiComputeDangerScore(faction, x, y, selfUnit){
   var totalDanger = 0;
   // 移動先 (x, y) でユニットが受ける地形防御 + 自身の装甲
   var terrainDef = selfUnit ? _aiTerrainDefAt(selfUnit, x, y) : 0;
-  var armor = (selfUnit && TYPE[selfUnit.type] && TYPE[selfUnit.type].armor) || 0;
+  var armor = selfUnit ? unitArmor(selfUnit) : 0;
   for(var i=0; i<units.length; i++){
     var e = units[i];
     if(isAlly(e.owner, faction) || e.owner === 'N' || e.hp <= 0) continue;
@@ -9486,7 +9530,7 @@ function aiTransportAction(u, aiFaction){
       consumeFuelForMove(u, fromX, fromY);
       // pickupTarget を u.cargo に追加 (fuel/ammoも保存)
       var cargoEntryT = {
-        type: pickupTarget.type,
+        type: pickupTarget.type, rank: pickupTarget.rank,
         hp: pickupTarget.hp,
         owner: pickupTarget.owner,
         originalId: pickupTarget.id,
@@ -10031,7 +10075,7 @@ function aiTurn(){
     //   空きスロットがあれば収容 → 翌ラウンド HP/燃料/弾薬 満タンで復帰。
     //   生産でスロットが埋まっている場合は aiStoreInFacilityForService が false を返して通過し、
     //   従来どおり施設上で毎ターン部分補給(HP微回復+50%弾薬/燃料)に流れる。
-    if(!TYPE[u.type].isSupply && !isLandTransport(u.type) && (u.hp <= 50 || _aiWantsFacilityResupply(u))){
+    if(!TYPE[u.type].isSupply && !isLandTransport(u.type) && (unitStrength(u) <= 0.5 || _aiWantsFacilityResupply(u))){
       var _capHere = captures[u.x+','+u.y];
       var _terHere = TER[M[u.y][u.x]];
       if(_capHere && _capHere.owner === aiFaction && _terHere && _terHere.slots){
@@ -10048,7 +10092,7 @@ function aiTurn(){
     // フェーズ1+2: HP≤50 は有効打を出せず消耗するだけなので、攻撃せず退避を最優先。
     //   修理拠点へ下がる / 無ければ敵から離れる。経路が味方で塞がれていれば味方をどかして道を作る。
     //   退避不要(安全 かつ 修理拠点なし)の場合のみ acted:false を返し、通常フローに委ねる。
-    if(!TYPE[u.type].isSupply && !isLandTransport(u.type) && u.hp <= 50){
+    if(!TYPE[u.type].isSupply && !isLandTransport(u.type) && unitStrength(u) <= 0.5){
       var _rr = aiExecuteRetreat(u, aiFaction, shovedIds);
       if(_rr.acted){
         u.acted = true;
@@ -10495,7 +10539,7 @@ function aiTurn(){
             u.preMoveX = fromXi; u.preMoveY = fromYi;
             consumeFuelForMove(u, fromXi, fromYi);
             var cargoEntryI = {
-              type: u.type, hp: u.hp, owner: u.owner, originalId: u.id,
+              type: u.type, rank: u.rank, hp: u.hp, owner: u.owner, originalId: u.id,
               fuel: u.fuel, ammo: u.ammo ? u.ammo.slice() : null,
               cargo: u.cargo ? u.cargo.slice() : [],
               loadedRound: roundNumber
@@ -10584,7 +10628,7 @@ function aiTurn(){
               u.preMoveX = fromXll; u.preMoveY = fromYll;
               consumeFuelForMove(u, fromXll, fromYll);
               var cargoEntryL = {
-                type: u.type,
+                type: u.type, rank: u.rank,
                 hp: u.hp,
                 owner: u.owner,
                 originalId: u.id,
@@ -10672,7 +10716,7 @@ function aiTurn(){
               consumeFuelForMove(u, fromXl, fromYl);
               // 輸送船のcargoに歩兵を追加し、歩兵をunitsから削除
               var cargoEntryAi = {
-                type: u.type,
+                type: u.type, rank: u.rank,
                 hp: u.hp,
                 owner: u.owner,
                 originalId: u.id,
@@ -11770,7 +11814,7 @@ function aiTurn(){
         var xy = k.split(',');
         var mx = parseInt(xy[0]), my = parseInt(xy[1]);
         var jm = !(mx === u.x && my === u.y);
-        var fakeAtt = { type: u.type, hp: u.hp, x: mx, y: my, ammo: u.ammo };
+        var fakeAtt = { type: u.type, hp: u.hp, rank: u.rank, x: mx, y: my, ammo: u.ammo };
         var atkSet = computeAttackable(fakeAtt, mx, my, jm);
         var bestAtk = -Infinity;
         var bestElimBonus = 0;
@@ -12392,6 +12436,7 @@ function doRepair(){
   // ユニットを施設のcargoに収容(cargoの中身も保持)
   capObj.cargo.push({
     type: u.type,
+    rank: u.rank,
     hp: u.hp,
     owner: u.owner,
     cargo: u.cargo ? u.cargo.slice() : [],
@@ -12529,7 +12574,7 @@ function executeFacilityAttack(x, y){
     var rng = getEffectiveRange(pendingUnit, w);
     if(dist < rng[0] || dist > rng[1]) continue;
     // 対施設ダメージ = vsFacility × HP/10 - 地形防御 (最低0)
-    var eff = Math.round(w.vsFacility * pendingUnit.hp / HP_MAX);
+    var eff = Math.round(w.vsFacility * unitStrength(pendingUnit) * unitFireMult(pendingUnit));
     var dmg = Math.max(0, eff - targetDef);
     if(dmg > bestDmg){ bestDmg = dmg; bestW = w; bestIdx = i; }
   }
@@ -12768,7 +12813,7 @@ function executeRailAttack(x, y){
     if(u.ammo && !hasAmmoForWeapon(u, i)) continue;
     var rng = getEffectiveRange(u, w);
     if(dist < rng[0] || dist > rng[1]) continue;
-    var eff = Math.round(w.vsFacility * u.hp / HP_MAX) - (TER[M[y][x]].def || 0);
+    var eff = Math.round(w.vsFacility * unitStrength(u) * unitFireMult(u)) - (TER[M[y][x]].def || 0);
     if(eff > bestDmg){ bestDmg = eff; bestIdx = i; bestName = w.name; }
   }
   if(bestDmg <= 0){
@@ -13510,7 +13555,7 @@ function executeUnload(x, y){
   var cargo = pendingUnit.cargo[unloadCargoIdx];
   var carrierT = TYPE[pendingUnit.type];
   // 新規ユニットとして配置
-  var newU = makeUnit(cargo.type, cargo.owner, x, y);
+  var newU = makeUnit(cargo.type, cargo.owner, x, y, cargo.rank);
   newU.hp = cargo.hp;
   // 乗艦中に保存していた fuel/ammo を引き継ぐ (空母乗艦時は満タン補給済みのはず)
   if(typeof cargo.fuel === 'number') newU.fuel = cargo.fuel;
@@ -13940,7 +13985,7 @@ function onCellClick(x, y){
         var carrier = clicked;
         if(window.plog) plog(TYPE[selected.type].name + '@('+selected.x+','+selected.y+') → ' + TYPE[carrier.type].name + '@('+carrier.x+','+carrier.y+')に乗船');
         var cargoEntry = {
-          type: selected.type,
+          type: selected.type, rank: selected.rank,
           hp: selected.hp,
           owner: selected.owner,
           originalId: selected.id,
@@ -14067,7 +14112,7 @@ function onCellClick(x, y){
       var mxy = mk.split(',');
       var mx = parseInt(mxy[0]), my = parseInt(mxy[1]);
       var justM = !(mx === clicked.x && my === clicked.y);
-      var fakeAtt = { type: clicked.type, hp: clicked.hp, x: mx, y: my, ammo: clicked.ammo };
+      var fakeAtt = { type: clicked.type, hp: clicked.hp, rank: clicked.rank, x: mx, y: my, ammo: clicked.ammo };
       var aSet = computeAttackable(fakeAtt, mx, my, justM);
       for(var ak in aSet){ if(!setHas(movableSet, ak)) setAdd(atkPreview, ak); }
     }
@@ -14172,7 +14217,7 @@ function unitHTML(u, size){
   var acted = u.acted;
   var t = TYPE[u.type];
   var dHP = displayHP(u.hp);
-  var hpRatio = u.hp / HP_MAX;
+  var hpRatio = u.hp / unitMaxHp(u);
   var hpColor = hpRatio > 0.6 ? '#3B6D11' : hpRatio > 0.3 ? '#BA7517' : '#A32D2D';
   var inner = size - 8;
   // 潜航中はバッジ「潜」で識別、ステルス中は「ス」で識別
@@ -14183,6 +14228,12 @@ function unitHTML(u, size){
   var trainBadge = '';
   if(t.isTrain && trainOf(u)){
     trainBadge = '<div style="position:absolute;left:-2px;bottom:-3px;font-size:9px;background:#7A5A10;color:white;padding:0 2px;border-radius:2px;font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,0.3);">🔗</div>';
+  }
+  // 部隊の編成 (⭐の数)。右上に出す。弾切れの印が出ているときは少し上にずらす
+  var starBadge = '';
+  var uRank = unitRank(u);
+  if(uRank > 0){
+    starBadge = '<div style="position:absolute;right:-3px;top:-8px;font-size:' + (size >= 30 ? 9 : 7) + 'px;line-height:1;letter-spacing:-2px;filter:drop-shadow(0 0 1px #fff);pointer-events:none;">' + '⭐'.repeat(uRank) + '</div>';
   }
   var cargoBadge = '';
   if(t.capacity && u.cargo && u.cargo.length > 0){
@@ -14221,7 +14272,7 @@ function unitHTML(u, size){
     + '<div style="width:'+inner+'px;height:'+inner+'px;display:flex;align-items:center;justify-content:center;">' + iconSvg + '</div>'
     + '<div style="position:absolute;left:1px;right:1px;bottom:0;height:3px;background:rgba(0,0,0,0.2);border-radius:1px;overflow:hidden;"><div style="width:'+Math.max(0,hpRatio*100)+'%;height:100%;background:'+hpColor+';"></div></div>'
     + '<div style="position:absolute;top:-2px;right:-2px;font-size:8px;font-weight:600;background:'+color+';color:white;border-radius:50%;width:11px;height:11px;display:flex;align-items:center;justify-content:center;">'+dHP+'</div>'
-    + submergedBadge + stealthBadge + cargoBadge + trainBadge + fuelBadge + ammoBadge + '</div>';
+    + submergedBadge + stealthBadge + cargoBadge + trainBadge + fuelBadge + ammoBadge + starBadge + '</div>';
 }
 
 // 道路接続対象の地形 (隣接時に道路グラフィックが繋がる)
@@ -14730,7 +14781,7 @@ function render(){
         var pred = bestAttackOn(pendingUnit, u, pendingUnit.x, pendingUnit.y, pendingJustMoved);
         if(pred){
           // 予測ダメージ後の被害シミュレーション(反撃計算用)
-          var simDef = { type: u.type, hp: Math.max(0, u.hp - pred.dmg * 10), x: u.x, y: u.y };
+          var simDef = { type: u.type, hp: Math.max(0, u.hp - pred.dmg * 10), rank: u.rank, x: u.x, y: u.y };
           var counter = null;
           if(simDef.hp > 0){
             counter = bestAttackOn(simDef, pendingUnit, simDef.x, simDef.y, false);
@@ -14976,7 +15027,7 @@ function onCellHover(x, y){
   var pred = bestAttackOn(pendingUnit, u, pendingUnit.x, pendingUnit.y, pendingJustMoved);
   if(!pred) return;
   // 反撃シミュレーション
-  var simDef = { type: u.type, hp: Math.max(0, u.hp - pred.dmg * 10), x: u.x, y: u.y };
+  var simDef = { type: u.type, hp: Math.max(0, u.hp - pred.dmg * 10), rank: u.rank, x: u.x, y: u.y };
   var counter = null;
   if(simDef.hp > 0){
     counter = bestAttackOn(simDef, pendingUnit, simDef.x, simDef.y, false);
@@ -15897,6 +15948,7 @@ function renderSupplyTab(){
   html += '<li>積み元・降ろし先を敵に取られると、ルートは自動で解除される</li>';
   html += '<li><b>空中給油機</b>は空港系でしか積み降ろしできない。燃料が減ると最寄りの空港・空母へ帰投し、8割まで戻るとルートを再開する (墜落防止)</li>';
   html += '<li>自走できない補給ユニット (補給貨車) はルートを持てない — 機関車が運ぶ</li>';
+  html += '<li><b>⭐ 複数の部隊を編成</b>: 陸上ユニット (列車・補給車を除く) は生産時に <b>小隊 (⭐1) / 中隊 (⭐2) / 大隊 (⭐3)</b> にまとめて作れる。価格・HP・弾薬 (上限と1回の消費) は部隊数ぶん (×2/×3/×4)、火力は ×1.5 / ×2.0 / ×2.5、装甲は +1/+2/+3。燃料・移動・視界・積載は変わらない。中隊・大隊は製造に +1 ターン。撃つ強さは「火力 × (残りHP÷その部隊の最大HP) × 火力倍率」なので、星なしはこれまでと同じ。修理は1ターンの回復量も費用も人数比。AIも資金が余ると大きな部隊を作る</li>';
   html += '<li><b>🔄 自動巡回</b>: 積み元・降ろし先を指定せず、<b>備蓄の乏しい拠点へ自動で運ぶ</b>。毎ターン行き先を選び直すので、拠点を取られても設定し直さなくてよい。<b>見えている敵の3マス以内には近づかず</b>、敵のそばの拠点には行かない (前線へ据え置くなら駐留地点を使う)。複数台を自動巡回にすると、<b>他の車が向かっている降ろし先・積み元は避けて</b>手分けする。解除は情報パネルの「🚚 ルート解除」<br>'
         + '　・降ろし先は<b>都市・中都市・大都市・首都</b>（備蓄を自分では作れない拠点）だけ。工場などを降ろし先にすると、積んだ拠点にそのまま降ろす堂々巡りになるため<br>'
         + '　・積み元は<b>備蓄を作れる施設</b>（工場系・港系・空港系・弾薬工廠）で、在庫が多く近いもの<br>'
@@ -16979,7 +17031,7 @@ function openProductionMenu(x, y, focus){
       var t = TYPE[p.type];
       html += '<div style="display:flex; align-items:center; gap:8px; padding:6px 10px; background:#f5f4f0; border-radius:4px; margin-bottom:4px;">';
       html += '<span style="display:inline-block; width:18px; height:18px;">'+ICONS[p.type]+'</span>';
-      html += '<span style="flex:1;">'+t.name+'</span>';
+      html += '<span style="flex:1;">'+t.name+(p.rank ? ' <span style="color:#7A5A10;font-size:11px;">' + FORMATIONS[p.rank].name + ' ' + '⭐'.repeat(p.rank) + '</span>' : '')+'</span>';
       if(p.ready){
         html += '<span style="color:#0F6E56; font-weight:600;">完成</span>';
         html += '<button onclick="takeOutProduction('+i+')" style="font-size:11px;">取り出す</button>';
@@ -17009,7 +17061,7 @@ function openProductionMenu(x, y, focus){
       }
       html += '<div style="display:flex; align-items:center; gap:8px; padding:6px 10px; background:#fff5e0; border-radius:4px; margin-bottom:4px;">';
       html += '<span style="display:inline-block; width:18px; height:18px;">'+ICONS[cg.type]+'</span>';
-      html += '<span style="flex:1;">'+t.name+' (HP'+displayHP(cg.hp)+')'+(sameRound?' <span style="color:#A32D2D;font-size:10px;">[修理中]</span>':'')+'</span>';
+      html += '<span style="flex:1;">'+t.name+(cg.rank ? ' <span style="color:#7A5A10;font-size:11px;">' + '⭐'.repeat(cg.rank) + '</span>' : '')+' (HP'+displayHP(cg.hp)+'/'+(unitMaxHp(cg)/10)+')'+(sameRound?' <span style="color:#A32D2D;font-size:10px;">[修理中]</span>':'')+'</span>';
       if(sameRound){
         html += '<button disabled style="font-size:11px;color:#aaa;cursor:not-allowed;" title="次のターンまでお待ちください">取り出す</button>';
       } else {
@@ -17196,9 +17248,30 @@ function showProduceConfirm(unitType){
     html += '<span style="font-size:11px; color:#A32D2D;">'+reason+'</span>';
   } else {
     html += '<button onclick="startProduction(\''+unitType+'\')" style="padding:8px 14px; font-size:13px; background:#0F6E56; color:white; border:none; border-radius:4px; cursor:pointer;">この兵器を生産 ('+t.price.toLocaleString()+'G)</button>';
+    if(canFormUp(unitType)){
+      html += '<button onclick="toggleFormationChoice()" style="padding:8px 14px; font-size:13px; background:#5a4a30; color:white; border:none; border-radius:4px; cursor:pointer;">⭐ 複数の部隊を編成</button>';
+    }
   }
   html += '<button onclick="openProductionMenu('+prodFacilityX+','+prodFacilityY+')" style="padding:8px 14px; font-size:13px;">戻る</button>';
   html += '</div>';
+  // 複数の部隊を編成 (小隊 / 中隊 / 大隊)。価格・HP・弾薬は人数比、火力は倍率、装甲は+1ずつ
+  if(!reason && canFormUp(unitType)){
+    html += '<div id="prod-formation" style="display:none; margin-top:10px; padding:10px 12px; background:#f3efe4; border:1px solid #d8cfb8; border-radius:5px;">';
+    html += '<div style="font-size:12px; font-weight:600; margin-bottom:4px;">⭐ 複数の部隊をまとめて1つのユニットにします</div>';
+    html += '<div style="font-size:10px; color:#666; margin-bottom:8px; line-height:1.5;">価格・HP・弾薬 (上限と1回の消費) は部隊数ぶん。火力は ×1.5 / ×2.0 / ×2.5、装甲は +1 / +2 / +3。燃料・移動・視界は変わりません。中隊・大隊は製造に +1 ターン。</div>';
+    html += '<div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:6px;">';
+    for(var fr=1; fr<=3; fr++){
+      var fp = formationPrice(unitType, fr);
+      var ft = Math.max(1, formationTurns(unitType, fr) + bonus);
+      var okF = funds.P >= fp;
+      html += '<button ' + (okF ? 'onclick="startProduction(\''+unitType+'\', '+fr+')"' : 'disabled') + ' style="padding:8px 6px; font-size:12px; border:1px solid ' + (okF ? '#5a4a30' : '#ccc') + '; border-radius:4px; background:' + (okF ? '#fff' : '#f4f4f4') + '; color:' + (okF ? '#333' : '#aaa') + '; cursor:' + (okF ? 'pointer' : 'not-allowed') + '; line-height:1.5;">'
+        + '<div style="font-weight:600;">' + '⭐'.repeat(fr) + ' ' + FORMATIONS[fr].name + '</div>'
+        + '<div>' + fp.toLocaleString() + 'G ・ ' + ft + 'T</div>'
+        + '<div style="font-size:10px; color:#666;">HP' + (10 * (fr + 1)) + ' 火力×' + FORMATIONS[fr].mult + ' 装甲+' + FORMATIONS[fr].armor + '</div>'
+        + '</button>';
+    }
+    html += '</div></div>';
+  }
   html += '<div style="font-size:11px; color:#666; margin-top:8px;">資金: <b style="color:#185FA5;">'+funds.P.toLocaleString()+'G</b></div>';
 
   body.innerHTML = html;
@@ -17218,19 +17291,27 @@ function closeProductionMenu(){
   prodFacilityY = -1;
 }
 
-function startProduction(unitType){
+// 生産メニューの「複数の部隊を編成」の開閉
+function toggleFormationChoice(){
+  var el = document.getElementById('prod-formation');
+  if(el) el.style.display = (el.style.display === 'none') ? '' : 'none';
+}
+function startProduction(unitType, rank){
   var t = TYPE[unitType];
-  if(!t || funds.P < t.price) return;
-  funds.P -= t.price;
-  // 兵器廠など prodTurnBonus を持つ施設は生産ターン-1 (最低1)
+  var r = (typeof rank === 'number' && canFormUp(unitType)) ? Math.max(0, Math.min(3, rank)) : 0;
+  var price = formationPrice(unitType, r);
+  if(!t || funds.P < price) return;
+  funds.P -= price;
+  // 兵器廠など prodTurnBonus を持つ施設は生産ターン-1 (最低1)。中隊・大隊は +1 ターン
   var prodTer = TER[M[prodFacilityY][prodFacilityX]];
   var bonus = (prodTer && prodTer.prodTurnBonus) ? prodTer.prodTurnBonus : 0;
-  var actualTurns = Math.max(1, t.prodTurns + bonus);
-  if(window.plog) plog('生産開始 ' + (prodTer?prodTer.name:'?') + '@('+prodFacilityX+','+prodFacilityY+') で ' + t.name + ' ('+t.price+'G, '+actualTurns+'T)');
+  var actualTurns = Math.max(1, formationTurns(unitType, r) + bonus);
+  if(window.plog) plog('生産開始 ' + (prodTer?prodTer.name:'?') + '@('+prodFacilityX+','+prodFacilityY+') で ' + t.name + (r ? ' ' + FORMATIONS[r].name : '') + ' ('+price+'G, '+actualTurns+'T)');
   production.push({
     x: prodFacilityX,
     y: prodFacilityY,
     type: unitType,
+    rank: r,
     owner: 'P',
     remaining: actualTurns,
     ready: false
@@ -17326,7 +17407,7 @@ function takeOutProduction(idx){
     return;
   }
   // 施設マスが空いている → その場に出る (移動していないので、このターン普通に動ける)
-  var newU = makeUnit(p.type, p.owner, p.x, p.y);
+  var newU = makeUnit(p.type, p.owner, p.x, p.y, p.rank);
   newU.acted = false;
   newU.moved = false;
   newU.spawnedThisTurn = true;   // 出てきたターンは探知できない (出港も行動のうち)
@@ -17349,13 +17430,13 @@ function executeDeploy(x, y){
     capS = captures[prodFacilityX+','+prodFacilityY];
     cgS = capS && capS.cargo ? capS.cargo[deployPendingIdx] : null;
     if(!cgS){ exitDeployMode(); return; }
-    p = { type: cgS.type, owner: cgS.owner, x: prodFacilityX, y: prodFacilityY };
+    p = { type: cgS.type, owner: cgS.owner, rank: cgS.rank, x: prodFacilityX, y: prodFacilityY };
   } else {
     p = production[deployPendingIdx];
     if(!p || !p.ready){ exitDeployMode(); return; }
   }
   // 経路をたどって実際に止まる位置を求める (伏兵察知・ZOCで手前に止まる)
-  var tmpUnit = makeUnit(p.type, p.owner, p.x, p.y);
+  var tmpUnit = makeUnit(p.type, p.owner, p.x, p.y, p.rank);
   tmpUnit.id = -1;
   var res = findActualMoveEndpoint(tmpUnit, x, y);
   if(res.x === p.x && res.y === p.y){
@@ -17364,7 +17445,7 @@ function executeDeploy(x, y){
     render();
     return;
   }
-  var newU = makeUnit(p.type, p.owner, res.x, res.y);
+  var newU = makeUnit(p.type, p.owner, res.x, res.y, p.rank);
   newU.preMoveX = p.x; newU.preMoveY = p.y;
   newU.moved = true;      // 出撃は移動なので、このターンはもう動けない (直射なら攻撃は可)
   newU.acted = false;
@@ -17478,7 +17559,7 @@ function takeOutFromFacility(idx){
     return;
   }
   // 新ユニットとして配置(HP保持、取り出した時点で動ける)
-  var newU = makeUnit(cg.type, cg.owner, prodFacilityX, prodFacilityY);
+  var newU = makeUnit(cg.type, cg.owner, prodFacilityX, prodFacilityY, cg.rank);
   newU.hp = cg.hp;
   newU.acted = false;
   newU.moved = false;
@@ -17935,6 +18016,7 @@ window.clearSupplyRouteAt = clearSupplyRouteAt;
 window.openProductionMenu = openProductionMenu;
 window.cancelProduction = cancelProduction;
 window.takeOutProduction = takeOutProduction;
+window.toggleFormationChoice = toggleFormationChoice;
 window.takeOutFromFacility = takeOutFromFacility;
 window.startUpgrade = startUpgrade;
 window.cancelUpgrade = cancelUpgrade;
