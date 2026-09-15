@@ -12202,12 +12202,98 @@ function showCommandPanel(unit, justMoved){
   // 動いたあとに連結・切り離しをした車輌 (moveFixed) も位置が確定しているので戻せない
   addBtn((justMoved && !unit.deployedFromFacility && !unit.moveFixed) ? '移動キャンセル' : '選択解除', cancelMove);
   panel.style.visibility = 'visible';
-  setClear(attackableSet);
-  setStatus(TYPE[unit.type].name + 'のコマンドを選択してください');
+  // 赤マス (撃てる相手) はパネルを出した時点で見せておき、「攻撃」を押さなくても
+  // 敵をクリック → もう一度クリックで撃てるようにする (quickAttackClick)。
+  // 列車砲のように常に範囲攻撃の武器は、着弾点になるマス (空マス含む) を赤にする
+  quickTarget = null;
+  attackableSet = quickAttackSetFor(unit, justMoved);
+  setStatus(TYPE[unit.type].name + 'のコマンドを選択してください'
+    + (setSize(attackableSet) > 0 ? '（赤マスの敵をクリック→もう一度クリックで攻撃）' : '')
+    + '（自分のマスをクリックで待機）');
   render();
+}
+// パネルを出しているときに赤で見せる「撃てるマス」
+function quickAttackSetFor(unit, justMoved){
+  var s = computeAttackable(unit, unit.x, unit.y, justMoved);
+  if(setSize(s) === 0 && !justMoved && areaShotWeaponIndex(unit) >= 0){
+    s = computeAttackableForFireForEffect(unit, unit.x, unit.y, justMoved, false);
+  }
+  return s;
+}
+// 赤マスをクリック: 1回目は仮決定 (予測を出す)、同じマスをもう一度クリックで攻撃。
+// 観測射撃・効力射・砲撃のように撃ち方を選べるユニットは、仮決定のときにその
+// ボタンも出す (ボタンを押せばその撃ち方で即発射。もう一度クリックなら既定の撃ち方)
+var quickTarget = null;
+function quickAttackClick(x, y){
+  if(!pendingUnit) return;
+  var u = pendingUnit;
+  var isArea = (areaShotWeaponIndex(u) >= 0 && !pendingJustMoved);
+  var target = unitAt(x, y);
+  if(!isArea && (!target || target.owner === u.owner || target.owner === 'N')) return;
+  if(quickTarget && quickTarget.x === x && quickTarget.y === y){
+    fireQuickAttack(isArea ? 'area' : 'normal');
+    return;
+  }
+  quickTarget = { x: x, y: y };
+  var canObs = canUseObserverFire(u) && !pendingJustMoved;
+  var canFFE = canUseFireForEffect(u) && !pendingJustMoved;
+  var btnWrap = document.getElementById('command-buttons');
+  btnWrap.innerHTML = '';
+  function addBtn(text, handler, primary){
+    var b = document.createElement('button');
+    b.textContent = text;
+    if(primary) b.style.fontWeight = '600';
+    b.onclick = function(e){ e.stopPropagation(); handler(); };
+    btnWrap.appendChild(b);
+  }
+  var tName = target ? TYPE[target.type].name : '着弾点';
+  document.getElementById('command-label').textContent = TYPE[u.type].name + ': ' + tName + ' (' + x + ',' + y + ') を攻撃 — もう一度クリックで発射';
+  if(isArea){
+    var wA = TYPE[u.type].weapons[areaShotWeaponIndex(u)];
+    addBtn('砲撃 (十字5マス, 弾薬' + (wA.shotAmmo || 2) + ')', function(){ fireQuickAttack('area'); }, true);
+    if(canFFE) addBtn('効力射 (13マス, 弾薬' + (wA.feAmmo || 2) + ')', function(){ fireQuickAttack('fire_for_effect'); }, true);
+  } else {
+    addBtn('攻撃', function(){ fireQuickAttack('normal'); }, true);
+    if(canObs){
+      addBtn('観測射撃 (+20%, 弾薬1)', function(){ fireQuickAttack('observed'); }, true);
+      if(canFFE) addBtn('効力射 (+20%+周囲, 弾薬2)', function(){ fireQuickAttack('fire_for_effect'); }, true);
+    }
+  }
+  addBtn('やめる', function(){ showCommandPanel(u, pendingJustMoved); });
+  // 予測 (通常攻撃) をステータスに出す
+  var msg = '';
+  if(target){
+    var pred = bestAttackOn(u, target, u.x, u.y, pendingJustMoved);
+    if(pred){
+      var simDef = { type: target.type, hp: Math.max(0, target.hp - pred.dmg * 10), rank: target.rank, x: target.x, y: target.y };
+      var counter = (simDef.hp > 0) ? bestAttackOn(simDef, u, simDef.x, simDef.y, false) : null;
+      msg = TYPE[u.type].name + '[' + pred.weapon.name + '] → ' + TYPE[target.type].name + ' に ' + pred.dmg + 'ダメージ'
+        + (counter ? (' / 反撃[' + counter.weapon.name + '] ' + counter.dmg + 'ダメージ') : (simDef.hp <= 0 ? ' (撃破)' : ' (反撃なし)'));
+    }
+  } else {
+    msg = '着弾点 (' + x + ',' + y + ')';
+  }
+  setStatus('🎯 ' + msg + '｜もう一度クリックで' + (isArea ? '砲撃' : '攻撃') + '（やめるなら「やめる」）');
+  render();
+}
+// 仮決定した相手へ、指定の撃ち方で発射する。実際の処理は攻撃モードのクリック処理に任せる
+function fireQuickAttack(mode){
+  if(!pendingUnit || !quickTarget) return;
+  var tx = quickTarget.x, ty = quickTarget.y;
+  quickTarget = null;
+  pendingAttackMode = mode;
+  attackMode = true;
+  if(mode === 'fire_for_effect' || mode === 'area'){
+    attackableSet = computeAttackableForFireForEffect(pendingUnit, pendingUnit.x, pendingUnit.y, pendingJustMoved, mode === 'fire_for_effect');
+  } else {
+    attackableSet = computeAttackable(pendingUnit, pendingUnit.x, pendingUnit.y, pendingJustMoved);
+  }
+  if(!setHas(attackableSet, tx+','+ty)){ exitAttackMode(); setStatus('その相手にはその撃ち方で届きません'); return; }
+  onCellClick(tx, ty);
 }
 function hideCommandPanel(){
   // 場所は残したまま隠す (出し入れで盤面が上下しないように)
+  quickTarget = null;
   var p = document.getElementById('command-panel');
   p.style.visibility = 'hidden';
   document.getElementById('command-label').textContent = '';
@@ -13949,6 +14035,24 @@ function onCellClick(x, y){
     return;
   }
   if(unloadMode) return;
+  // コマンドパネルを出しているとき (どのモードでもない):
+  //   自分のマス = 待機、赤マス = 攻撃の仮決定 → もう一度で発射 (quickAttackClick)
+  if(pendingUnit && !selected){
+    if(x === pendingUnit.x && y === pendingUnit.y){ doWait(); return; }
+    if(setHas(attackableSet, k)){ quickAttackClick(x, y); return; }
+  }
+  // 選択中 (まだ動いていない) に、その場から撃てる敵をクリック:
+  //   「自分のマスをクリックして待機扱い → 仮決定」と同じ流れにする (移動せずに撃つのが1手減る)
+  if(selected && !pendingUnit && clicked && clicked.owner !== selected.owner && clicked.owner !== 'N'
+     && setHas(attackableSet, k) && isUnitVisibleTo(clicked, selected.owner)){
+    var nowSet = computeAttackable(selected, selected.x, selected.y, false);
+    if(setHas(nowSet, k)){
+      var stayU = selected;
+      onCellClick(stayU.x, stayU.y);          // その場で待機扱い → パネル
+      if(pendingUnit === stayU && setHas(attackableSet, k)) quickAttackClick(x, y);
+      return;
+    }
+  }
   // 編成の移動 (列車): 緑マス = 編成の先頭が止まるマス
   if(selected && !pendingUnit && setHas(movableSet, k) && trainOf(selected)){
     var tChain = trainOf(selected);
@@ -14763,6 +14867,7 @@ function render(){
       var bg = ter.color;
       var border = '0.5px solid transparent';
       if(setHas(attackableSet, k)){ bg = '#F5A0A0'; border = '1.5px solid #A32D2D'; }
+      if(quickTarget && quickTarget.x === x && quickTarget.y === y){ bg = '#F07070'; border = '3px solid #7A1010'; }   // 仮決定した相手
       if(setHas(facilityAttackableSet, k)){ bg = '#FFD08A'; border = '1.5px solid #BA7517'; }
       if(setHas(bridgeValidSet, k)){ bg = '#A8D8F0'; border = '2px dashed #185FA5'; }
       if(setHas(railRepairSet, k)){ bg = '#BFE3CC'; border = '2px dashed #0F6E56'; }
@@ -14813,8 +14918,8 @@ function render(){
         wrap.innerHTML = unitHTML(u, 34);
         cell.appendChild(wrap);
       }
-      // 攻撃モード時、攻撃対象マスに予測ダメージを表示
-      if(attackMode && pendingUnit && setHas(attackableSet, k) && u && u.owner !== pendingUnit.owner){
+      // 攻撃モード時 (パネルを出して赤マスが見えているときも)、攻撃対象マスに予測ダメージを表示
+      if(pendingUnit && setHas(attackableSet, k) && u && u.owner !== pendingUnit.owner && u.owner !== 'N'){
         var pred = bestAttackOn(pendingUnit, u, pendingUnit.x, pendingUnit.y, pendingJustMoved);
         if(pred){
           // 予測ダメージ後の被害シミュレーション(反撃計算用)
@@ -15056,11 +15161,11 @@ function onCellHover(x, y){
     routeHoverX = x; routeHoverY = y;
     renderRouteOverlay();
   }
-  if(!attackMode || !pendingUnit) return;
+  if(!pendingUnit) return;   // 攻撃モード中も、パネルを出して赤マスが見えているときも予測を出す
   var k = x+','+y;
   if(!setHas(attackableSet, k)) return;
   var u = unitAt(x, y);
-  if(!u || u.owner === pendingUnit.owner) return;
+  if(!u || u.owner === pendingUnit.owner || u.owner === 'N') return;
   var pred = bestAttackOn(pendingUnit, u, pendingUnit.x, pendingUnit.y, pendingJustMoved);
   if(!pred) return;
   // 反撃シミュレーション
@@ -15824,6 +15929,15 @@ function renderRulesTab(){
     + '緑のマスに<b>カーソルを合わせると、そこまで通る経路</b>が琥珀色で表示されます。そのまま<b>クリックすれば移動</b>します。編成 (列車) も同じです。<br>'
     + '思わぬ経路を通って敵に接触したり伏兵に遭うのを避けるためのものです。表示されるのは<b>本来たどる経路</b>で、伏兵を察知して途中で止まる位置は出ません (伏兵の居場所を教えることになるため)。<br>'
     + '<b>「移動キャンセル」で戻るのは位置だけで、燃料は戻りません。</b>戻すと「動かして索敵 → キャンセル → また動かす」を燃料ゼロで繰り返せてしまい、戦場の霧が意味を失うためです。'
+    + '<h4>移動したあとの攻撃と待機 (クリックだけで済ませる)</h4>'
+    + '<div style="background:#fbeeee; border-left:3px solid #A32D2D; padding:6px 10px; margin:6px 0; font-size:12px;">'
+    + '移動先に着くと (または自分のマスをクリックしてその場に留まると) コマンドパネルと一緒に<b>撃てる相手が赤マス</b>で出ます。<br>'
+    + '・赤マスの敵を<b>クリックすると仮決定</b> (予測ダメージと反撃が出る) → <b>同じ敵をもう一度クリックで攻撃</b>。「攻撃」ボタンを押す必要はありません<br>'
+    + '・<b>自分のマスをもう一度クリックすると待機</b> (移動確定) です<br>'
+    + '・砲兵・列車砲のように撃ち方を選べるユニットは、仮決定のときに「観測射撃」「効力射」「砲撃」のボタンも出ます。押せばその撃ち方で発射、もう一度クリックなら通常攻撃 (列車砲は砲撃) です<br>'
+    + '・まだ動いていないユニットでも、<b>その場から撃てる敵をクリックすれば</b>その場に留まって仮決定になります (砲兵は選んで敵を2回クリックするだけで撃てる)<br>'
+    + '・占領・降下・積み降ろし・連結などは今までどおりボタンから。施設攻撃も「施設攻撃」ボタンからです'
+    + '</div>'
     + '<h4>連結と編成 (列車)</h4>'
     + '<div style="background:#f6f2e8; border-left:3px solid #7A5A10; padding:6px 10px; margin:6px 0; font-size:12px;">'
     + '<b style="color:#7A5A10;">🔗 編成の作り方と動かし方</b><br>'
