@@ -5563,7 +5563,7 @@ function endTurn(){
   // 天候の進行 (1ラウンドごとに各雲が1マス流れる)
   if(roundEnded) advanceWeather();
   applyTurnStart(turn);
-  for(var i=0; i<units.length; i++){ if(units[i].owner === turn){ units[i].moved = false; units[i].acted = false; units[i].deployedFromFacility = false; units[i].spawnedThisTurn = false; units[i].moveFixed = false; } }
+  for(var i=0; i<units.length; i++){ if(units[i].owner === turn){ units[i].moved = false; units[i].acted = false; units[i].deployedFromFacility = false; units[i].spawnedThisTurn = false; units[i].moveFixed = false; units[i].actedByTow = false; } }
   // 補給ルート (段階3): AI 陣営はルートを自動で組み直してから往復させる
   if(!isPlayerFaction(turn) || playerIsAI) aiAssignSupplyRoutes(turn);
   runSupplyRoutes(turn);
@@ -12199,8 +12199,9 @@ function showCommandPanel(unit, justMoved){
   addBtn('待機', doWait);
   // 動いていないときも押せるようにする。これを隠すと「待機(=そのターンを捨てる)」しか
   // 出口が無くなるため。動いていなければ選択を解いて元の状態に戻すだけ。
-  // 動いたあとに連結・切り離しをした車輌 (moveFixed) も位置が確定しているので戻せない
-  addBtn((justMoved && !unit.deployedFromFacility && !unit.moveFixed) ? '移動キャンセル' : '選択解除', cancelMove);
+  // 動いたあとに連結・切り離しをした車輌 (moveFixed) や、同じ編成の他の車輌が
+  // もう行動した (対空列車が撃った・機関車が待機した) 編成も、位置が確定しているので戻せない
+  addBtn((justMoved && !unit.deployedFromFacility && !unit.moveFixed && !trainMoveLocked(unit)) ? '移動キャンセル' : '選択解除', cancelMove);
   panel.style.visibility = 'visible';
   // 赤マス (撃てる相手) はパネルを出した時点で見せておき、「攻撃」を押さなくても
   // 敵をクリック → もう一度クリックで撃てるようにする (quickAttackClick)。
@@ -13936,12 +13937,24 @@ function doWait(){
   setStatus('待機しました');
   afterAction();
 }
+// 編成の移動をもう戻せないか: 同じ編成の他の車輌がすでに行動している (撃った・待機した・積み降ろしした)。
+// 戻せてしまうと、その車輌の行動済みまで解けて「対空列車で撃つ → 別の車輌でキャンセル → もう一度撃つ」ができてしまう
+function trainMoveLocked(unit){
+  var chain = trainOf(unit);
+  if(!chain) return false;
+  for(var i=0; i<chain.length; i++){
+    if(chain[i].id === unit.id) continue;
+    if((chain[i].acted && !chain[i].actedByTow) || chain[i].moveFixed) return true;
+  }
+  return false;
+}
 function cancelMove(){
   if(!pendingUnit) return;
   // 「選択解除」(このユニットは今回動いていない) のときは、位置も行動状態も触らない。
   // 触ってしまうと、連結相手が以前の移動の分まで巻き戻されて別の場所へ吹き飛び、
   // しかも moved が消えるので、その機関車がもう一度動けてしまう。
-  if(!pendingJustMoved){
+  // 編成の他の車輌がもう行動しているときも同じ (位置は確定)。
+  if(!pendingJustMoved || trainMoveLocked(pendingUnit)){
     pendingUnit = null;
     setClear(attackableSet); setClear(unloadValidSet);
     unloadMode = false; unloadCargoIdx = -1; unloadStarted = false;
@@ -13972,7 +13985,7 @@ function cancelMove(){
     //    燃料ゼロで繰り返せてしまい、戦場の霧が意味を失うため。
     //    キャンセルで戻るのは位置だけ (誤操作の取り消し用)。
     cu.moved = false;
-    if(cu.id !== pendingUnit.id) cu.acted = false;   // 編成の他の車輌も行動前に戻す
+    if(cu.id !== pendingUnit.id){ cu.acted = false; cu.actedByTow = false; }   // 編成の他の車輌も行動前に戻す
   }
   pendingUnit = null;
   setClear(attackableSet); setClear(unloadValidSet);
@@ -14169,6 +14182,7 @@ function onCellClick(x, y){
       if(tChain[tI].id === tSel.id) continue;
       if(TYPE[tChain[tI].type].isTowed) continue;
       tChain[tI].acted = true;
+      tChain[tI].actedByTow = true;   // 自分で行動したのではなく編成の移動で行動済みになった (移動キャンセルの判定で区別する)
     }
     if(tRes.ambushAt){
       tSel.acted = true;
