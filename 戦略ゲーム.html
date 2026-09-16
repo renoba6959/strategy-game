@@ -5563,7 +5563,7 @@ function endTurn(){
   // 天候の進行 (1ラウンドごとに各雲が1マス流れる)
   if(roundEnded) advanceWeather();
   applyTurnStart(turn);
-  for(var i=0; i<units.length; i++){ if(units[i].owner === turn){ units[i].moved = false; units[i].acted = false; units[i].deployedFromFacility = false; units[i].spawnedThisTurn = false; units[i].moveFixed = false; units[i].actedByTow = false; } }
+  for(var i=0; i<units.length; i++){ if(units[i].owner === turn){ units[i].moved = false; units[i].acted = false; units[i].deployedFromFacility = false; units[i].spawnedThisTurn = false; units[i].moveFixed = false; units[i].actedByTow = false; units[i].moveTag = 0; } }
   // 補給ルート (段階3): AI 陣営はルートを自動で組み直してから往復させる
   if(!isPlayerFaction(turn) || playerIsAI) aiAssignSupplyRoutes(turn);
   runSupplyRoutes(turn);
@@ -13309,6 +13309,14 @@ function trainPathTiles(entry, destX, destY){
   return path;
 }
 
+var trainMoveTagSeq = 0;
+// 編成の中身を表す文字列 (経路情報のキャッシュが今の編成のものか確かめる)
+function trainChainKey(chain){
+  if(!chain) return '';
+  var ids = [];
+  for(var i=0; i<chain.length; i++) ids.push(chain[i].id);
+  return ids.slice().sort(function(a,b){ return a-b; }).join(',');
+}
 function executeTrainMove(chain, driver, destX, destY, info){
   var entry = info[destX+','+destY];
   if(!entry) return null;
@@ -13342,11 +13350,25 @@ function executeTrainMove(chain, driver, destX, destY, info){
   var oldPos = [];
   for(var i=0; i<seq.length; i++) oldPos.push({ x: seq[i].x, y: seq[i].y });
   var full = trail.concat(oldPos.slice(1));
+  // 安全装置: 置き場所が足りない・2両が同じマスになる・編成外のユニットがいるなら動かさない。
+  // (経路情報と編成が食い違ったときに車輌が重なって「消える」のを防ぐ)
+  var seenPos = {};
+  for(var i=0; i<seq.length; i++){
+    var p0 = full[i];
+    if(!p0 || typeof p0.x !== 'number'){ console.warn('列車の移動を中止: 置き場所が足りない', seq.length, full.length); setStatus('この編成はその位置に収まりません'); return null; }
+    var pk = p0.x+','+p0.y;
+    if(seenPos[pk]){ console.warn('列車の移動を中止: 2両が同じマスになる', pk); setStatus('この編成はその位置に収まりません'); return null; }
+    seenPos[pk] = true;
+    var occ = unitAt(p0.x, p0.y);
+    if(occ && !fitIds[occ.id]){ console.warn('列車の移動を中止: 編成外のユニットがいる', pk, occ.type); setStatus('その位置には他のユニットがいます'); return null; }
+  }
+  trainMoveTagSeq++;
   for(var i=0; i<seq.length; i++){
     var u = seq[i], p = full[i];
     u.preMoveX = u.x; u.preMoveY = u.y;
     u.x = p.x; u.y = p.y;
     u.moved = true;
+    u.moveTag = trainMoveTagSeq;   // 一緒に動いた車輌の印 (移動キャンセルでまとめて戻すため)
   }
   var didMove = (stopAt > 0);
   // 牽引している重さのぶん燃料を余計に使う (重さ2なら1マスあたり3)
@@ -13487,6 +13509,7 @@ function fixTrainMove(unit, onlySelf){
 //   ここで戻せてしまうと、動いた車輌だけが元の位置に飛んで編成がばらばらになる
 function afterCoupling(unit, ids, msg){
   for(var i=0; i<ids.length; i++) fixTrainMove(unitById(ids[i]), true);
+  selectedTrainInfo = null;   // 編成が変わったので、古い経路情報は使わない
   coupleMode = false; coupleValidSet = {};
   uncoupleMode = false; uncoupleValidSet = {};
   if(pendingJustMoved || unitUsedMove(unit)){
@@ -13973,8 +13996,30 @@ function cancelMove(){
   // 「別のユニットの移動前の位置」へワープしていた。
   // ユニット自身が持つ移動前の位置 (preMoveX/preMoveY) に戻す。
   // 編成の場合は、連結している車輌をまとめて元の位置に戻す。
-  var cancelChain = trainOf(pendingUnit);
-  var cancelList = cancelChain ? cancelChain : [pendingUnit];
+  // 編成の移動は、一緒に動いた車輌 (同じ moveTag) をまとめて戻す。
+  // 今の並びから編成を取り直すと、動いたあとの形によっては一部の車輌しか戻らず、
+  // 戻った車輌が他の車輌と同じマスに重なって「消える」ことがあるため
+  var cancelList = [pendingUnit];
+  if(pendingUnit.moveTag){
+    cancelList = [];
+    for(var cli=0; cli<units.length; cli++){
+      if(units[cli].hp > 0 && units[cli].moveTag === pendingUnit.moveTag) cancelList.push(units[cli]);
+    }
+  }
+  // 戻り先に他のユニットがいたら (戻す車輌どうしの入れ替わりは除く) 戻さない。
+  // 重ねて置くと片方が見えなくなる
+  var restoreIds = {};
+  for(var ri=0; ri<cancelList.length; ri++) restoreIds[cancelList[ri].id] = true;
+  for(var ri=0; ri<cancelList.length; ri++){
+    var ru = cancelList[ri];
+    if(!ru.moved || ru.deployedFromFacility || ru.moveFixed) continue;
+    if(typeof ru.preMoveX !== 'number') continue;
+    var rb = unitAt(ru.preMoveX, ru.preMoveY);
+    if(rb && !restoreIds[rb.id]){
+      setStatus('戻り先 (' + ru.preMoveX + ',' + ru.preMoveY + ') に ' + TYPE[rb.type].name + ' がいるため、移動をキャンセルできません');
+      return;
+    }
+  }
   var cancelMoved = false;
   for(var ci=0; ci<cancelList.length; ci++){
     var cu = cancelList[ci];
@@ -13997,6 +14042,7 @@ function cancelMove(){
   hideCommandPanel();
   selected = null; setClear(movableSet);
   setStatus(cancelMoved ? '移動をキャンセルしました（燃料は戻りません）' : '選択を解除しました');
+  if(cancelMoved && window.plog) try{ plog('↩ 移動キャンセル ' + cancelList.filter(function(cu){ return !cu.moved; }).map(function(cu){ return TYPE[cu.type].name + '@(' + cu.x + ',' + cu.y + ')'; }).join('・')); }catch(e){}
   render();
 }
 function afterAction(){ render(); updateInfoPanel(); if(checkWin()) return; }
@@ -14168,7 +14214,9 @@ function onCellClick(x, y){
     var tDrv = trainDriver(tChain, selected);
     if(!tDrv){ setStatus('機関車がいないため、この編成は動かせません'); return; }
     if(!trainAllReady(tChain, tDrv)){ setStatus(tDrv.moved ? '機関車はこのターンもう動いたため、この編成は発車できません' : '行動済みの車輌があるため、この編成は発車できません'); return; }
-    var tInfo = (selectedTrainInfo && selectedTrainInfo.unitId === selected.id)
+    // キャッシュは「同じ車輌を選んだまま、編成の中身も同じ」ときだけ使う。
+    // 連結・切り離しで編成が変わったあとに古い経路情報で動かすと、車輌が重なって消える
+    var tInfo = (selectedTrainInfo && selectedTrainInfo.unitId === selected.id && selectedTrainInfo.chainKey === trainChainKey(tChain))
       ? selectedTrainInfo.info : trainMovableInfo(tChain, tDrv);
     movePreview = null;
     var tRes = executeTrainMove(tChain, tDrv, x, y, tInfo);
@@ -14281,6 +14329,7 @@ function onCellClick(x, y){
       }
       selected.x = actualX; selected.y = actualY;
       selected.moved = true;
+      selected.moveTag = 0;   // 単独の移動 (編成の移動キャンセルの巻き添えにしない)
       // 移動前位置をユニットに記録 (移動後の攻撃判定で「移動前から見えていた敵」を識別するため)
       selected.preMoveX = fromX;
       selected.preMoveY = fromY;
@@ -14333,7 +14382,7 @@ function onCellClick(x, y){
       selectedTrainInfo = null;
       if(selReady){
         var selInfo = trainMovableInfo(selChain, selDrv);
-        selectedTrainInfo = { unitId: clicked.id, info: selInfo };   // ホバー表示で使い回す
+        selectedTrainInfo = { unitId: clicked.id, info: selInfo, chainKey: trainChainKey(selChain) };   // ホバー表示で使い回す
         for(var selK in selInfo) setAdd(movableSet, selK);
       }
       // 編成は動くと全車が行動終了になるので、攻撃予告は現在位置からのみ
@@ -14951,8 +15000,27 @@ function computePlayerVisibleCells(){
   return visSet;
 }
 
+// 同じマスに2体以上いたら console に出す (見えなくなる不具合の追跡用。1度だけ)
+var _overlapWarned = {};
+function warnUnitOverlaps(){
+  var seen = {};
+  for(var i=0; i<units.length; i++){
+    var u = units[i];
+    if(u.hp <= 0) continue;
+    var k = u.x+','+u.y;
+    if(seen[k]){
+      var wk = k + ':' + seen[k].id + ':' + u.id;
+      if(!_overlapWarned[wk]){
+        _overlapWarned[wk] = true;
+        console.warn('⚠ 同じマスにユニットが重なっています', k, TYPE[seen[k].type].name, '#'+seen[k].id, '/', TYPE[u.type].name, '#'+u.id);
+        if(window.plog) try{ plog('⚠ 同じマスに重なり (' + k + ') ' + TYPE[seen[k].type].name + ' / ' + TYPE[u.type].name); }catch(e){}
+      }
+    } else seen[k] = u;
+  }
+}
 function render(){
   syncTrains();   // 撃破などで切れた編成をここで整える
+  warnUnitOverlaps();
   var board = document.getElementById('board');
   // 盤面の外へカーソルが出たら移動経路の表示を消す
   board.onmouseleave = function(){
@@ -15237,12 +15305,12 @@ function buildMovePreview(unit, x, y){
   if(!unit) return null;
   var chain = trainOf(unit);
   if(chain){
-    var info = (selectedTrainInfo && selectedTrainInfo.unitId === unit.id) ? selectedTrainInfo.info : null;
+    var info = (selectedTrainInfo && selectedTrainInfo.unitId === unit.id && selectedTrainInfo.chainKey === trainChainKey(chain)) ? selectedTrainInfo.info : null;
     if(!info){
       var drv = trainDriver(chain, unit);
       if(!drv || !trainAllReady(chain, drv)) return null;
       info = trainMovableInfo(chain, drv);
-      selectedTrainInfo = { unitId: unit.id, info: info };
+      selectedTrainInfo = { unitId: unit.id, info: info, chainKey: trainChainKey(chain) };
     }
     var entry = info[x+','+y];
     if(!entry) return null;
