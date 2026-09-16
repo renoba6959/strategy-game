@@ -1264,7 +1264,7 @@ var production = [];
 
 var currentStage = null, W = 0, H = 0, M = [];
 var units = [], captures = {}, nextId = 1;
-var turn = 'P', selected = null, pendingUnit = null, pendingJustMoved = false, attackMode = false, unloadMode = false, unloadCargoIdx = -1, unloadValidSet = {}, unloadStarted = false, facilityAttackMode = false, facilityAttackableSet = {}, bridgeMode = false, bridgeValidSet = {}, railRepairMode = false, railRepairSet = {}, coupleMode = false, coupleValidSet = {}, uncoupleMode = false, uncoupleValidSet = {},
+var turn = 'P', selected = null, pendingUnit = null, pendingJustMoved = false, attackMode = false, unloadMode = false, unloadCargoIdx = -1, unloadValidSet = {}, unloadStarted = false, facilityAttackMode = false, facilityAttackableSet = {}, bridgeMode = false, bridgeValidSet = {}, railRepairMode = false, railRepairSet = {}, trainRepairMode = false, trainRepairSet = {}, coupleMode = false, coupleValidSet = {}, uncoupleMode = false, uncoupleValidSet = {},
     deployMode = false, deployValidSet = {}, deployPendingIdx = -1, deployPendingKind = 'prod';
 // 線路を敷く前の地形を覚えておく (破壊されたら元に戻す)。キーは "x,y"
 var railBase = {};
@@ -5406,36 +5406,20 @@ function applyTurnStart(owner){
   }
   funds[owner] += income;
 
-  // 1. ユニットHP回復(待機修理 +2、施設マス上)
+  // 1. ユニットHP回復 (待機修理: 自軍の施設マスの上にいると施設の回復量ぶん。費用は失HP×単価)
+  //    編成 (列車) は、どれか1両が駅 (施設マス) に乗っていれば全車輌が対象 (駅で編成ごと整備する)
   for(var i=0; i<units.length; i++){
     var u = units[i];
     if(u.owner !== owner || u.hp <= 0) continue;
-    var ter = TER[M[u.y][u.x]];
-    var cap = captures[u.x+','+u.y];
-    if(ter.heal && cap && cap.owner === owner){
-      if(!ter.healCat || ter.healCat === TYPE[u.type].cat){
-        // 待機修理: +2回復、費用は失HP×単価
-        var beforeHp = u.hp;
-        var afterHp = Math.min(unitMaxHp(u), u.hp + 2 * 10 * unitSize(u)); // +2回復 × 人数比
-        var actualRecover = Math.ceil((afterHp - beforeHp) / 10); // 表示HPでの回復量
-        if(actualRecover > 0){
-          var unitPrice = (TYPE[u.type].price || 0) * unitSize(u);   // 部隊が大きいほど修理費も人数比
-          var cost = actualRecover * Math.floor(unitPrice / 10 / 2);
-          if(funds[owner] >= cost){
-            funds[owner] -= cost;
-            u.hp = afterHp;
-          } else if(funds[owner] > 0){
-            // 部分回復
-            var maxAffordable = Math.floor(funds[owner] / Math.max(1, Math.floor(unitPrice / 10 / 2)));
-            if(maxAffordable > 0){
-              var realRecover = Math.min(actualRecover, maxAffordable);
-              funds[owner] -= realRecover * Math.floor(unitPrice / 10 / 2);
-              u.hp = Math.min(unitMaxHp(u), u.hp + realRecover * 10);
-            }
-          }
-        }
+    var healAmt = facilityHealFor(u, u.x, u.y, owner);
+    var chainH = trainOf(u);
+    if(chainH){
+      for(var hi=0; hi<chainH.length; hi++){
+        if(chainH[hi].id === u.id) continue;
+        healAmt = Math.max(healAmt, facilityHealFor(u, chainH[hi].x, chainH[hi].y, owner));
       }
     }
+    if(healAmt > 0) healUnitPaid(u, healAmt, owner);
   }
 
   // 2. 施設収容ユニットの修理(スロット内 +3回復、費用は失HP×単価)
@@ -5506,6 +5490,42 @@ function applyTurnStart(owner){
   }
 }
 
+// (x,y) の施設が unit を回復できるなら、その回復量 (1ターンあたり)。できなければ 0
+function facilityHealFor(unit, x, y, owner){
+  if(!inBounds(x, y)) return 0;
+  var ter = TER[M[y][x]];
+  var cap = captures[x+','+y];
+  if(!ter || !ter.heal || !cap || cap.owner !== owner) return 0;
+  if(ter.healCat && ter.healCat !== TYPE[unit.type].cat) return 0;
+  return ter.heal;
+}
+// 有料で回復する (回復量は表示HP単位・人数比。費用は 回復1につき 価格×人数÷20。足りなければ払えるぶんだけ)。
+// 実際に回復した表示HPを返す
+function healUnitPaid(u, healAmt, owner){
+  var beforeHp = u.hp;
+  var afterHp = Math.min(unitMaxHp(u), u.hp + healAmt * 10 * unitSize(u));
+  var actualRecover = Math.ceil((afterHp - beforeHp) / 10);
+  if(actualRecover <= 0) return 0;
+  var unitPrice = (TYPE[u.type].price || 0) * unitSize(u);
+  var perHp = Math.max(1, Math.floor(unitPrice / 10 / 2));
+  var cost = actualRecover * perHp;
+  if(funds[owner] >= cost){
+    funds[owner] -= cost;
+    u.hp = afterHp;
+    return actualRecover;
+  }
+  if(funds[owner] > 0){
+    var maxAffordable = Math.floor(funds[owner] / perHp);
+    if(maxAffordable > 0){
+      var realRecover = Math.min(actualRecover, maxAffordable);
+      funds[owner] -= realRecover * perHp;
+      u.hp = Math.min(unitMaxHp(u), u.hp + realRecover * 10);
+      return realRecover;
+    }
+  }
+  return 0;
+}
+
 // cargo を再帰的に回復(スロット修理 +3)
 function repairCargoRecursive(cg, healAmt, owner){
   var beforeHp = cg.hp;
@@ -5564,7 +5584,7 @@ function endTurn(){
   if(window.PLAYER_LOG || window.AI_DEBUG){
     try{ console.log('%c=== Round ' + roundNumber + ' Turn: ' + turn + ' ===', 'color:#5a4a30; font-weight:bold; background:#f5e8c4; padding:2px 8px;'); }catch(e){}
   }
-  selected = null; pendingUnit = null; attackMode = false; unloadMode = false; setClear(unloadValidSet); unloadStarted = false; coupleMode = false; setClear(coupleValidSet); uncoupleMode = false; setClear(uncoupleValidSet); deployMode = false; setClear(deployValidSet); deployPendingIdx = -1;
+  selected = null; pendingUnit = null; attackMode = false; unloadMode = false; setClear(unloadValidSet); unloadStarted = false; coupleMode = false; setClear(coupleValidSet); uncoupleMode = false; setClear(uncoupleValidSet); railRepairMode = false; setClear(railRepairSet); trainRepairMode = false; setClear(trainRepairSet); deployMode = false; setClear(deployValidSet); deployPendingIdx = -1;
   setClear(movableSet); setClear(attackableSet);
   hideCommandPanel();
   // 天候の進行 (1ラウンドごとに各雲が1マス流れる)
@@ -12161,6 +12181,7 @@ function showCommandPanel(unit, justMoved){
   if(canRepairFacility) addBtn('施設修復', doRepairFacility, true);
   if(canBuildBridge) addBtn('橋建設', enterBridgeMode, true);
   if(canRepairRail) addBtn('🛠 工事', enterRailRepairMode, true);
+  if(trainRepairTargetsAround(unit).length > 0) addBtn('🛠 列車を修理', enterTrainRepairMode, true);
   // 補給ルート (段階3): 補給ユニットのみ
   // 解除はここには置かない。ルート設定済みのユニットはターン開始時に自動で動いて
   // 行動済みになり、そもそも選択できない = このパネルが出ないため。
@@ -13643,6 +13664,62 @@ function executeRailRepair(x, y){
   afterAction();
 }
 
+// ===== 工兵の野戦修理 (列車系) =====
+// 自走できない貨車や列車砲は工場に入れないので、工兵が隣接して直す。行動を消費する
+var ENGINEER_TRAIN_REPAIR = 3;
+function trainRepairTargetsAround(unit){
+  var list = [];
+  if(!TYPE[unit.type].isEngineer) return list;
+  var dirs = [[1,0],[-1,0],[0,1],[0,-1]];
+  for(var i=0; i<dirs.length; i++){
+    var o = unitAt(unit.x + dirs[i][0], unit.y + dirs[i][1]);
+    if(!o || o.owner !== unit.owner || o.hp <= 0) continue;
+    if(!TYPE[o.type].isTrain) continue;
+    if(o.hp >= unitMaxHp(o)) continue;
+    list.push(o);
+  }
+  return list;
+}
+function enterTrainRepairMode(){
+  if(!pendingUnit) return;
+  var cands = trainRepairTargetsAround(pendingUnit);
+  if(cands.length === 0) return;
+  if(cands.length === 1){ executeTrainRepair(cands[0].x, cands[0].y); return; }
+  trainRepairMode = true;
+  trainRepairSet = {};
+  for(var i=0; i<cands.length; i++) setAdd(trainRepairSet, cands[i].x+','+cands[i].y);
+  setStatus('🛠 修理する車輌を選んでください（+' + ENGINEER_TRAIN_REPAIR + '。費用は回復1につき価格÷20）');
+  var btnWrap = document.getElementById('command-buttons');
+  btnWrap.innerHTML = '';
+  var b = document.createElement('button');
+  b.textContent = 'キャンセル';
+  b.onclick = function(e){ e.stopPropagation(); exitTrainRepairMode(); };
+  btnWrap.appendChild(b);
+  render();
+}
+function exitTrainRepairMode(){
+  trainRepairMode = false;
+  trainRepairSet = {};
+  if(pendingUnit) showCommandPanel(pendingUnit, pendingJustMoved);
+  else render();
+}
+function executeTrainRepair(x, y){
+  if(!pendingUnit) return;
+  var target = unitAt(x, y);
+  if(!target) return;
+  var before = displayHP(target.hp);
+  var got = healUnitPaid(target, ENGINEER_TRAIN_REPAIR, pendingUnit.owner);
+  var msg = '🛠 ' + TYPE[target.type].name + 'を修理 +' + got + '（HP ' + before + ' → ' + displayHP(target.hp) + '）' + (got < ENGINEER_TRAIN_REPAIR && target.hp < unitMaxHp(target) ? '（資金が足りず一部だけ）' : '');
+  setStatus(msg);
+  if(window.plog) try{ plog(msg + ' ('+x+','+y+')'); }catch(e){}
+  pendingUnit.acted = true;
+  pendingUnit = null;
+  trainRepairMode = false;
+  trainRepairSet = {};
+  hideCommandPanel();
+  afterAction();
+}
+
 function enterBridgeMode(){
   if(!pendingUnit) return;
   bridgeMode = true;
@@ -14165,6 +14242,12 @@ function onCellClick(x, y){
     return;
   }
   if(railRepairMode) return;
+  // 工兵の列車修理モード
+  if(trainRepairMode && pendingUnit && setHas(trainRepairSet, k)){
+    executeTrainRepair(x, y);
+    return;
+  }
+  if(trainRepairMode) return;
   // 降下モード: 緑マス(unloadValidSet)をクリックすると降下実行
   // 連結モード
   if(coupleMode && pendingUnit && setHas(coupleValidSet, k)){
@@ -15062,6 +15145,7 @@ function render(){
       if(setHas(facilityAttackableSet, k)){ bg = '#FFD08A'; border = '1.5px solid #BA7517'; }
       if(setHas(bridgeValidSet, k)){ bg = '#A8D8F0'; border = '2px dashed #185FA5'; }
       if(setHas(railRepairSet, k)){ bg = '#BFE3CC'; border = '2px dashed #0F6E56'; }
+      if(setHas(trainRepairSet, k)){ bg = '#BFE3CC'; border = '2px dashed #0F6E56'; }
       if(setHas(unloadValidSet, k)){ bg = '#A8E6C8'; border = '2px dashed #0F6E56'; }
       if(setHas(coupleValidSet, k)){ bg = '#E8D48A'; border = '2px dashed #7A5A10'; }
       if(setHas(uncoupleValidSet, k)){ bg = '#E8D48A'; border = '2px dashed #7A5A10'; }
@@ -16152,7 +16236,8 @@ function renderRulesTab(){
     + '・<b>単線なので味方の上もすり抜けられません</b>。線路に工兵や歩兵が立っているとそこで止まります<br>'
     + '　ただし<b>複線マスの上だけはすれ違えます</b>。工兵が線路を耐久31以上まで工事すると複線になり、待避線の役割を果たします。止まれるのは空きマスだけなので、複線マスの上で行動を終えることはできません<br>'
     + '・<b>連結したままでも仕事はできます</b>。補給貨車は連結中でも周囲2マスに補給し、対空列車は直射なので走った後でも撃てます。列車砲は間接砲なので<b>停車していたターンだけ</b>撃てます<br>'
-    + '・<b>機関車・装甲列車を失うと、残った車輌は線路に取り残されます</b> (自走できないため)。別の機関車を連結しに行くまで動けません'
+    + '・<b>機関車・装甲列車を失うと、残った車輌は線路に取り残されます</b> (自走できないため)。別の機関車を連結しに行くまで動けません<br>'
+    + '・<b>修理</b>: 編成のどれか1両が自軍の施設マス (駅) に乗っていれば、ターン開始に<b>編成の全車輌</b>がその施設の回復量ぶん直ります (都市 +2 / 工場・兵站拠点系 +3、費用は車輌ごと)。前線では<b>工兵が隣接して「🛠 列車を修理」</b> (+3・工兵の行動を消費・費用は同じ) で直せます。取り残された貨車もこれで直せます'
     + '</div>'
     + '<div style="background:#f6f2e8; border-left:3px solid #7A5A10; padding:6px 10px; margin:6px 0; font-size:12px;">'
     + '<b style="color:#7A5A10;">🚂 列車砲の砲撃</b><br>'
@@ -18039,7 +18124,7 @@ function applySaveData(d){
   if(window._refreshPlayerAiBtn) window._refreshPlayerAiBtn();
   if(Array.isArray(d.gameLog)){ gameLog = d.gameLog; renderLog(); }
   // 選択状態やモードをすべて解除
-  selected = null; pendingUnit = null; attackMode = false; unloadMode = false; setClear(unloadValidSet); unloadStarted = false; coupleMode = false; setClear(coupleValidSet); uncoupleMode = false; setClear(uncoupleValidSet); deployMode = false; setClear(deployValidSet); deployPendingIdx = -1;
+  selected = null; pendingUnit = null; attackMode = false; unloadMode = false; setClear(unloadValidSet); unloadStarted = false; coupleMode = false; setClear(coupleValidSet); uncoupleMode = false; setClear(uncoupleValidSet); railRepairMode = false; setClear(railRepairSet); trainRepairMode = false; setClear(trainRepairSet); deployMode = false; setClear(deployValidSet); deployPendingIdx = -1;
   setClear(movableSet); setClear(attackableSet); setClear(enemyThreatSet); setClear(enemyMoveSet);
   routeSetMode = null; movePreview = null; selectedTrainInfo = null;
   hideCommandPanel();
@@ -18293,7 +18378,7 @@ document.getElementById('end-turn-btn').onclick = function(){
       }
     }
     for(var i=0; i<units.length; i++){ if(units[i].owner === 'P') units[i].acted = true; }
-    selected = null; pendingUnit = null; attackMode = false; unloadMode = false; setClear(unloadValidSet); unloadStarted = false; coupleMode = false; setClear(coupleValidSet); uncoupleMode = false; setClear(uncoupleValidSet); deployMode = false; setClear(deployValidSet); deployPendingIdx = -1;
+    selected = null; pendingUnit = null; attackMode = false; unloadMode = false; setClear(unloadValidSet); unloadStarted = false; coupleMode = false; setClear(coupleValidSet); uncoupleMode = false; setClear(uncoupleValidSet); railRepairMode = false; setClear(railRepairSet); trainRepairMode = false; setClear(trainRepairSet); deployMode = false; setClear(deployValidSet); deployPendingIdx = -1;
     setClear(movableSet); setClear(attackableSet);
     hideCommandPanel();
     endTurn();
