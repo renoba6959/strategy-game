@@ -14,6 +14,13 @@
   --color-background-primary: #fff;
 }
 body { font-family: -apple-system, sans-serif; padding: 20px; background: #faf9f5; color: #333; }
+/* 右パネル: 中身が増減しても盤面やページの高さが変わらないように、盤面と同じ高さに固定して内側でスクロールする */
+html { scrollbar-gutter: stable; }
+#side-panel { display: flex; flex-direction: column; min-height: 0; }
+#side-panel .sp-terrain { flex: none; }
+#side-panel .sp-unit { flex: 1 1 auto; min-height: 120px; overflow-y: auto; }
+#side-panel .sp-log { flex: none; display: flex; flex-direction: column; }
+#log-content { height: 220px; overflow-y: auto; }
 button { padding: 4px 10px; border: 1px solid #ccc; background: #fff; border-radius: 4px; cursor: pointer; }
 button:hover { background: #f0f0f0; }
 
@@ -108,20 +115,20 @@ button:hover { background: #f0f0f0; }
     <div id="board" style="position: relative; display: grid; gap: 1px; background: var(--color-border-tertiary); padding: 1px; border-radius: var(--border-radius-md);"></div>
   </div>
   <div id="side-panel" style="min-width: 240px; flex: 1; max-width: 320px;">
-    <div style="background: var(--color-background-secondary); border-radius: var(--border-radius-md); padding: 10px 12px; margin-bottom: 8px; font-size: 12px; line-height: 1.5;">
+    <div class="sp-terrain" style="background: var(--color-background-secondary); border-radius: var(--border-radius-md); padding: 10px 12px; margin-bottom: 8px; font-size: 12px; line-height: 1.5;">
       <div style="font-size:11px;color:var(--color-text-secondary);margin-bottom:4px;">地形</div>
-      <div id="terrain-content" style="color:var(--color-text-secondary);">マスをクリック</div>
+      <div id="terrain-content" style="color:var(--color-text-secondary); min-height:36px;">マスをクリック</div>
     </div>
-    <div style="background: var(--color-background-secondary); border-radius: var(--border-radius-md); padding: 10px 12px; font-size: 12px; line-height: 1.5;">
+    <div class="sp-unit" style="background: var(--color-background-secondary); border-radius: var(--border-radius-md); padding: 10px 12px; font-size: 12px; line-height: 1.5;">
       <div style="font-size:11px;color:var(--color-text-secondary);margin-bottom:4px;">ユニット</div>
       <div id="unit-content" style="color:var(--color-text-secondary);">ユニットをクリック</div>
     </div>
-    <div style="background: var(--color-background-secondary); border-radius: var(--border-radius-md); padding: 10px 12px; margin-top: 8px; font-size: 12px; line-height: 1.5;">
+    <div class="sp-log" style="background: var(--color-background-secondary); border-radius: var(--border-radius-md); padding: 10px 12px; margin-top: 8px; font-size: 12px; line-height: 1.5;">
       <div style="display:flex; align-items:center; gap:6px; font-size:11px; color:var(--color-text-secondary); margin-bottom:4px;">
         <span>お知らせの履歴</span>
         <button id="log-clear" style="margin-left:auto; font-size:10px; padding:1px 6px; border:1px solid #ccc; background:#fff; border-radius:3px; cursor:pointer;">消去</button>
       </div>
-      <div id="log-content" style="max-height:260px; overflow-y:auto; color:var(--color-text-secondary); font-size:11.5px;">まだありません</div>
+      <div id="log-content" style="color:var(--color-text-secondary); font-size:11.5px;">まだありません</div>
     </div>
   </div>
 </div>
@@ -15018,6 +15025,19 @@ function warnUnitOverlaps(){
     } else seen[k] = u;
   }
 }
+// 右パネルの高さを盤面に合わせる。中身 (ユニット情報・お知らせ) が増減しても
+// パネルの外側の大きさが変わらないので、盤面やページがガクつかない
+function syncSidePanelHeight(){
+  var board = document.getElementById('board');
+  var side = document.getElementById('side-panel');
+  if(!board || !side) return;
+  var h = board.offsetHeight;
+  // 盤面の隣に並んでいるとき (横幅が足りず下に回り込んだときは高さを縛らない)
+  var beside = (Math.abs(board.getBoundingClientRect().top - side.getBoundingClientRect().top) < 40);
+  if(beside && h >= 480) side.style.height = h + 'px';   // 小さい盤面では縛らない (中身が入りきらない)
+  else side.style.height = '';
+}
+window.addEventListener('resize', syncSidePanelHeight);
 function render(){
   syncTrains();   // 撃破などで切れた編成をここで整える
   warnUnitOverlaps();
@@ -15147,6 +15167,7 @@ function render(){
   }
   renderRouteOverlay();
   renderCaptureCount();
+  syncSidePanelHeight();
 }
 
 // ===== 補給ルートの矢印 (段階3) =====
