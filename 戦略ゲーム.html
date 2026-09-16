@@ -12316,7 +12316,9 @@ function quickAttackClick(x, y){
   var target = unitAt(x, y);
   if(!isArea && (!target || target.owner === u.owner || target.owner === 'N')) return;
   if(quickTarget && quickTarget.x === x && quickTarget.y === y){
-    fireQuickAttack(isArea ? 'area' : 'normal');
+    // 観測兵が見ていれば観測射撃 (弾薬は通常攻撃と同じ1で +20%)。見ていなければ同じ計算になるので
+    // 'observed' で統一し、ホバーの予測 (観測ボーナス込み) と実際のダメージを一致させる
+    fireQuickAttack(isArea ? 'area' : 'observed');
     return;
   }
   quickTarget = { x: x, y: y };
@@ -12337,12 +12339,12 @@ function quickAttackClick(x, y){
     var wA = TYPE[u.type].weapons[areaShotWeaponIndex(u)];
     addBtn('砲撃 (十字5マス, 弾薬' + (wA.shotAmmo || 2) + ')', function(){ fireQuickAttack('area'); }, true);
     if(canFFE) addBtn('効力射 (13マス, 弾薬' + (wA.feAmmo || 2) + ')', function(){ fireQuickAttack('fire_for_effect'); }, true);
+  } else if(canObs){
+    // 観測兵が見ているときは通常攻撃を出さない (観測射撃は弾薬が同じで強いだけなので選ぶ意味が無い)
+    addBtn('観測射撃 (+20%, 弾薬1)', function(){ fireQuickAttack('observed'); }, true);
+    if(canFFE) addBtn('効力射 (+20%+周囲, 弾薬2)', function(){ fireQuickAttack('fire_for_effect'); }, true);
   } else {
-    addBtn('攻撃', function(){ fireQuickAttack('normal'); }, true);
-    if(canObs){
-      addBtn('観測射撃 (+20%, 弾薬1)', function(){ fireQuickAttack('observed'); }, true);
-      if(canFFE) addBtn('効力射 (+20%+周囲, 弾薬2)', function(){ fireQuickAttack('fire_for_effect'); }, true);
-    }
+    addBtn('攻撃', function(){ fireQuickAttack('observed'); }, true);
   }
   addBtn('やめる', function(){ showCommandPanel(u, pendingJustMoved); });
   // 予測 (通常攻撃) をステータスに出す
@@ -12358,7 +12360,7 @@ function quickAttackClick(x, y){
   } else {
     msg = '着弾点 (' + x + ',' + y + ')';
   }
-  setStatus('🎯 ' + msg + '｜もう一度クリックで' + (isArea ? '砲撃' : '攻撃') + '（やめるなら「やめる」）');
+  setStatus('🎯 ' + msg + '｜もう一度クリックで' + (isArea ? '砲撃' : (canObs ? '観測射撃' : '攻撃')) + (canFFE ? '。効力射はボタンから' : '') + '（やめるなら「やめる」）');
   render();
 }
 // 仮決定した相手へ、指定の撃ち方で発射する。実際の処理は攻撃モードのクリック処理に任せる
@@ -13839,8 +13841,8 @@ function enterAttackMode(){
     render();
     return;
   }
-  // 観測兵居なければ従来通り (通常攻撃のみ)
-  pendingAttackMode = 'normal';
+  // 観測兵が居なければ普通の攻撃。計算はホバーの予測と同じ 'observed' (観測兵が居なければ倍率1.0)
+  pendingAttackMode = 'observed';
   attackMode = true;
   attackableSet = computeAttackable(pendingUnit, pendingUnit.x, pendingUnit.y, pendingJustMoved);
   setStatus('攻撃対象を赤マスから選んでください');
@@ -13874,7 +13876,7 @@ function showAttackModeSelector(canFFE){
       addBtn('効力射 (13マス, 弾薬' + (wS.feAmmo || 2) + ')', function(){ startAttackWithMode('fire_for_effect'); }, true);
     }
   } else {
-    addBtn('通常攻撃', function(){ startAttackWithMode('normal'); });
+    // 通常攻撃は出さない (観測射撃と弾薬が同じで弱いだけ)
     addBtn('観測射撃 (+20%, 弾薬1)', function(){ startAttackWithMode('observed'); }, true);
     if(canFFE){
       addBtn('効力射 (+20%+周囲, 弾薬2)', function(){ startAttackWithMode('fire_for_effect'); }, true);
@@ -14069,13 +14071,13 @@ function onCellClick(x, y){
     // プレイヤー攻撃ログ
     if(window.plog && r){
       var atkInfo = TYPE[pendingUnit.type].name + '@('+pendingUnit.x+','+pendingUnit.y+') → ' + TYPE[clicked.type].name + '@('+clicked.x+','+clicked.y+')';
-      var modeLabel = (pendingAttackMode === 'observed') ? '[観測射撃]' : '';
+      var modeLabel = (pendingAttackMode === 'observed' && r.r1 && r.r1.observerMult && r.r1.observerMult > 1) ? '[観測射撃]' : '';
       var dmgInfo = (r.r1 ? '攻'+r.r1.dmg : '');
       var counterInfo = (r.r2 && r.r2.dmg > 0 ? ' / 反撃-'+r.r2.dmg : '');
       var bonusInfo = '';
       if(r.r1 && r.r1.bonus > 0) bonusInfo += ' [包囲+'+r.r1.bonus+']';
       if(r.r1 && r.r1.observerMult && r.r1.observerMult > 1){
-        bonusInfo += ' [効力射x'+r.r1.observerMult.toFixed(2)+']';
+        bonusInfo += ' [観測x'+r.r1.observerMult.toFixed(2)+']';
       }
       plog('攻撃 ' + modeLabel + ' ' + atkInfo + ' ' + dmgInfo + counterInfo + bonusInfo);
     }
@@ -16044,7 +16046,7 @@ function renderRulesTab(){
     + '移動先に着くと (または自分のマスをクリックしてその場に留まると) コマンドパネルと一緒に<b>撃てる相手が赤マス</b>で出ます。<br>'
     + '・赤マスの敵を<b>クリックすると仮決定</b> (予測ダメージと反撃が出る) → <b>同じ敵をもう一度クリックで攻撃</b>。「攻撃」ボタンを押す必要はありません<br>'
     + '・<b>自分のマスをもう一度クリックすると待機</b> (移動確定) です<br>'
-    + '・砲兵・列車砲のように撃ち方を選べるユニットは、仮決定のときに「観測射撃」「効力射」「砲撃」のボタンも出ます。押せばその撃ち方で発射、もう一度クリックなら通常攻撃 (列車砲は砲撃) です<br>'
+    + '・砲兵などの間接砲は、<b>観測兵が見ていれば自動で観測射撃 (+20%・弾薬1)</b> になります。通常攻撃を選ぶ必要はありません (同じ弾薬で弱いだけなので選択肢からも外してあります)。仮決定のときに「効力射」(列車砲は「砲撃」「効力射」) のボタンが出るので、範囲で撃ちたいときはそれを押してください。もう一度クリックなら観測射撃 (列車砲は砲撃) です<br>'
     + '・まだ動いていないユニットでも、<b>その場から撃てる敵をクリックすれば</b>その場に留まって仮決定になります (砲兵は選んで敵を2回クリックするだけで撃てる)<br>'
     + '・<b>補給車・補給貨車が拠点の上か隣にいると、その拠点に 📦 が付きます</b>。クリックするとその場に「📦 積む」「📦 降ろす」が出ます (機関車を選んでいても、同じ編成の補給貨車のぶんが出る)。拠点の上に乗っているときは「待機」もそこから押せます<br>'
     + '・占領・降下・連結などは今までどおりボタンから。施設攻撃も「施設攻撃」ボタンからです (パネルの「📦 積む / 降ろす」も残っています)'
@@ -17131,7 +17133,7 @@ function renderTodoTab(){
     ['0ダメ攻撃と包囲ボーナス', 'ダメージ0以下でも攻撃可能(弾消費あり、反撃引き出し戦術)。包囲ボーナス: 攻撃対象に隣接する自軍直接攻撃ユニット数-1を火力加算(最大+3)。攻撃と反撃の両方に適用'],
     ['対施設攻撃 vsFacility', '武器ごとに対施設火力を設定。0以外の武器を持つユニットが施設攻撃可能。ダメージ=対施設火力×HP/10-地形防御。爆撃機14、ステルス爆10、艦上爆撃機8、戦艦主砲12、巡洋戦艦主砲10、重巡主砲8、ガンシップ10、自走砲6、MLRS 6'],
     ['重歩兵カテゴリ(観測兵・砲兵・重砲兵)', '<b>観測兵</b>(視界4・山+1=5、火力低、効力射の発動源)<br><b>砲兵</b>(間接2-4、歩兵カテゴリの自走砲)<br><b>重砲兵</b>(間接2-5、移動2の重砲)<br>装輪/戦車工場以上で生産可、占領不可、APC・輸送ヘリに乗せられない(輸送船・輸送機はOK)。歩兵移動 3→4 に増加'],
-    ['観測射撃 / 効力射(観測兵ボーナス)', '観測兵の視界範囲内に味方間接攻撃ユニットがいる時、攻撃時に「通常攻撃」「<b>観測射撃</b>」「<b>効力射</b>」を選択可能(攻撃マスクリック前)。<br><b>観測射撃</b>: 弾薬1消費、対象1マスに×1.2ダメージ(従来の効力射と同じ仕組み)。<br><b>効力射</b>: 弾薬2消費、着弾点に×1.2ダメージ+上下左右4マスに通常(×1.0)ダメージ(所属不問・友軍も巻き込み・空マス着弾OK・反撃なし)。倍率は着弾点からの距離だけで決まり、マスごとに観測兵ボーナスを掛け直すことはしない。<br>陸海ユニットの間接武器のみ対象、空中ユニットには発動・命中しない。<b>対空ミサイル・艦対空ミサイルのような対空専用の間接武器では選択肢自体が出ない</b>(空中目標にはボーナスが効かず、地上には火力がないため)。<b>観測射撃</b>は観測兵が複数居れば倍率が重複(×1.2×1.2=×1.44)するが、<b>効力射は重複しない</b>(固定倍率)。AI も観測兵が居れば自動的にボーナスを得る。'],
+    ['観測射撃 / 効力射(観測兵ボーナス)', '観測兵の視界範囲内に味方間接攻撃ユニットがいる時、攻撃は自動で<b>観測射撃</b>になり、「<b>効力射</b>」を選ぶこともできる (通常攻撃は選ばない。観測射撃と弾薬が同じで弱いだけのため)。<br><b>観測射撃</b>: 弾薬1消費、対象1マスに×1.2ダメージ(従来の効力射と同じ仕組み)。<br><b>効力射</b>: 弾薬2消費、着弾点に×1.2ダメージ+上下左右4マスに通常(×1.0)ダメージ(所属不問・友軍も巻き込み・空マス着弾OK・反撃なし)。倍率は着弾点からの距離だけで決まり、マスごとに観測兵ボーナスを掛け直すことはしない。<br>陸海ユニットの間接武器のみ対象、空中ユニットには発動・命中しない。<b>対空ミサイル・艦対空ミサイルのような対空専用の間接武器では選択肢自体が出ない</b>(空中目標にはボーナスが効かず、地上には火力がないため)。<b>観測射撃</b>は観測兵が複数居れば倍率が重複(×1.2×1.2=×1.44)するが、<b>効力射は重複しない</b>(固定倍率)。AI も観測兵が居れば自動的にボーナスを得る。'],
     ['AI: 渡海作戦の実行', '海越え目標がある場合、AIが自動的に輸送船を生産・運用。歩兵が地続き目標を全て対処後、海越え目標があれば輸送船に向かって乗船待機。輸送船は歩兵を拾って海越え目標近くで降車。'],
     ['AI: 占領中の敵を最優先攻撃', '自軍施設を占領中の敵歩兵(captureHpが減っている)を最優先(+3000)、元自軍領土を奪われている敵(+2500)、中立施設を占領中(+1500)、占領担当を脅かす敵(+2000)など、優先度を細かく設定'],
     ['即展開ユニット(quickDeploy)', 'APC・輸送ヘリ・空母系から降車/発艦したユニットは<b>そのターンで即行動可能</b>。同ラウンド内の乗船→降車は禁止(収容→発艦のループ防止)。輸送船・輸送機は従来通り次ターンから行動可能'],
