@@ -1956,6 +1956,17 @@ function emptySupplyStockOnBuild(u){
   if(typeof t.supplyFuelMax === 'number') u.supplyFuelCount = 0;
   if(typeof t.supplyAmmoMax === 'number') u.supplyAmmoCount = 0;
 }
+// 生産した補給ユニットは、出てくるときに作った施設 (fx,fy) の備蓄から積載庫に積み込んでから出る。
+// 備蓄から引くので物資は湧かない。備蓄が足りなければ入ったぶんだけ (足りない分はあとで拠点で積む)。
+// ※ 空母は積み込みの操作を持たず、艦内在庫は生産時に満タン (canCarrySupplyStock の対象外) のまま
+function loadSupplyStockOnBuild(u, fx, fy){
+  emptySupplyStockOnBuild(u);
+  if(!canCarrySupplyStock(u)) return;
+  var t = TYPE[u.type];
+  var pos = { x: fx, y: fy };
+  if(typeof t.supplyFuelMax === 'number') u.supplyFuelCount = takeFacilityStock(pos, 'fuel', t.supplyFuelMax);
+  if(typeof t.supplyAmmoMax === 'number') u.supplyAmmoCount = takeFacilityStock(pos, 'ammo', t.supplyAmmoMax);
+}
 
 // 積み元・降ろし先に指定できる施設か (自軍が占領していて備蓄を持てる拠点)
 // unit を渡すと、その補給ユニットが実際に使える拠点かも見る。
@@ -6837,7 +6848,7 @@ function aiProduceAndTakeOut(aiFaction, phase){
       newU.acted = false;
       newU.deployedFromFacility = true;
       newU.spawnedThisTurn = true;   // 出てきたターンは探知できない
-      emptySupplyStockOnBuild(newU);
+      loadSupplyStockOnBuild(newU, p.x, p.y);   // 補給ユニットは工場の備蓄を積んで出る
       units.push(newU);
       production.splice(i, 1);
       consumeFuelForMove(newU, p.x, p.y);
@@ -6853,7 +6864,7 @@ function aiProduceAndTakeOut(aiFaction, phase){
     newU.acted = false;
     newU.moved = false;
     newU.spawnedThisTurn = true;   // 出てきたターンは探知できない (出港も行動のうち)
-    emptySupplyStockOnBuild(newU);   // 補給ユニットの積載庫は空で出てくる
+    loadSupplyStockOnBuild(newU, p.x, p.y);   // 補給ユニットは工場の備蓄を積んで出る
     units.push(newU);
     production.splice(i, 1);
   }
@@ -16395,7 +16406,7 @@ function renderSupplyTab(){
   html += '<li>ルートを設定した補給ユニットを選ぶと、<b>実際に通るマス</b>が盤面に表示される (往路は濃く、復路は薄く)。道が無くて到達できない場合は<b>赤い破線</b>になる</li>';
   html += '</ul>';
   html += '<div style="margin-top:6px; background:#fff4d6; padding:6px 8px; border-radius:3px;"><b>そのターンに降ろされた物資は、同じターンには積み出せません</b><br>拠点を中継点にして補給車を並べると、1ターンのうちに物資が何リンクも先へ飛んでしまうためです。物資は<b>1ターンに1リンクずつ</b>進みます。降ろした物資を近くの味方が受け取るのは今までどおりです。</div>';
-  html += '<div style="margin-top:6px; background:#fff4d6; padding:6px 8px; border-radius:3px;"><b>生産した補給ユニットの積載庫は空です</b><br>満タンで出てくると、1台作るたびに物資が備蓄の外から湧いてしまうためです。拠点の隣で「📦 積む」か、補給ルートの積み元で積んでください。(空母は積み込みの操作を持たないので、従来どおり艦内在庫を持って出てきます)</div>';
+  html += '<div style="margin-top:6px; background:#fff4d6; padding:6px 8px; border-radius:3px;"><b>生産した補給ユニットは、作った施設の備蓄を積載庫に積んでから出てきます</b><br>積んだぶんは施設の備蓄から引かれるので、物資が湧くことはありません。施設の備蓄が足りなければ入ったぶんだけで出てくるので、あとは拠点の隣で「📦 積む」か、補給ルートの積み元で積んでください。(空母は積み込みの操作を持たないので、艦内在庫を持って出てきます)</div>';
   html += '<div style="margin-top:6px; background:#fff4d6; padding:6px 8px; border-radius:3px;"><b>物資は「作る拠点」から「作らない拠点」への一方通行</b><br>'
         + '<b>工場系・港系・空港系・弾薬工廠</b>は毎ターン備蓄を作る拠点で、<b>物資を出すのが仕事</b>です。範囲内にいる補給ユニットの<b>積載庫も自動で満たします</b>。率のいちばん高い施設から取り、それで満タンにならなければ<b>範囲内の他の作る施設からも順に積みます</b> (例: 弾薬工廠の備蓄が少ないとき、2マス以内の工場からも)。<br>'
         + '<b>都市・中都市・大都市・首都</b>は備蓄を作れない拠点なので、<b>受け取る側</b>です。ここから積載庫が補充されることはありません (運んで降ろした物資を積み直すことになるため)。<br>'
@@ -17850,7 +17861,7 @@ function takeOutProduction(idx){
   newU.acted = false;
   newU.moved = false;
   newU.spawnedThisTurn = true;   // 出てきたターンは探知できない (出港も行動のうち)
-  emptySupplyStockOnBuild(newU);   // 補給ユニットの積載庫は空で出てくる
+  loadSupplyStockOnBuild(newU, p.x, p.y);   // 補給ユニットは工場の備蓄を積んで出る
   units.push(newU);
   production.splice(idx, 1);
   openProductionMenu(prodFacilityX, prodFacilityY);
@@ -17898,7 +17909,7 @@ function executeDeploy(x, y){
     units.push(newU);
     capS.cargo.splice(deployPendingIdx, 1);
   } else {
-    emptySupplyStockOnBuild(newU);
+    loadSupplyStockOnBuild(newU, p.x, p.y);   // 補給ユニットは工場の備蓄を積んで出る
     units.push(newU);
     production.splice(deployPendingIdx, 1);
   }
