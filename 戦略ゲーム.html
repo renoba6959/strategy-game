@@ -13106,11 +13106,14 @@ function _orderTrain(comp){
     }
     return r;
   }
+  // 端は「id の小さいほう」から始める。comp の並び順で決めると、syncTrains のたびに
+  // 並びが入れ替わって向きが反転し (描画のたびに逆さになる)、選んだときの経路情報と
+  // 動かすときの編成の向きが食い違って車輌の順番が入れ替わる・重なる原因になっていた
   var endU = null;
   for(var i=0; i<comp.length; i++){
     var n = nbrs(comp[i]).length;
     if(n > 2) return null;                 // 分岐している = 一列ではない
-    if(n === 1 && !endU) endU = comp[i];
+    if(n === 1 && (!endU || comp[i].id < endU.id)) endU = comp[i];
   }
   if(!endU) return null;                   // 環状 = 端がない
   var order = [endU], seen = {};
@@ -13294,7 +13297,7 @@ function trainMovableInfo(chain, driver){
       // すれ違いで途中の味方をすり抜けた場合、全車輌が空きマスに収まるかを確認する
       if(!trainEndFits(chain, ends[e], prev, k)) continue;
       if(res[k] === undefined || dist[k] < res[k].dist){
-        res[k] = { lead: ends[e], dist: dist[k], prev: prev, from: sk };
+        res[k] = { lead: ends[e], leadId: lead.id, dist: dist[k], prev: prev, from: sk };   // leadId: 編成の向きが変わっても先頭を取り違えないため
       }
     }
   }
@@ -13361,7 +13364,15 @@ function executeTrainMove(chain, driver, destX, destY, info){
   if(!entry) return null;
   var path = trainPathTiles(entry, destX, destY);
   // 先頭から見た並び (押すときは逆順に見るだけで、編成の順番自体は変わらない)
-  var seq = (entry.lead === 0) ? chain.slice() : chain.slice().reverse();
+  // 先頭は「経路を作ったときの先頭の車輌 (leadId)」で決める。添字 (lead) だけで決めると、
+  // 編成の向きが経路を作ったときと変わっていた場合に逆さに動いて車輌が入れ替わる
+  var leadIdx = entry.lead;
+  if(entry.leadId !== undefined){
+    if(chain[0].id === entry.leadId) leadIdx = 0;
+    else if(chain[chain.length-1].id === entry.leadId) leadIdx = chain.length - 1;
+    else { console.warn('列車の移動を中止: 先頭の車輌が編成の端にいない', entry.leadId); setStatus('編成を選び直してください'); return null; }
+  }
+  var seq = (leadIdx === 0) ? chain.slice() : chain.slice().reverse();
   var lead = seq[0];
   // 伏兵: 先頭が進みながら、未発見の敵に隣接したらそこで停止
   var stopAt = path.length - 1, ambushAt = null;
@@ -13374,7 +13385,7 @@ function executeTrainMove(chain, driver, destX, destY, info){
   var fitIds = {};
   for(var fi=0; fi<chain.length; fi++) fitIds[chain[fi].id] = true;
   function _fitsAt(sa){
-    var placed = trainFinalTiles(chain, entry.lead, path, sa);
+    var placed = trainFinalTiles(chain, leadIdx, path, sa);
     for(var i=0; i<placed.length; i++){
       var pp = placed[i].pos;
       if(!pp) return false;
