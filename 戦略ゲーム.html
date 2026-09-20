@@ -12250,14 +12250,74 @@ function showCommandPanel(unit, justMoved){
   quickTarget = null;
   attackableSet = quickAttackSetFor(unit, justMoved);
   // 積み降ろしできる拠点は盤面で 📦 を付けて見せ、クリックでその場に「積む / 降ろす」を出す
-  supplyPopup = null;
   supplyFacMap = computeSupplyFacMap(unit);
+  // 📦 の拠点をクリックして着いたときは、その拠点の「積む / 降ろす」を開く (移動の流れでここが2回呼ばれても保つ)
+  if(supplyAutoPopup && supplyFacMap[supplyAutoPopup.x+','+supplyAutoPopup.y]) supplyPopup = { x: supplyAutoPopup.x, y: supplyAutoPopup.y };
+  else supplyPopup = null;
   var hasFac = false; for(var sfk in supplyFacMap){ hasFac = true; break; }
   setStatus(TYPE[unit.type].name + 'のコマンドを選択してください'
     + (setSize(attackableSet) > 0 ? '（赤マスの敵をクリック→もう一度クリックで攻撃）' : '')
     + (hasFac ? '（📦 の拠点をクリックで積み降ろし）' : '')
     + '（自分のマスをクリックで待機）');
   render();
+}
+// 補給ユニットを選んで緑マスが出ているときの「📦 付きの行き先」
+// ・supplyDestMap: 拠点 'x,y' → { x, y, dist }  その拠点に補給ユニット (編成なら補給貨車) を
+//   隣接 (または上) に着けられる緑マスのうち、いちばん近い (燃料の少ない) もの
+// ・supplyDestTiles: 緑マス 'x,y' → true  そこに止まると補給ユニットが拠点の隣 (または上) になる
+// 編成は「緑マス = 先頭が止まるマス」なので、実際に補給貨車が入るマスで判定する
+var supplyDestMap = {};
+var supplyDestTiles = {};
+var supplyRedirecting = false;   // 📦 の拠点クリック → 緑マスへの onCellClick を呼び直している最中 (再入防止)
+var supplyAutoPopup = null;   // {x,y}: 📦 の拠点をクリックして動かしたあと、自動で「積む / 降ろす」を開く拠点
+function computeSupplyDest(unit){
+  supplyDestMap = {}; supplyDestTiles = {};
+  if(!unit) return;
+  var dirs = [[0,0],[1,0],[-1,0],[0,1],[0,-1]];
+  // tile: クリックする緑マス (編成なら先頭が止まるマス)、pos: そのとき補給ユニット (貨車) が入るマス
+  function noteFacilities(tile, car, pos, dist){
+    for(var i=0; i<dirs.length; i++){
+      var fx = pos.x + dirs[i][0], fy = pos.y + dirs[i][1];
+      if(!isSupplyRouteFacility(fx, fy, car.owner, car)) continue;
+      var fk = fx+','+fy;
+      supplyDestTiles[tile.x+','+tile.y] = true;
+      if(!supplyDestMap[fk] || dist < supplyDestMap[fk].dist) supplyDestMap[fk] = { x: tile.x, y: tile.y, dist: dist };
+    }
+  }
+  var chain = trainOf(unit);
+  if(chain){
+    var info = (selectedTrainInfo && selectedTrainInfo.unitId === unit.id) ? selectedTrainInfo.info : null;
+    var cars = [];
+    for(var ci=0; ci<chain.length; ci++){
+      if(canCarrySupplyStock(chain[ci]) && !chain[ci].acted) cars.push(chain[ci]);
+    }
+    if(cars.length === 0) return;
+    // いまの場所 (自分のマスをクリック = その場で待機)
+    for(var c0=0; c0<cars.length; c0++) noteFacilities({ x: unit.x, y: unit.y }, cars[c0], { x: cars[c0].x, y: cars[c0].y }, 0);
+    if(!info) return;
+    for(var k in info){
+      var entry = info[k];
+      var xy = k.split(',');
+      var path = trainPathTiles(entry, parseInt(xy[0]), parseInt(xy[1]));
+      var placed = trainFinalTiles(chain, entry.lead, path, path.length - 1);
+      for(var pi=0; pi<placed.length; pi++){
+        if(!placed[pi].pos) continue;
+        if(cars.indexOf(placed[pi].unit) < 0) continue;
+        noteFacilities({ x: parseInt(xy[0]), y: parseInt(xy[1]) }, placed[pi].unit, placed[pi].pos, entry.dist);
+      }
+    }
+    return;
+  }
+  if(!canCarrySupplyStock(unit)) return;
+  var distMap = unit._lastMoveDist || {};
+  for(var mk in movableSet){
+    var mxy = mk.split(',');
+    var pos = { x: parseInt(mxy[0]), y: parseInt(mxy[1]) };
+    var b = unitAt(pos.x, pos.y);
+    if(b && b.id !== unit.id && isUnitVisibleTo(b, 'P')) continue;   // 搭載先 (輸送ユニットの上) は隣に着く動きではない
+    var d = (distMap[mk] !== undefined) ? distMap[mk] : 999;
+    noteFacilities(pos, unit, pos, d);
+  }
 }
 // パネルを出しているユニット (と同じ編成の貨車) が積み降ろしできる拠点: 'x,y' → [ユニット…]
 // パネルの「📦 積む / 降ろす」「📦 補給貨車に積む…」と同じ条件
@@ -12331,7 +12391,7 @@ function renderSupplyPopup(cell, x, y){
   var close = document.createElement('button');
   close.textContent = '閉じる';
   close.style.cssText = 'font-size:11px; padding:2px 6px; cursor:pointer;';
-  close.onclick = function(e){ e.stopPropagation(); supplyPopup = null; render(); };
+  close.onclick = function(e){ e.stopPropagation(); supplyPopup = null; supplyAutoPopup = null; render(); };
   foot.appendChild(close);
   box.appendChild(foot);
   cell.appendChild(box);
@@ -12423,6 +12483,7 @@ function hideCommandPanel(){
   supplyFacMap = {}; supplyPopup = null;
   var p = document.getElementById('command-panel');
   p.style.visibility = 'hidden';
+  supplyAutoPopup = null;
   document.getElementById('command-label').textContent = '';
   document.getElementById('command-buttons').innerHTML = '';
 }
@@ -14296,7 +14357,7 @@ function onCellClick(x, y){
   // コマンドパネルを出しているとき (どのモードでもない):
   //   自分のマス = 待機、赤マス = 攻撃の仮決定 → もう一度で発射 (quickAttackClick)
   if(pendingUnit && !selected){
-    if(supplyPopup){ supplyPopup = null; render(); }   // 別のマスを押したら「積む / 降ろす」は閉じる
+    if(supplyPopup){ supplyPopup = null; supplyAutoPopup = null; render(); }   // 別のマスを押したら「積む / 降ろす」は閉じる
     if(supplyFacMap[k]){ supplyPopup = { x: x, y: y }; render(); return; }   // 📦 の拠点 = その場に積む / 降ろす
     if(x === pendingUnit.x && y === pendingUnit.y){ doWait(); return; }
     if(setHas(attackableSet, k)){ quickAttackClick(x, y); return; }
@@ -14312,6 +14373,23 @@ function onCellClick(x, y){
       if(pendingUnit === stayU && setHas(attackableSet, k)) quickAttackClick(x, y);
       return;
     }
+  }
+  // 補給ユニットを選んでいるときに 📦 の拠点をクリック:
+  //   その拠点の隣 (または上) になる最寄りの緑マスへ動かし、着いたらその拠点の「積む / 降ろす」を開く。
+  //   拠点のマスそのものに止まれるなら通常の移動 (上に乗っても積み降ろしできる)。
+  if(selected && !pendingUnit && supplyDestMap[k]){
+    var sdClicked = (clicked && isUnitVisibleTo(clicked, 'P')) ? clicked : null;
+    var sdLandable = setHas(movableSet, k) && (!sdClicked || sdClicked.id === selected.id
+      || (sdClicked.owner === selected.owner && canCarryUnit(sdClicked, selected)));
+    supplyAutoPopup = { x: x, y: y };   // 着いてパネルが出たら、この拠点の「積む / 降ろす」を開く (showCommandPanel)
+    var sd = supplyDestMap[k];
+    if(!sdLandable && !supplyRedirecting && setHas(movableSet, sd.x+','+sd.y) && !(sd.x === x && sd.y === y)){
+      movePreview = null;
+      supplyRedirecting = true;
+      try { onCellClick(sd.x, sd.y); } finally { supplyRedirecting = false; }
+      return;
+    }
+    // 拠点のマスに止まれる → そのまま下の通常の移動へ
   }
   // 編成の移動 (列車): 緑マス = 編成の先頭が止まるマス
   if(selected && !pendingUnit && setHas(movableSet, k) && trainOf(selected)){
@@ -14482,6 +14560,7 @@ function onCellClick(x, y){
     }
   }
   if(clicked && clicked.owner === 'P' && !clicked.acted && !pendingUnit){
+    supplyAutoPopup = null;
     // 編成に組み込まれている車輌は、単独では動けない (編成ごと動く)
     var selChain = trainOf(clicked);
     if(selChain){
@@ -14499,11 +14578,14 @@ function onCellClick(x, y){
       }
       // 編成は動くと全車が行動終了になるので、攻撃予告は現在位置からのみ
       attackableSet = computeAttackable(clicked, clicked.x, clicked.y, false);
+      computeSupplyDest(clicked);
+      var selHasDest = false; for(var sdk in supplyDestMap){ selHasDest = true; break; }
       setStatus(TYPE[clicked.type].name + '選択中: ' +
         (selReady ? '緑=編成の先頭が止まれるマス' :
          (!selDrv ? '機関車がいないため動けません' :
           (selDrv.moved ? '機関車はこのターンもう動いたため発車できません' : '行動済みの車輌があるため発車できません'))) +
-        '（' + selChain.length + '両編成: ' + trainLabel(selChain) + '）');
+        '（' + selChain.length + '両編成: ' + trainLabel(selChain) + '）'
+        + (selHasDest ? '（📦 の拠点をクリックで補給貨車をその隣に着ける）' : ''));
       render();
       return;
     }
@@ -14522,7 +14604,9 @@ function onCellClick(x, y){
       for(var ak in aSet){ if(!setHas(movableSet, ak)) setAdd(atkPreview, ak); }
     }
     attackableSet = atkPreview;
-    setStatus(TYPE[clicked.type].name + '選択中: 緑=移動可、赤=攻撃可');
+    computeSupplyDest(clicked);
+    var hasDest = false; for(var hdk in supplyDestMap){ hasDest = true; break; }
+    setStatus(TYPE[clicked.type].name + '選択中: 緑=移動可、赤=攻撃可' + (hasDest ? '（📦 の拠点をクリックでその隣に着ける）' : ''));
     render();
     return;
   }
@@ -15188,6 +15272,7 @@ function render(){
         }
       }
       if(pendingUnit && supplyFacMap[k]) border = '2px dashed #BA7517';   // 積み降ろしできる拠点
+      if(selected && !pendingUnit && supplyDestMap[k]) border = '2px dashed #BA7517';   // 補給ユニットを隣に着けられる拠点
       if(selected && selected.x === x && selected.y === y) border = '2px solid #BA7517';
       if(pendingUnit && pendingUnit.x === x && pendingUnit.y === y) border = '2px solid #BA7517';
       cell.style.cssText = 'width:42px;height:42px;background:'+bg+';border:'+border+';box-sizing:border-box;display:flex;align-items:center;justify-content:center;cursor:pointer;position:relative;';
@@ -15259,6 +15344,21 @@ function render(){
         var night = document.createElement('div');
         night.style.cssText = 'position:absolute;inset:0;background:rgba(20,30,60,0.18);pointer-events:none;z-index:1;mix-blend-mode:multiply;';
         cell.appendChild(night);
+      }
+      // 補給ユニットの選択中: 隣に着けられる拠点は 📦 (クリックで自動移動)、
+      // 止まると拠点の隣になる緑マスには小さな 📦 を添える
+      if(selected && !pendingUnit){
+        if(supplyDestMap[k]){
+          var destMark = document.createElement('div');
+          destMark.style.cssText = 'position:absolute; top:-5px; right:-3px; z-index:10; pointer-events:none; font-size:13px; filter:drop-shadow(0 1px 1px rgba(0,0,0,0.5));';
+          destMark.textContent = '📦';
+          cell.appendChild(destMark);
+        } else if(supplyDestTiles[k] && setHas(movableSet, k)){
+          var tileMark = document.createElement('div');
+          tileMark.style.cssText = 'position:absolute; bottom:0px; right:1px; z-index:10; pointer-events:none; font-size:9px; line-height:10px; opacity:0.85;';
+          tileMark.textContent = '📦';
+          cell.appendChild(tileMark);
+        }
       }
       // 積み降ろしできる拠点の 📦 印と、クリックしたときの「積む / 降ろす」
       if(pendingUnit && supplyFacMap[k]){
@@ -15456,6 +15556,13 @@ function onCellHover(x, y){
     if(setHas(movableSet, hk) && !(x === selected.x && y === selected.y)){
       if(!movePreview || movePreview.unitId !== selected.id || movePreview.x !== x || movePreview.y !== y){
         movePreview = buildMovePreview(selected, x, y);
+        renderRouteOverlay();
+      }
+    } else if(supplyDestMap[hk] && !setHas(movableSet, hk) && !(supplyDestMap[hk].x === selected.x && supplyDestMap[hk].y === selected.y)){
+      // 📦 の拠点: クリックで実際に止まるマスまでの経路
+      var sdh = supplyDestMap[hk];
+      if(!movePreview || movePreview.unitId !== selected.id || movePreview.x !== sdh.x || movePreview.y !== sdh.y){
+        movePreview = buildMovePreview(selected, sdh.x, sdh.y);
         renderRouteOverlay();
       }
     } else if(movePreview){
@@ -16244,6 +16351,7 @@ function renderRulesTab(){
     + '・砲兵などの間接砲は、<b>観測兵が見ていれば自動で観測射撃 (+20%・弾薬1)</b> になります。通常攻撃を選ぶ必要はありません (同じ弾薬で弱いだけなので選択肢からも外してあります)。仮決定のときに「効力射」(列車砲は「砲撃」「効力射」) のボタンが出るので、範囲で撃ちたいときはそれを押してください。もう一度クリックなら観測射撃 (列車砲は砲撃) です<br>'
     + '・まだ動いていないユニットでも、<b>その場から撃てる敵をクリックすれば</b>その場に留まって仮決定になります (砲兵は選んで敵を2回クリックするだけで撃てる)<br>'
     + '・<b>補給車・補給貨車が拠点の上か隣にいると、その拠点に 📦 が付きます</b>。クリックするとその場に「📦 積む」「📦 降ろす」が出ます (機関車を選んでいても、同じ編成の補給貨車のぶんが出る)。拠点の上に乗っているときは「待機」もそこから押せます<br>'
+    + '・<b>補給車 (または補給貨車を含む編成) を選んで緑マスが出ているときも、隣に着けられる拠点に 📦 が付きます</b>。その拠点をクリックすると、隣 (または上) になる緑マスのうち<b>いちばん近いマスへ自動で移動</b>して、着いた先でその拠点の「積む / 降ろす」が開きます。編成は先頭ではなく<b>補給貨車が拠点の隣になるマス</b>で判定します。止まると拠点の隣になる緑マスには小さな 📦 を添えてあります (カーソルを合わせると通る道も出ます)<br>'
     + '・占領・降下・連結などは今までどおりボタンから。施設攻撃も「施設攻撃」ボタンからです (パネルの「📦 積む / 降ろす」も残っています)'
     + '</div>'
     + '<h4>連結と編成 (列車)</h4>'
