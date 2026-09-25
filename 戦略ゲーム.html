@@ -5749,6 +5749,19 @@ function _aiOwnInfantryIslands(aiFaction, islandMap){
   return owned;
 }
 
+// AI: 歩兵を生産できる施設 (工場系) を1つでも持っているか。
+// 0 なら、いま盤面にいる歩兵を使い切った時点で二度と占領できなくなる (詰み)。
+function _aiHasFactory(aiFaction){
+  for(var k in captures){
+    var cap = captures[k];
+    if(cap.owner !== aiFaction) continue;
+    var xy = k.split(',');
+    var ter = TER[M[parseInt(xy[1])][parseInt(xy[0])]];
+    if(ter && ter.healCat === 'LAND' && ter.produces) return true;
+  }
+  return false;
+}
+
 function _aiCaptureTargets(aiFaction){
   var home = _aiHomeBase(aiFaction);
   if(!home) return [];
@@ -10840,10 +10853,28 @@ function aiTurn(){
               fallbackList = fallbackList.filter(sameIsl0);
             }
           }
+          // 生産できる拠点 (工場系・港系・空港系) の優先。
+          // 「そのターンに乗れる占領対象が複数あるなら、生産拠点を先に取る」。
+          // 都市をいくつ持っていても歩兵は作れないので、目の前の工場を素通りすると
+          // 歩兵を使い切った時点で二度と占領できなくなる (詰み)。
+          // 多ターンかけて届く場所まで数えると結局どこまでも優先になってしまうため、
+          // 優先するのは「今ターンの移動範囲に入っている目標」だけにする。
+          var movableNow2 = computeMovable(u);
+          var noFactory2 = !_aiHasFactory(aiFaction);   // 工場系が1つも無い = 歩兵を作れない
+          // 小さいほど優先。2 = 優先なし (今までどおり距離だけで選ぶ)
+          function capTargetRank(tg){
+            var grp2 = (TER[tg.terKey] || {}).group;
+            var isProd2 = (grp2 === 'factory' || grp2 === 'port' || grp2 === 'airport');
+            if(!isProd2) return 2;
+            // 歩兵を作れる工場系が自軍に1つも無いときは、距離を問わず工場系を最優先
+            if(noFactory2 && grp2 === 'factory') return -1;
+            if(!setHas(movableNow2, tg.x+','+tg.y)) return 2;   // 今ターンは乗れない
+            return (grp2 === 'factory') ? 0 : 1;   // 工場系 > 港・空港 > その他
+          }
           // 各候補に「自分からの経路距離」を計算してソート
           function evaluateTargets(targets, allowYield){
             // allowYield=true ならベストマッチで譲る、false なら譲らずに選ぶ
-            var best = null, bestD = Infinity;
+            var best = null, bestD = Infinity, bestRank = 99;
             for(var ti=0; ti<targets.length; ti++){
               var tg = targets[ti];
               var k = tg.x+','+tg.y;
@@ -10866,7 +10897,9 @@ function aiTurn(){
                 }
                 if(yielded) continue;
               }
-              if(d < bestD){ bestD = d; best = tg; }
+              // 生産拠点の優先 → 同じ優先どうしなら経路距離で最寄り
+              var rank = capTargetRank(tg);
+              if(rank < bestRank || (rank === bestRank && d < bestD)){ bestRank = rank; bestD = d; best = tg; }
             }
             return { goal: best, dist: bestD };
           }
@@ -17000,15 +17033,12 @@ function renderAITab(){
 
   html += '<div style="margin-top:6px;"><b>占領目標の選択ルール:</b></div>';
   html += '<ul style="margin:2px 0 0 16px; padding:0;">';
-  html += '<li><b>1ターン到達可能な目標を最優先</b></li>';
-  html += '<li>それ以外は移動コスト総量が少ない順</li>';
-  html += '<li>距離 (コスト) が同じ場合の優先順位:';
-  html += '<ol style="margin:2px 0 0 20px; padding:0;">';
-  html += '<li>敵施設 &gt; 中立施設 (敵戦力削減)</li>';
-  html += '<li>生産施設系 &gt; 都市系</li>';
-  html += '<li>生産施設同士なら高度な Lv 優先 (Lv4 &gt; Lv3 &gt; Lv2 &gt; Lv1)</li>';
-  html += '<li>同 Lv・同カテゴリならランダム</li>';
-  html += '</ol></li>';
+  html += '<li><b>地続きの目標が先</b> (海越えは輸送船があれば渡海)</li>';
+  html += '<li><b>工兵は廃墟を優先</b>、その他の歩兵は<b>廃墟以外を優先</b></li>';
+  html += '<li><b>そのターンに乗れる目標が複数あるときは、生産できる拠点を先に取る</b>: 工場系 &gt; 港・空港 &gt; 都市など。都市をいくつ持っていても歩兵は作れないため</li>';
+  html += '<li>それ以外は<b>自分からの経路距離が短い順</b> (多ターンかけて届く場所は距離だけで選ぶ)</li>';
+  html += '<li><b>工場系を1つも持っていないときは、距離を問わず工場系が最優先</b> (歩兵を作れないまま詰むのを防ぐ)</li>';
+  html += '<li>同条件ならランダム</li>';
   html += '</ul>';
 
   html += '<div style="margin-top:6px;"><b>重複防止 (ベストマッチ方式):</b></div>';
