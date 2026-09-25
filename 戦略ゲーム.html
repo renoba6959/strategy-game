@@ -4042,6 +4042,40 @@ function facilityStockScouted(x, y, viewerOwner){
   return false;
 }
 
+// 自分のターンかどうか。盤面 (onCellClick) は最初から見ているが、
+// 右パネルと生産モーダルは見ていなかったため、ターン終了後もアップグレードや
+// 生産・取り出しが通ってしまっていた (AI のターン中に盤面が変わる)。
+// 方針: 中身を見るのは自由、変更だけ止める。
+function isPlayerTurnNow(){ return !gameOver && turn === 'P'; }
+// 自分のターンでないときに押させないボタン (生産モーダルの中)
+var PROD_MUTATING_BTN = /^(startProduction|startUpgrade|cancelProduction|cancelUpgrade|takeOutProduction|takeOutFromFacility|showProduceConfirm|toggleFormationChoice)\(/;
+function applyTurnLockToProdMenu(){
+  if(isPlayerTurnNow()) return;
+  var body = document.getElementById('prod-body');
+  if(!body) return;
+  var note = document.createElement('div');
+  note.style.cssText = 'margin:0 0 8px; padding:6px 9px; border-radius:4px; font-size:12px;'
+    + ' background:#F6E8C8; border:1px solid #BA7517; color:#7A5A10;';
+  note.textContent = '⏳ いまは' + (gameOver ? 'ゲーム終了後' : (FACTION_NAMES[turn] || turn) + 'のターン')
+    + 'です。中身は見られますが、生産・アップグレード・取り出し・中止はできません';
+  body.insertBefore(note, body.firstChild);
+  var bs = body.querySelectorAll('button');
+  for(var i=0; i<bs.length; i++){
+    var oc = bs[i].getAttribute('onclick') || '';
+    if(!PROD_MUTATING_BTN.test(oc)) continue;
+    bs[i].disabled = true;
+    bs[i].style.cursor = 'not-allowed';
+    bs[i].style.opacity = '0.45';
+    bs[i].style.filter = 'grayscale(1)';
+  }
+}
+// 変更する操作の入口で使う安全装置 (ボタンは無効にしてあるので、本来ここには来ない)
+function blockIfNotMyTurn(){
+  if(isPlayerTurnNow()) return false;
+  setStatus('いまはあなたのターンではありません');
+  return true;
+}
+
 // 情報パネルの施設ボタン (生産・収容 / アップグレード)
 // マスをクリックしただけでモーダルが開かないよう、ここから明示的に開く
 function facilityPanelButtons(ter, cap, x, y){
@@ -4858,8 +4892,9 @@ function updateInfoPanel(){
     if(u.route.to) uhtml += '<div style="font-size:11px;color:#666;">いまの行き先: ('+(u.routeTarget === 'from' ? u.route.from.x+','+u.route.from.y : u.route.to.x+','+u.route.to.y)+')</div>';
     uhtml += '<div style="font-size:10px;color:#888;padding-left:8px;">見えている敵の ' + AUTO_ROUTE_ENEMY_RADIUS + 'マス以内には入りません</div>';
     if(u.owner === 'P'){
-      uhtml += '<div style="margin-top:5px;"><button onclick="clearSupplyRouteAt('+u.x+','+u.y+')" '
-        + 'style="font-size:11px;padding:4px 10px;border:none;border-radius:3px;cursor:pointer;color:white;background:#A32D2D;">🚚 ルート解除</button></div>';
+      uhtml += '<div style="margin-top:5px;"><button onclick="clearSupplyRouteAt('+u.x+','+u.y+')"' + (isPlayerTurnNow() ? '' : ' disabled') + ' '
+        + 'style="font-size:11px;padding:4px 10px;border:none;border-radius:3px;color:white;background:#A32D2D;'
+        + (isPlayerTurnNow() ? 'cursor:pointer;' : 'cursor:not-allowed;opacity:0.45;filter:grayscale(1);') + '">🚚 ルート解除</button></div>';
     }
   } else if(u.route){
     var rFrom = TER[M[u.route.from.y][u.route.from.x]];
@@ -4885,8 +4920,9 @@ function updateInfoPanel(){
       + rFrom.name + '('+u.route.from.x+','+u.route.from.y+') → ' + rToLabel + '</div>';
     uhtml += '<div style="font-size:11px;color:#666;padding-left:8px;">' + goingTo + '</div>';
     if(u.owner === 'P'){
-      uhtml += '<div style="margin-top:5px;"><button onclick="clearSupplyRouteAt('+u.x+','+u.y+')" '
-        + 'style="font-size:11px;padding:4px 10px;border:none;border-radius:3px;cursor:pointer;color:white;background:#A32D2D;">🚚 ルート解除</button></div>';
+      uhtml += '<div style="margin-top:5px;"><button onclick="clearSupplyRouteAt('+u.x+','+u.y+')"' + (isPlayerTurnNow() ? '' : ' disabled') + ' '
+        + 'style="font-size:11px;padding:4px 10px;border:none;border-radius:3px;color:white;background:#A32D2D;'
+        + (isPlayerTurnNow() ? 'cursor:pointer;' : 'cursor:not-allowed;opacity:0.45;filter:grayscale(1);') + '">🚚 ルート解除</button></div>';
     }
   }
   // 空母系の弾薬庫表示 (isSupplyではないが、艦載航空機への補給用に弾薬庫を持つ)
@@ -12685,6 +12721,7 @@ function handleRouteSetClick(x, y){
 
 // 情報パネルからの解除 (コマンド選択に入らずその場で解除できる)
 function clearSupplyRouteAt(x, y){
+  if(blockIfNotMyTurn()) return;
   var u = unitAt(x, y);
   if(!u || u.owner !== 'P' || !u.route) return;
   delete u.route; delete u.routeTarget; delete u.routeStuck;
@@ -17765,6 +17802,7 @@ function openProductionMenu(x, y, focus){
   }
 
   body.innerHTML = html;
+  applyTurnLockToProdMenu();
   document.getElementById('prod-overlay').style.display = 'flex';
 }
 
@@ -17893,6 +17931,7 @@ function showProduceConfirm(unitType){
   html += '<div style="font-size:11px; color:#666; margin-top:8px;">資金: <b style="color:#185FA5;">'+funds.P.toLocaleString()+'G</b></div>';
 
   body.innerHTML = html;
+  applyTurnLockToProdMenu();
   document.getElementById('prod-overlay').style.display = 'flex';
   // 情報パネルの「⬆ アップグレード」から開いたときは、その位置まで送る
   if(focus === 'upgrade'){
@@ -17915,6 +17954,7 @@ function toggleFormationChoice(){
   if(el) el.style.display = (el.style.display === 'none') ? '' : 'none';
 }
 function startProduction(unitType, rank){
+  if(blockIfNotMyTurn()) return;
   var t = TYPE[unitType];
   var r = (typeof rank === 'number' && canFormUp(unitType)) ? Math.max(0, Math.min(3, rank)) : 0;
   var price = formationPrice(unitType, r);
@@ -17940,6 +17980,7 @@ function startProduction(unitType, rank){
 }
 
 function startUpgrade(targetTerKey){
+  if(blockIfNotMyTurn()) return;
   var capObj = captures[prodFacilityX+','+prodFacilityY];
   if(!capObj) return;
   var currentTer = M[prodFacilityY][prodFacilityX];
@@ -17959,6 +18000,7 @@ function startUpgrade(targetTerKey){
 }
 
 function cancelUpgrade(){
+  if(blockIfNotMyTurn()) return;
   var capObj = captures[prodFacilityX+','+prodFacilityY];
   if(!capObj || !capObj.upgrading) return;
   if(!confirm('アップグレードを中止しますか?(コスト半額返却)')) return;
@@ -17969,6 +18011,7 @@ function cancelUpgrade(){
 }
 
 function cancelProduction(idx){
+  if(blockIfNotMyTurn()) return;
   if(!confirm('生産を中止しますか?(資金は半額返却)')) return;
   var p = production[idx];
   if(!p) return;
@@ -17997,6 +18040,7 @@ function deployCandidates(type, owner, fx, fy){
 }
 
 function takeOutProduction(idx){
+  if(blockIfNotMyTurn()) return;
   var p = production[idx];
   if(!p || !p.ready) return;
   var occupier = unitAt(p.x, p.y);
@@ -18138,6 +18182,7 @@ function showDeployPanel(unitName){
 }
 
 function takeOutFromFacility(idx){
+  if(blockIfNotMyTurn()) return;
   var capObj = captures[prodFacilityX+','+prodFacilityY];
   if(!capObj || !capObj.cargo) return;
   var cg = capObj.cargo[idx];
