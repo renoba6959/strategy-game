@@ -1265,7 +1265,8 @@ var production = [];
 var currentStage = null, W = 0, H = 0, M = [];
 var units = [], captures = {}, nextId = 1;
 var turn = 'P', selected = null, pendingUnit = null, pendingJustMoved = false, attackMode = false, unloadMode = false, unloadCargoIdx = -1, unloadValidSet = {}, unloadStarted = false, facilityAttackMode = false, facilityAttackableSet = {}, bridgeMode = false, bridgeValidSet = {}, railRepairMode = false, railRepairSet = {}, trainRepairMode = false, trainRepairSet = {}, coupleMode = false, coupleValidSet = {}, uncoupleMode = false, uncoupleValidSet = {},
-    deployMode = false, deployValidSet = {}, deployPendingIdx = -1, deployPendingKind = 'prod';
+    deployMode = false, deployValidSet = {}, deployPendingIdx = -1, deployPendingKind = 'prod',
+    deployPendingFac = null;   // 出撃元の施設 {x,y} (収容中のユニットを出すときに使う。closeProductionMenu で prodFacilityX が -1 に戻るため)
 // 線路を敷く前の地形を覚えておく (破壊されたら元に戻す)。キーは "x,y"
 var railBase = {};
 // 線路の耐久 (施設HPに相当)。線路・鉄橋は20、廃線・損傷鉄橋は10
@@ -18033,10 +18034,19 @@ function deployCandidates(type, owner, fx, fy){
     var xy = mk.split(',');
     var mx = parseInt(xy[0]), my = parseInt(xy[1]);
     if(mx === fx && my === fy) continue;   // 施設マスは塞がっているので出られない
-    if(unitAt(mx, my)) continue;           // 他のユニットが居るマスも不可
+    var blocker = unitAt(mx, my);
+    // 空きのある自軍の輸送ユニットのマスは「乗せる先」として選べる (普通の移動と同じ)
+    if(blocker && !deployCarrierAt(mx, my, owner, tmpUnit)) continue;
     setAdd(set, mk);
   }
   return set;
+}
+// 出撃で乗せられる輸送ユニット (自軍・空きあり・その種類を積める)
+function deployCarrierAt(x, y, owner, target){
+  var c = unitAt(x, y);
+  if(!c || c.owner !== owner || c.hp <= 0) return null;
+  if(!canCarryUnit(c, target)) return null;
+  return c;
 }
 
 function takeOutProduction(idx){
@@ -18060,6 +18070,7 @@ function takeOutProduction(idx){
     deployValidSet = cand;
     deployPendingIdx = idx;
     deployPendingKind = 'prod';
+    deployPendingFac = { x: p.x, y: p.y };
     // 施設をクリックしたときの補給範囲の枠 (緑) が候補マスに重なって見えにくいので消す
     supplyRangeView = null; selected = null; setClear(movableSet); setClear(attackableSet);
     closeProductionMenu();
@@ -18089,10 +18100,11 @@ function executeDeploy(x, y){
   var p, cgS = null, capS = null;
   if(isStored){
     // 収容中のユニット (修理スロット) を出す
-    capS = captures[prodFacilityX+','+prodFacilityY];
+    var facS = deployPendingFac || { x: prodFacilityX, y: prodFacilityY };
+    capS = captures[facS.x+','+facS.y];
     cgS = capS && capS.cargo ? capS.cargo[deployPendingIdx] : null;
     if(!cgS){ exitDeployMode(); return; }
-    p = { type: cgS.type, owner: cgS.owner, rank: cgS.rank, x: prodFacilityX, y: prodFacilityY };
+    p = { type: cgS.type, owner: cgS.owner, rank: cgS.rank, x: facS.x, y: facS.y };
   } else {
     p = production[deployPendingIdx];
     if(!p || !p.ready){ exitDeployMode(); return; }
@@ -18108,6 +18120,8 @@ function executeDeploy(x, y){
     return;
   }
   var newU = makeUnit(p.type, p.owner, res.x, res.y, p.rank);
+  // 行き先が自軍の輸送ユニットなら、盤面には出さずにそのまま積む (普通の移動の搭載と同じ)
+  var deployCarrier = deployCarrierAt(res.x, res.y, p.owner, newU);
   newU.preMoveX = p.x; newU.preMoveY = p.y;
   newU.moved = true;      // 出撃は移動なので、このターンはもう動けない (直射なら攻撃は可)
   newU.acted = false;
@@ -18118,12 +18132,38 @@ function executeDeploy(x, y){
     newU.hp = cgS.hp;
     payTakeOutSupply(newU, cgS, p.x, p.y);
     if(cgS.cargo && cgS.cargo.length > 0) newU.cargo = cgS.cargo.slice();
-    units.push(newU);
+    if(!deployCarrier) units.push(newU);
     capS.cargo.splice(deployPendingIdx, 1);
   } else {
     loadSupplyStockOnBuild(newU, p.x, p.y);   // 補給ユニットは工場の備蓄を積んで出る
-    units.push(newU);
+    if(!deployCarrier) units.push(newU);
     production.splice(deployPendingIdx, 1);
+  }
+  if(deployCarrier){
+    // 搭載: 普通の移動で輸送ユニットのマスへ入ったときと同じ扱い (燃料は減らさない)
+    var dCargo = {
+      type: newU.type, rank: newU.rank,
+      hp: newU.hp,
+      owner: newU.owner,
+      originalId: newU.id,
+      fuel: newU.fuel,
+      ammo: newU.ammo ? newU.ammo.slice() : null,
+      cargo: newU.cargo ? newU.cargo.slice() : [],
+      loadedRound: roundNumber
+    };
+    var dFake = { type: dCargo.type, fuel: dCargo.fuel, ammo: dCargo.ammo ? dCargo.ammo.slice() : null };
+    carrierResupplyOnLoad(deployCarrier, dFake);   // 空母系なら乗艦時に1回だけ補給
+    dCargo.fuel = dFake.fuel; dCargo.ammo = dFake.ammo;
+    deployCarrier.cargo.push(dCargo);
+    if(deployCarrier.moved) deployCarrier.acted = true;   // 動いたあとの輸送に乗せたら行動終了 (移動と同じ)
+    if(window.plog) try{ plog('🚩 ' + TYPE[newU.type].name + ' が (' + p.x + ',' + p.y + ') から ' + TYPE[deployCarrier.type].name + '@(' + deployCarrier.x + ',' + deployCarrier.y + ') に出撃して搭載'); }catch(e){}
+    setStatus('🚩 ' + TYPE[newU.type].name + 'が' + TYPE[deployCarrier.type].name + 'に搭載されました');
+    exitDeployMode();
+    selected = null;
+    setClear(movableSet); setClear(attackableSet);
+    hideCommandPanel();
+    afterAction();
+    return;
   }
   consumeFuelForMove(newU, p.x, p.y);
   var stopped = (res.x !== x || res.y !== y);
@@ -18166,6 +18206,7 @@ function exitDeployMode(){
   setClear(deployValidSet);
   deployPendingIdx = -1;
   deployPendingKind = 'prod';
+  deployPendingFac = null;
   hideCommandPanel();
 }
 // 出撃先を選んでいる間、コマンド欄に案内と「やめる」を出す (状況メッセージだけだと気づきにくい)
@@ -18214,6 +18255,7 @@ function takeOutFromFacility(idx){
     deployValidSet = candS;
     deployPendingIdx = idx;
     deployPendingKind = 'stored';
+    deployPendingFac = { x: prodFacilityX, y: prodFacilityY };
     supplyRangeView = null; selected = null; setClear(movableSet); setClear(attackableSet);
     closeProductionMenu();
     setStatus('🚩 ' + TYPE[cg.type].name + 'の出撃先を選んでください（施設マスは塞がっているので出られません。移動扱いなので、出た先で伏兵に遭うことがあります）');
