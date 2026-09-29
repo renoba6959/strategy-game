@@ -4219,6 +4219,14 @@ function areaShotCost(w, wide){
 }
 
 // attackMode: 'normal'(通常) / 'observed'(観測射撃・弾薬1・×1.2) / 'fire_for_effect'(効力射・弾薬2・×1.2+周囲100%)
+// 撃たれた側の陣営から撃った側が見えていなければ反撃できない (見えない相手には撃ち返せない)。
+// 索敵マップの視界に加えて、森・山の隠れも伏兵と同じ基準で見る (索敵マップがオフでも効く)。
+function canCounterAttacker(att, defOwner){
+  if(!isUnitVisibleTo(att, defOwner)) return false;
+  if(isAmbushHidden(att, defOwner)) return false;
+  return true;
+}
+
 function performAttack(att, def, justMoved, attackMode){
   // 効力射の場合: 着弾点 (defX, defY) を決定し、中央のユニット(居れば)に120%、周囲4マスのユニット全員に100%ダメージ
   if(attackMode === 'fire_for_effect'){
@@ -4242,7 +4250,7 @@ function performAttack(att, def, justMoved, attackMode){
   if(r1.weaponIdx !== undefined) consumeAmmoForAttack(att, r1.weaponIdx);
   def.hp = Math.max(0, def.hp - r1.dmg * 10);
   var r2 = null;
-  if(def.hp > 0){
+  if(def.hp > 0 && canCounterAttacker(att, def.owner)){
     r2 = bestAttackOn(def, att, def.x, def.y, false);
     if(r2){
       if(r2.weaponIdx !== undefined) consumeAmmoForAttack(def, r2.weaponIdx);
@@ -12540,7 +12548,7 @@ function quickAttackClick(x, y){
     var pred = bestAttackOn(u, target, u.x, u.y, pendingJustMoved);
     if(pred){
       var simDef = { type: target.type, hp: Math.max(0, target.hp - pred.dmg * 10), rank: target.rank, x: target.x, y: target.y };
-      var counter = (simDef.hp > 0) ? bestAttackOn(simDef, u, simDef.x, simDef.y, false) : null;
+      var counter = (simDef.hp > 0 && canCounterAttacker(u, target.owner)) ? bestAttackOn(simDef, u, simDef.x, simDef.y, false) : null;
       msg = TYPE[u.type].name + '[' + pred.weapon.name + '] → ' + TYPE[target.type].name + ' に ' + pred.dmg + 'ダメージ'
         + (counter ? (' / 反撃[' + counter.weapon.name + '] ' + counter.dmg + 'ダメージ') : (simDef.hp <= 0 ? ' (撃破)' : ' (反撃なし)'));
     }
@@ -15397,7 +15405,7 @@ function render(){
           // 予測ダメージ後の被害シミュレーション(反撃計算用)
           var simDef = { type: u.type, hp: Math.max(0, u.hp - pred.dmg * 10), rank: u.rank, x: u.x, y: u.y };
           var counter = null;
-          if(simDef.hp > 0){
+          if(simDef.hp > 0 && canCounterAttacker(pendingUnit, u.owner)){
             counter = bestAttackOn(simDef, pendingUnit, simDef.x, simDef.y, false);
           }
           var dmgBox = document.createElement('div');
@@ -15674,7 +15682,7 @@ function onCellHover(x, y){
   // 反撃シミュレーション
   var simDef = { type: u.type, hp: Math.max(0, u.hp - pred.dmg * 10), rank: u.rank, x: u.x, y: u.y };
   var counter = null;
-  if(simDef.hp > 0){
+  if(simDef.hp > 0 && canCounterAttacker(pendingUnit, u.owner)){
     counter = bestAttackOn(simDef, pendingUnit, simDef.x, simDef.y, false);
   }
   var msg = TYPE[pendingUnit.type].name + '[' + pred.weapon.name + '] → ' + TYPE[u.type].name + ' に ' + pred.dmg + 'ダメージ';
@@ -16107,7 +16115,7 @@ function renderUnitsTab(){
   }
   html += '</div>';
 
-  html += '<div style="font-size:11px; color:#888; margin-top:8px; line-height:1.5;">表中の数値は基礎火力。実効火力 = round(基礎 × 現在HP/100)。<br>「種別」の<span style="color:#A32D2D;">間接</span>は移動後攻撃不可。<span style="color:#0F6E56;">直接</span>は移動後も攻撃可。<b>反撃は射程内なら直接・間接どちらでも発生</b>(被攻撃側に射程内の有効武器があれば反撃)。</div>';
+  html += '<div style="font-size:11px; color:#888; margin-top:8px; line-height:1.5;">表中の数値は基礎火力。実効火力 = round(基礎 × 現在HP/100)。<br>「種別」の<span style="color:#A32D2D;">間接</span>は移動後攻撃不可。<span style="color:#0F6E56;">直接</span>は移動後も攻撃可。<b>反撃は射程内なら直接・間接どちらでも発生</b>(被攻撃側に射程内の有効武器があれば反撃)。ただし<b>撃った側が見えていなければ反撃しない</b>(索敵マップの視界外・森や山に隠れていて隣接されていない・潜航やステルス中など)。</div>';
   return html;
 }
 
@@ -16475,7 +16483,7 @@ function renderRulesTab(){
     + '</div>'
     + '<h4>移動後制約</h4>間接武器は移動後使用不可(航空ユニットは例外)。'
     + '<h4>地形防御</h4>地上ユニット: 全地形・施設の防御を享受。海上ユニット: 港系施設の防御のみ享受。航空ユニット: 地形防御一切なし。'
-    + '<h4>反撃</h4>射程内に有効武器を持っていれば反撃(直接・間接どちらでも可)。</br>※間接武器でも射程に入っていれば反撃可能。'
+    + '<h4>反撃</h4>射程内に有効武器を持っていれば反撃(直接・間接どちらでも可)。</br>※間接武器でも射程に入っていれば反撃可能。<br>※ただし撃たれた側の陣営から<b>撃った側が見えていなければ反撃しない</b>。索敵マップの視界外にいるとき、森・山に隠れていて隣接されていないとき (索敵マップがオフでも同じ)、潜航・ステルス中で探知されていないとき。'
     + '<h4>ZOC</h4>敵隣接マスで移動停止 (<b>見えている敵のみ</b>。見えない伏兵には反応せず、隣接した瞬間に発見して停止する)。'
     + '<h4>伏兵と奇襲</h4>'
     + '<div style="background:#fff0f0; border-left:3px solid #A32D2D; padding:6px 10px; margin:6px 0; font-size:12px;">'
