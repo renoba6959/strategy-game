@@ -6,7 +6,7 @@
 - **ジャンル**: ターン制戦術シミュレーション (4 陣営: P/E/C/D)
 - **開発対象**: AI の思考ロジックに加えて、ゲームのルールそのもの (補給・鉄道など) も扱う
 - **ユーザー**: 非エンジニアの日本語話者
-- **Git 管理下** (`/Users/renoba/Desktop/戦略ゲーム/`)
+- **Git 管理下** (`/Users/renoba/code/戦略ゲーム/`)
 
 ### 最初に読むファイル
 
@@ -156,7 +156,7 @@ if(errs.length) console.log(errs.join('\n'));
 
 ## 出力先
 
-- `/Users/renoba/Desktop/戦略ゲーム/戦略ゲーム.html` を直接編集する (Git 管理下)。
+- `/Users/renoba/code/戦略ゲーム/戦略ゲーム.html` を直接編集する (Git 管理下)。
   ※ 旧環境 (`/home/claude/` + `present_files` でのファイル受け渡し) の記述は廃止。
 
 ## 過去の経緯を調べる
