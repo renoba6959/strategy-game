@@ -100,15 +100,16 @@ button:hover { background: #f0f0f0; }
   <span id="command-label" style="font-size: 13px; font-weight: 500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex:0 1 auto;"></span>
   <span id="command-buttons" style="display:inline-flex; gap: 6px; flex-wrap:nowrap; flex:none; overflow-x:auto; max-width:100%;"></span>
 </div>
+<!-- お知らせ: 高さを2行ぶんで固定し、長文は欄の中でスクロールする (文の長さで盤面が上下にずれないように) -->
+<div id="status" style="box-sizing:border-box; height:54px; overflow-y:auto; font-size: 14px; font-weight: 500; line-height:21px; padding: 6px 12px; margin-bottom:8px; background: var(--color-background-secondary); border-radius: var(--border-radius-md);">ステージを選んでください</div>
 <div style="display:flex; align-items:center; gap:12px; margin-bottom:8px; min-height:30px;">
-  <span id="stage-info" style="font-size: 12px; color: var(--color-text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"></span>
+  <span id="stage-info" style="font-size: 12px; color: var(--color-text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:0 1 auto; min-width:0;"></span>
   <span id="campaign-next" style="flex:none;"></span>
   <button id="end-turn-btn" style="font-weight:600; flex:none;">ターン終了</button>
-  <div id="cap-counter" style="font-size:12px; padding:4px 10px; background: var(--color-background-secondary); border-radius: var(--border-radius-md);"></div>
-  <div id="victory-counter" style="display:none; font-size:12px; padding:4px 10px; background:#FFF1C2; border:1px solid #BA7517; border-radius: var(--border-radius-md); font-weight:600; color:#7a5a10;"></div>
-  <div id="wind-indicator" style="display:none; font-size:12px; padding:4px 10px; background: #E6F1FB; border:1px solid #BAD3EE; border-radius: var(--border-radius-md);" title="現ラウンドの風 / 次ラウンドの予測"></div>
-  <div id="funds-counter" style="font-size:12px; padding:4px 10px; background: var(--color-background-secondary); border-radius: var(--border-radius-md);"></div>
-  <div id="status" style="font-size: 14px; font-weight: 500; padding: 6px 12px; background: var(--color-background-secondary); border-radius: var(--border-radius-md); flex: 1; min-width: 200px;">ステージを選んでください</div>
+  <div id="cap-counter" style="white-space:nowrap; flex:none; font-size:12px; padding:4px 10px; background: var(--color-background-secondary); border-radius: var(--border-radius-md);"></div>
+  <div id="victory-counter" style="white-space:nowrap; flex:none; display:none; font-size:12px; padding:4px 10px; background:#FFF1C2; border:1px solid #BA7517; border-radius: var(--border-radius-md); font-weight:600; color:#7a5a10;"></div>
+  <div id="wind-indicator" style="white-space:nowrap; flex:none; display:none; font-size:12px; padding:4px 10px; background: #E6F1FB; border:1px solid #BAD3EE; border-radius: var(--border-radius-md);" title="現ラウンドの風 / 次ラウンドの予測"></div>
+  <div id="funds-counter" style="white-space:nowrap; flex:none; font-size:12px; padding:4px 10px; background: var(--color-background-secondary); border-radius: var(--border-radius-md);"></div>
 </div>
 <div style="display: flex; gap: 12px; margin-bottom: 12px; align-items: flex-start; flex-wrap: wrap;">
   <div id="board-wrap" style="overflow-x: auto;">
@@ -2835,7 +2836,7 @@ function carrierAt(x, y, owner, target){
   return null;
 }
 function displayHP(h){ return Math.max(0, Math.ceil(h/10)); }
-function setStatus(msg){ document.getElementById('status').textContent = msg; }
+function setStatus(msg){ var el = document.getElementById('status'); el.textContent = msg; el.scrollTop = 0; }
 
 // 移動の表記。自走できない車輌 (列車砲・補給貨車) は「牽く側の移動をいくつ下げるか」を
 // -2 / -1 のように出す。0 と書くより、連結したときの重さが分かりやすいため。
