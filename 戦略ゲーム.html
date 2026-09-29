@@ -2173,10 +2173,35 @@ function supplyRouteMove(u, tx, ty, stopAdjacent){
   var curKey = u.x+','+u.y;
   var curD = eff(dist[curKey]);
   var movable = computeMovable(u);
+  // 線路の上では止まらない (通り抜けるのはよい)。列車は味方をすり抜けられないので、
+  // 補給車が線路に居座ると編成が止まってしまう。例外は2つ:
+  //   ・駐留地点そのものが線路のとき (プレイヤーがわざとそこを指定した)
+  //   ・拠点の隣に着けたいのに、線路以外の着け先 (隣のマス・拠点マス) が1つも空いていないとき
+  function onRail(x, y){ var tr = TER[M[y][x]]; return !!(tr && tr.isRail); }
+  function isArrival(d){ return stopAdjacent ? (d <= 1.5) : (d === 0); }
+  function railOk(x, y, d){
+    if(!onRail(x, y)) return true;
+    if(!stopAdjacent && d === 0) return true;
+    return stopAdjacent && d === 1 && !offRailArrivalFree;
+  }
+  var offRailArrivalFree = false;
+  if(stopAdjacent){
+    if(isArrival(curD) && !onRail(u.x, u.y)) offRailArrivalFree = true;
+    for(var ak in movable){
+      if(offRailArrivalFree) break;
+      var axy = ak.split(',');
+      var ax = parseInt(axy[0]), ay = parseInt(axy[1]);
+      if(unitAt(ax, ay) && !(ax === u.x && ay === u.y)) continue;
+      if(avoid && avoid[ak]) continue;
+      if(isArrival(eff(dist[ak])) && !onRail(ax, ay)) offRailArrivalFree = true;
+    }
+  }
+  // 線路の上で止まってはいけないマスにいるか (前へ進めなければ、目的地から離れても線路の外へ出る)
+  var mustLeaveRail = !railOk(u.x, u.y, curD);
   var best = null, bestD = curD;
   // いま敵のそばにいるなら、目的地に近づけなくても安全なマスへ下がる
   var inDanger = !!(avoid && avoid[curKey]);
-  var retreat = null, retreatD = Infinity;
+  var retreat = null, retreatD = Infinity, retreatOnRail = true;
   for(var k in movable){
     var xy = k.split(',');
     var mx = parseInt(xy[0]), my = parseInt(xy[1]);
@@ -2184,11 +2209,43 @@ function supplyRouteMove(u, tx, ty, stopAdjacent){
     if(unitAt(mx, my)) continue;
     if(avoid && avoid[k]) continue;               // 敵の近くには入らない
     var d = eff(dist[k]);
-    if(d < bestD){ bestD = d; best = { x: mx, y: my }; }
-    // 下がる先: 目的地に近い安全なマス。どこも届かなければ安全なマスならどこでも
-    if(inDanger && (retreat === null || d < retreatD)){ retreatD = d; retreat = { x: mx, y: my }; }
+    var ok = railOk(mx, my, d);
+    if(ok && d < bestD){ bestD = d; best = { x: mx, y: my }; }
+    // 下がる先: 目的地に近い安全なマス。線路の外を優先し、どこも届かなければ安全なマスならどこでも
+    if(inDanger){
+      var better = (retreat === null) || (retreatOnRail && ok) || (retreatOnRail === !ok && d < retreatD);
+      if(better){ retreatD = d; retreat = { x: mx, y: my }; retreatOnRail = !ok; }
+    }
   }
   if(!best && inDanger) best = retreat;
+  // 線路の外で近づけるマスが1つも無い (1ターンで渡りきれない長い鉄橋の途中など) ときだけは、
+  // 線路の上でも前へ進む。止まったままだと、いつまでも目的地に着けないため。
+  // (いったん線路の外へ引き返すと、次のターンにまた線路へ戻って行ったり来たりになる)
+  if(!best){
+    var railBestD = curD;
+    for(var rk in movable){
+      var rxy = rk.split(',');
+      var rx = parseInt(rxy[0]), ry = parseInt(rxy[1]);
+      if(rx === u.x && ry === u.y) continue;
+      if(unitAt(rx, ry)) continue;
+      if(avoid && avoid[rk]) continue;
+      var rd = eff(dist[rk]);
+      if(rd < railBestD){ railBestD = rd; best = { x: rx, y: ry }; }
+    }
+  }
+  // 前へ進めず、しかも止まってはいけない線路の上にいるなら、いちばん近い線路の外へ出る
+  if(!best && mustLeaveRail){
+    var offD = Infinity;
+    for(var ok2 in movable){
+      var oxy = ok2.split(',');
+      var ox = parseInt(oxy[0]), oy = parseInt(oxy[1]);
+      if(ox === u.x && oy === u.y) continue;
+      if(unitAt(ox, oy) || onRail(ox, oy)) continue;
+      if(avoid && avoid[ok2]) continue;
+      var od = eff(dist[ok2]);
+      if(best === null || od < offD){ offD = od; best = { x: ox, y: oy }; }
+    }
+  }
   if(!best) return false;
   var fromX = u.x, fromY = u.y;
   u.preMoveX = fromX; u.preMoveY = fromY;
@@ -16611,6 +16668,7 @@ function renderSupplyTab(){
   html += '<li><b>積み元</b>: 備蓄を作れる自軍の生産施設 (都市は作れないので積み元にできない)</li>';
   html += '<li><b>降ろし先</b>: 自軍拠点、または任意のマス (<b>駐留地点</b>。そこに留まって周りの味方に補給する)</li>';
   html += '<li>施設マスの上には乗らず、<b>隣で積み降ろし</b>する (拠点マスを塞がないため)</li>';
+  html += '<li><b>線路の上では止まらない</b> (通り抜けるのはよい)。列車は味方をすり抜けられないので、線路に居座ると編成が止まるため。例外: 駐留地点そのものを線路の上に指定したとき / 拠点の隣が線路しか空いていないとき / 1ターンで渡りきれない長い鉄橋の途中。手で動かすときは今までどおり線路の上にも止められる</li>';
   html += '<li>積み元では<b>備蓄を空にしてでも満載</b>する。在庫が<b>2割以下</b>になったら積み元へ戻る</li>';
   html += '<li>積み元・降ろし先を敵に取られると、ルートは自動で解除される</li>';
   html += '<li><b>空中給油機</b>は空港系でしか積み降ろしできない。燃料が減ると最寄りの空港・空母へ帰投し、8割まで戻るとルートを再開する (墜落防止)</li>';
