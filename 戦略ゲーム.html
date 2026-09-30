@@ -5278,6 +5278,37 @@ function applyTurnStart(owner){
     if(sst.spec.ammoGain > 0) scap.stockAmmo = Math.min(sst.spec.ammoMax, sst.ammo + sst.spec.ammoGain);
   }
 
+  // 0c-3. 補給貨車の自動荷降ろし
+  // 補給貨車は自走できず補給ルートを持てないので、隣 (または上) にある「作らない拠点」
+  // (都市系・補給拠点系) へ、自分のターンの始まりに積載庫の物資を自動で降ろす。
+  // 作る施設 (工場など) には降ろさない (積載庫を満たす側なので、降ろすと積み直しの堂々巡りになる)。
+  // 下の 0d より先に行うので、工場で積んだ物資がその場で抜けていくことはない (1ターンに1区間ずつ)。
+  for(var sci=0; sci<units.length; sci++){
+    var scar = units[sci];
+    if(scar.owner !== owner || scar.hp <= 0) continue;
+    var sct = TYPE[scar.type];
+    if(!sct.isSupply || !sct.isTrain) continue;
+    var dropTo = [];
+    var sdirs = [[0,0],[1,0],[-1,0],[0,1],[0,-1]];
+    for(var sdi=0; sdi<sdirs.length; sdi++){
+      var dx0 = scar.x + sdirs[sdi][0], dy0 = scar.y + sdirs[sdi][1];
+      if(!isSupplyRouteFacility(dx0, dy0, owner, scar)) continue;
+      var dst = facilityStock(captures[dx0+','+dy0], M[dy0][dx0]);
+      if(!dst.spec) continue;
+      if(dst.spec.fuelGain > 0 || dst.spec.ammoGain > 0) continue;   // 作る施設には降ろさない
+      dropTo.push({ x: dx0, y: dy0, ratio: facilityStockRatio({ st: dst }, supplyKindsOf(scar)) });
+    }
+    // 隣に2つあるときは、備蓄の乏しいほうから
+    dropTo.sort(function(a, b){ return a.ratio - b.ratio; });
+    for(var dti=0; dti<dropTo.length; dti++){
+      var put = supplyRouteUnload(scar, dropTo[dti]);
+      if(put > 0 && owner === 'P' && window.plog){
+        var dTer = TER[M[dropTo[dti].y][dropTo[dti].x]];
+        try{ plog('🚂 ' + sct.name + ' → ' + (dTer ? dTer.name : '拠点') + '(' + dropTo[dti].x + ',' + dropTo[dti].y + ') に自動で荷降ろし ' + put); }catch(e){}
+      }
+    }
+  }
+
   // 0d. 補給判定: 補給可能ユニットを補給
   var supplied = [];
   for(var i=0; i<units.length; i++){
@@ -16673,6 +16704,7 @@ function renderSupplyTab(){
   html += '<li>積み元・降ろし先を敵に取られると、ルートは自動で解除される</li>';
   html += '<li><b>空中給油機</b>は空港系でしか積み降ろしできない。燃料が減ると最寄りの空港・空母へ帰投し、8割まで戻るとルートを再開する (墜落防止)</li>';
   html += '<li>自走できない補給ユニット (補給貨車) はルートを持てない — 機関車が運ぶ</li>';
+  html += '<li><b>補給貨車は、隣 (または上) にある作らない拠点 (都市系・首都・補給拠点系) へ、自分のターンの始まりに自動で荷降ろしする</b> (拠点の備蓄の上限まで。隣に2つあれば備蓄の乏しいほうから)。工場などの作る施設には降ろさない (そちらからは今までどおり自動で積む)。荷降ろしは積み込みより先に行うので、物資は1ターンに1区間ずつ進む</li>';
   html += '<li><b>⭐ 複数の部隊を編成</b>: 陸上ユニット (列車・補給車を除く) は生産時に <b>小隊 (⭐1) / 中隊 (⭐2) / 大隊 (⭐3)</b> にまとめて作れる。価格・HP・弾薬 (上限と1回の消費) は部隊数ぶん (×2/×3/×4)、火力は ×1.5 / ×2.0 / ×2.5、装甲は +1/+2/+3。燃料・移動・視界・積載は変わらない。中隊・大隊は製造に +1 ターン。撃つ強さは「火力 × (残りHP÷その部隊の最大HP) × 火力倍率」なので、星なしはこれまでと同じ。修理は1ターンの回復量も費用も人数比。AIも資金が余ると大きな部隊を作る</li>';
   html += '<li><b>🔄 自動巡回</b>: 積み元・降ろし先を指定せず、<b>備蓄の乏しい拠点へ自動で運ぶ</b>。毎ターン行き先を選び直すので、拠点を取られても設定し直さなくてよい。<b>見えている敵の3マス以内には近づかず</b>、敵のそばの拠点には行かない (前線へ据え置くなら駐留地点を使う)。複数台を自動巡回にすると、<b>他の車が向かっている降ろし先・積み元は避けて</b>手分けする。解除は情報パネルの「🚚 ルート解除」<br>'
         + '　・降ろし先は<b>都市・中都市・大都市・首都</b>（備蓄を自分では作れない拠点）だけ。工場などを降ろし先にすると、積んだ拠点にそのまま降ろす堂々巡りになるため<br>'
