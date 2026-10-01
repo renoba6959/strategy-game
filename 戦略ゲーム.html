@@ -10245,6 +10245,259 @@ function aiSupplyAction(u, aiFaction){
   return false;
 }
 
+// ===== 輸送計画 (AI) =====
+// 「どの歩兵を・どの輸送ユニットで・どこへ運ぶか」を陣営ごとに決め、両方のユニットに覚えさせる。
+// 以前は輸送する側とされる側が別々に判断していて、輸送機は「歩兵が乗ってくるのを待つ」、
+// 歩兵は「乗る理由がない」で待ち合ったまま動かず、兵員輸送車は輸送に一度も使われていなかった。
+//   歩兵:   u.tplan = { carrierId, tx, ty, mx, my, since }  (tx,ty = 占領目標 / mx,my = 待ち合わせ場所)
+//   輸送側: c.tplan = { cargoId,   tx, ty, mx, my, since }
+// ユニットに持たせるのでセーブにもそのまま残る。
+// 段階1: 兵員輸送車 (APC) だけ。輸送機・輸送ヘリ・輸送船はあとの段階でここに載せる。
+var TRANSPORT_WALK_TURNS = 3;   // 歩くとこのターン数以上かかる歩兵を運ぶ
+var TRANSPORT_WAIT_TURNS = 2;   // 乗れないまま待つのはここまで (過ぎたら歩く)
+var _aiExtraActQueue = [];      // 降ろした直後の歩兵 (そのターンの行動リストに後から足す)
+function _aiPlanCarrierType(type){ return type === 'APC'; }
+function _aiUnitById(id){
+  for(var i=0; i<units.length; i++){ if(units[i].id === id && units[i].hp > 0) return units[i]; }
+  return null;
+}
+// 歩兵 u が向かう占領目標 (陸続きで、経路距離がいちばん近いもの)
+function _aiCaptureGoalFor(u, faction){
+  var targets = _aiCaptureTargets(faction);
+  var dist = bfsPathDistances(u.x, u.y, u);
+  var best = null;
+  for(var i=0; i<targets.length; i++){
+    var tg = targets[i];
+    if(tg.isRuins && !TYPE[u.type].isEngineer) continue;
+    var d = dist[tg.x+','+tg.y];
+    if(d === undefined) continue;
+    if(!best || d < best.dist) best = { x: tg.x, y: tg.y, dist: d };
+  }
+  return best;
+}
+function _aiCancelTransportPlan(u){
+  if(!u || !u.tplan) return;
+  var partner = _aiUnitById(u.tplan.carrierId !== undefined ? u.tplan.carrierId : u.tplan.cargoId);
+  if(partner && partner.tplan) delete partner.tplan;
+  delete u.tplan;
+}
+function _aiTileIsCapturing(u, faction){
+  var cap = captures[u.x+','+u.y];
+  var ter = TER[M[u.y][u.x]];
+  return !!(cap && ter && ter.capturable && !isAlly(cap.owner, faction));
+}
+
+// 陣営のターンの最初に呼ぶ: 古い計画を片付けて、新しい組み合わせを作る
+function aiPlanTransports(faction){
+  // --- 片付け ---
+  for(var i=0; i<units.length; i++){
+    var u = units[i];
+    if(u.owner !== faction || !u.tplan) continue;
+    if(u.tplan.carrierId !== undefined){
+      var car = _aiUnitById(u.tplan.carrierId);
+      if(!car || !car.tplan || car.tplan.cargoId !== u.id){ delete u.tplan; continue; }
+      if(roundNumber - u.tplan.since >= TRANSPORT_WAIT_TURNS){
+        if(window.AI_DEBUG) try{ console.log('[輸送計画 '+faction+'] '+TYPE[u.type].name+'@('+u.x+','+u.y+') は'+TRANSPORT_WAIT_TURNS+'ターン乗れなかったので歩く'); }catch(e){}
+        _aiCancelTransportPlan(u);
+      }
+    } else if(u.tplan.cargoId !== undefined){
+      var carrying = u.cargo && u.cargo.length > 0;
+      if(!carrying && !_aiUnitById(u.tplan.cargoId)){ delete u.tplan; continue; }
+      // 目標を味方が取ったら、運んでいる歩兵の次の目標に切り替える
+      var capT = captures[u.tplan.tx+','+u.tplan.ty];
+      if(carrying && capT && isAlly(capT.owner, faction)){
+        var probe = { type: u.cargo[0].type, x: u.x, y: u.y, owner: faction };
+        var ng = _aiCaptureGoalFor(probe, faction);
+        if(ng){ u.tplan.tx = ng.x; u.tplan.ty = ng.y; }
+      }
+    }
+  }
+  // --- 組み合わせ ---
+  var carriers = [];
+  for(var ci=0; ci<units.length; ci++){
+    var c = units[ci];
+    if(c.owner !== faction || c.hp <= 0 || c.tplan) continue;
+    if(!_aiPlanCarrierType(c.type)) continue;
+    if(c.cargo && c.cargo.length > 0) continue;
+    if(unitStrength(c) <= 0.5) continue;   // 傷んだ輸送車は修理に下がる
+    carriers.push(c);
+  }
+  if(carriers.length === 0) return;
+  var cands = [];
+  for(var ii=0; ii<units.length; ii++){
+    var inf = units[ii];
+    if(inf.owner !== faction || inf.hp <= 0 || inf.tplan || inf.acted) continue;
+    if(!TYPE[inf.type].canCapture) continue;
+    if(unitStrength(inf) <= 0.5) continue;
+    if(_aiTileIsCapturing(inf, faction)) continue;   // 占領中は動かさない
+    var goal = _aiCaptureGoalFor(inf, faction);
+    if(!goal) continue;
+    var walkTurns = Math.ceil(goal.dist / Math.max(1, TYPE[inf.type].move));
+    if(walkTurns < TRANSPORT_WALK_TURNS) continue;
+    cands.push({ u: inf, goal: goal, walkTurns: walkTurns });
+  }
+  cands.sort(function(a, b){ return b.walkTurns - a.walkTurns; });   // 遠い歩兵から
+  for(var k=0; k<cands.length && carriers.length > 0; k++){
+    var cd = cands[k], best = null;
+    var distI = bfsPathDistances(cd.u.x, cd.u.y, cd.u);
+    var moveI = Math.max(1, TYPE[cd.u.type].move);
+    for(var cj=0; cj<carriers.length; cj++){
+      var cr = carriers[cj];
+      if(!canCarryUnit(cr, cd.u)) continue;
+      var moveC = Math.max(1, TYPE[cr.type].move);
+      var distC = bfsPathDistances(cr.x, cr.y, cr);
+      var distCT = bfsPathDistances(cd.goal.x, cd.goal.y, cr);
+      // 待ち合わせ場所: 両方が TRANSPORT_WAIT_TURNS ターン以内に着けて、目標まで一番早いマス
+      for(var key in distC){
+        var dI = distI[key], dCT = distCT[key];
+        if(dI === undefined || dCT === undefined) continue;
+        var xy = key.split(','), mx = parseInt(xy[0]), my = parseInt(xy[1]);
+        var occ = unitAt(mx, my);
+        if(occ && occ.id !== cr.id && occ.id !== cd.u.id) continue;
+        var meetTurns = Math.max(Math.ceil(distC[key] / moveC), Math.ceil(dI / moveI));
+        if(meetTurns > TRANSPORT_WAIT_TURNS) continue;
+        if(aiComputeDangerScore(faction, mx, my, cr) * 10 >= cr.hp) continue;   // 撃破されそうな場所では待ち合わせない
+        var eta = meetTurns + Math.ceil(dCT / moveC);
+        var tie = distC[key] + dI;
+        if(!best || eta < best.eta || (eta === best.eta && tie < best.tie)){
+          best = { carrier: cr, mx: mx, my: my, eta: eta, tie: tie };
+        }
+      }
+    }
+    // 運んだほうが早いときだけ計画にする
+    if(!best || best.eta >= cd.walkTurns) continue;
+    var plan = { tx: cd.goal.x, ty: cd.goal.y, mx: best.mx, my: best.my, since: roundNumber };
+    cd.u.tplan = { carrierId: best.carrier.id, tx: plan.tx, ty: plan.ty, mx: plan.mx, my: plan.my, since: plan.since };
+    best.carrier.tplan = { cargoId: cd.u.id, tx: plan.tx, ty: plan.ty, mx: plan.mx, my: plan.my, since: plan.since };
+    carriers.splice(carriers.indexOf(best.carrier), 1);
+    if(window.AI_DEBUG) try{ console.log('[輸送計画 '+faction+'] '+TYPE[cd.u.type].name+'@('+cd.u.x+','+cd.u.y+') を '+TYPE[best.carrier.type].name+'@('+best.carrier.x+','+best.carrier.y+') で ('+plan.tx+','+plan.ty+') へ。待ち合わせ('+plan.mx+','+plan.my+') 歩くと'+cd.walkTurns+'T → 運ぶと'+best.eta+'T'); }catch(e){}
+  }
+}
+
+// 歩兵 u を輸送ユニット carrier に乗せる (u は carrier のマスへ動ける前提)
+function _aiBoardTransport(u, carrier){
+  var fromX = u.x, fromY = u.y;
+  u.x = carrier.x; u.y = carrier.y;
+  u.preMoveX = fromX; u.preMoveY = fromY;
+  consumeFuelForMove(u, fromX, fromY);
+  var entry = {
+    type: u.type, rank: u.rank, hp: u.hp, owner: u.owner, originalId: u.id,
+    fuel: u.fuel, ammo: u.ammo ? u.ammo.slice() : null,
+    cargo: u.cargo ? u.cargo.slice() : [],
+    loadedRound: roundNumber
+  };
+  var fake = { type: entry.type, fuel: entry.fuel, ammo: entry.ammo ? entry.ammo.slice() : null };
+  carrierResupplyOnLoad(carrier, fake);
+  entry.fuel = fake.fuel; entry.ammo = fake.ammo;
+  carrier.cargo.push(entry);
+  units = units.filter(function(uu){ return uu.id !== u.id; });
+}
+
+// movable の中から、goal までの経路距離 (+ 危険) が最小の空きマスを選ぶ
+function _aiPlanStepToward(u, faction, goalX, goalY){
+  var movable = computeMovable(u);
+  var dist = bfsPathDistances(goalX, goalY, u);
+  var best = null, bestScore = Infinity;
+  for(var mk in movable){
+    var xy = mk.split(','), mx = parseInt(xy[0]), my = parseInt(xy[1]);
+    var occ = unitAt(mx, my);
+    if(occ && occ.id !== u.id) continue;
+    var d = dist[mk];
+    if(d === undefined) d = 9999;
+    var dg = aiComputeDangerScore(faction, mx, my, u);
+    var score = d + dg * 3 + (dg * 10 >= u.hp ? 1000 : 0);
+    if(score < bestScore){ bestScore = score; best = { x: mx, y: my }; }
+  }
+  return best;
+}
+
+// 計画を持つユニットの行動。行動したら true
+function aiTransportPlanAction(u, faction){
+  var p = u.tplan;
+  if(!p) return false;
+  // --- 運ばれる歩兵 ---
+  if(p.carrierId !== undefined){
+    var car = _aiUnitById(p.carrierId);
+    if(!car){ delete u.tplan; return false; }
+    var movable = computeMovable(u);
+    if(setHas(movable, car.x+','+car.y) && canCarryUnit(car, u)){
+      if(window.AI_DEBUG) try{ console.log('  → [輸送計画] '+TYPE[car.type].name+'@('+car.x+','+car.y+') に乗る'); }catch(e){}
+      _aiBoardTransport(u, car);
+      delete u.tplan;
+      return true;
+    }
+    // 輸送車が先に動いていればその位置へ、まだなら待ち合わせ場所へ
+    var gx = car.moved ? car.x : p.mx, gy = car.moved ? car.y : p.my;
+    var st = _aiPlanStepToward(u, faction, gx, gy);
+    if(window.AI_DEBUG) try{ console.log('  → [輸送計画] 待ち合わせへ ('+gx+','+gy+') MOVE→'+(st ? '('+st.x+','+st.y+')' : 'なし')); }catch(e){}
+    if(st && (st.x !== u.x || st.y !== u.y)) executeMoveWithAmbushCheck(u, st.x, st.y);
+    u.acted = true;
+    return true;
+  }
+  // --- 輸送する側 ---
+  if(p.cargoId !== undefined){
+    var carrying = u.cargo && u.cargo.length > 0;
+    if(!carrying){
+      var inf = _aiUnitById(p.cargoId);
+      if(!inf){ delete u.tplan; return false; }
+      // 歩兵がこのターンに届くマスがあれば、そこへ寄せる (両方から近づいて落ち合う)
+      var myMov = computeMovable(u), infMov = computeMovable(inf);
+      var distT = bfsPathDistances(p.tx, p.ty, u);
+      var pick = null, pickScore = Infinity;
+      for(var mk in myMov){
+        if(!setHas(infMov, mk)) continue;
+        var xy = mk.split(','), mx = parseInt(xy[0]), my = parseInt(xy[1]);
+        var occ = unitAt(mx, my);
+        if(occ && occ.id !== u.id) continue;
+        var dg = aiComputeDangerScore(faction, mx, my, u);
+        if(dg * 10 >= u.hp) continue;
+        var sc = (distT[mk] !== undefined ? distT[mk] : 9999) + dg * 3;
+        if(sc < pickScore){ pickScore = sc; pick = { x: mx, y: my }; }
+      }
+      if(!pick) pick = _aiPlanStepToward(u, faction, p.mx, p.my);
+      if(window.AI_DEBUG) try{ console.log('  → [輸送計画] 歩兵を迎えに MOVE→'+(pick ? '('+pick.x+','+pick.y+')' : 'なし')); }catch(e){}
+      if(pick && (pick.x !== u.x || pick.y !== u.y)) executeMoveWithAmbushCheck(u, pick.x, pick.y);
+      u.acted = true;
+      return true;
+    }
+    // 乗せている: 目標へ運び、届くところで降ろす
+    var cargoType = u.cargo[0].type;
+    var beforeD = bfsPathDistances(p.tx, p.ty, u)[u.x+','+u.y];
+    var stp = _aiPlanStepToward(u, faction, p.tx, p.ty);
+    if(stp && (stp.x !== u.x || stp.y !== u.y)){
+      var mr = executeMoveWithAmbushCheck(u, stp.x, stp.y);
+      if(mr.ambushed){ u.acted = true; return true; }
+    }
+    var afterD = bfsPathDistances(p.tx, p.ty, u)[u.x+','+u.y];
+    var walk = bfsPathDistances(p.tx, p.ty, { type: cargoType });
+    var moveI = Math.max(1, TYPE[cargoType].move);
+    var tiles = aiUnloadableTiles(u, cargoType);
+    var bestTile = null, bestW = Infinity;
+    // 降りた歩兵が撃破されそうなマスには降ろさない (見えている敵の射程 + 奇襲を受けた場所の記憶)
+    var cg0 = u.cargo[0];
+    for(var ti=0; ti<tiles.length; ti++){
+      var w = walk[tiles[ti].x+','+tiles[ti].y];
+      if(w === undefined) continue;
+      var probeI = { type: cargoType, hp: cg0.hp, rank: cg0.rank, owner: faction, x: tiles[ti].x, y: tiles[ti].y };
+      if(aiComputeDangerScore(faction, tiles[ti].x, tiles[ti].y, probeI) * 10 >= cg0.hp) continue;
+      if(w < bestW){ bestW = w; bestTile = tiles[ti]; }
+    }
+    // 降ろしたあと目標まで歩いて1ターンで届く / これ以上近づけない、なら降ろす
+    var stuck = (beforeD !== undefined && afterD !== undefined && afterD >= beforeD);
+    if(bestTile && (bestW <= moveI || stuck)){
+      if(window.AI_DEBUG) try{ console.log('  → [輸送計画] ('+bestTile.x+','+bestTile.y+') に降ろす 目標('+p.tx+','+p.ty+')まで'+bestW); }catch(e){}
+      if(aiUnload(u, 0, bestTile.x, bestTile.y)){
+        var nu = units[units.length - 1];
+        if(nu && !nu.acted) _aiExtraActQueue.push(nu);
+        delete u.tplan;
+      }
+    } else if(window.AI_DEBUG) try{ console.log('  → [輸送計画] 運搬中 目標('+p.tx+','+p.ty+') 残り'+afterD); }catch(e){}
+    u.acted = true;
+    return true;
+  }
+  return false;
+}
+
 // AI がユニットを動かす順番の役割 (小さいほど先)
 function _aiMoveOrderRole(u){
   var t = TYPE[u.type];
@@ -10274,6 +10527,9 @@ function aiTurn(){
   //   新規生産 + アップグレード は行動の後 (損傷ユニットの修理スロット確保のため)
   // ここでは取り出し + 空母から発艦 のみ実行
   aiProduceAndTakeOut(aiFaction, 'takeout');
+  // 輸送計画: 遠い歩兵と空いている輸送ユニットを組み合わせる
+  _aiExtraActQueue = [];
+  aiPlanTransports(aiFaction);
 
   var aiUnits = [];
   for(var i=0; i<units.length; i++){ if(units[i].owner === aiFaction && units[i].hp > 0) aiUnits.push(units[i]); }
@@ -10335,6 +10591,11 @@ function aiTurn(){
   var shovedIds = {}; // make-way(こじ開け)でどかした味方ID → ループ側で二重行動させないため
   var idx = 0;
   function step(){
+    // 輸送ユニットから降ろした直後の歩兵も、このターンのうちに動かす (降りてすぐ占領へ)
+    while(_aiExtraActQueue.length > 0){
+      var xq = _aiExtraActQueue.shift();
+      if(xq && xq.hp > 0 && xq.owner === aiFaction) aiUnits.push(xq);
+    }
     if(idx >= aiUnits.length || gameOver){
       if(window.AI_DEBUG) try{ console.log('[AI '+aiFaction+'] === turn end (idx='+idx+'/'+aiUnits.length+', gameOver='+gameOver+') ==='); }catch(e){}
       // 仕様書セクション12「最後に生産」:
@@ -10634,6 +10895,14 @@ function aiTurn(){
           }
         }
       }
+    }
+    // 輸送計画を持つユニット (運ぶ側・運ばれる側)
+    if(u.tplan && aiTransportPlanAction(u, aiFaction)){
+      units = units.filter(function(uu){ return uu.hp > 0; });
+      render();
+      if(checkWin()) return;
+      setTimeout(step, aiStepDelay(250));
+      return;
     }
     // 輸送ユニット (輸送船・輸送ヘリ・輸送機): 歩兵を運んで降ろす
     if(TYPE[u.type].capacity && isLandTransport(u.type)){
@@ -17599,6 +17868,18 @@ function renderAITab(){
   html += '<li>該当戦闘ユニットがなければ生産ロジックに割り込み</li>';
   html += '</ol>';
 
+  html += '</div>';
+
+  // 輸送計画
+  html += '<div style="background:#f9f7f0; padding:8px 10px; border-radius:4px; font-size:11px; margin-bottom:8px;">';
+  html += '<b style="color:#5a4a30;">🚐 輸送計画 (どの歩兵を・どの輸送ユニットで・どこへ運ぶか)</b>';
+  html += '<ul style="margin:4px 0 0 16px; padding:0;">';
+  html += '<li>AI のターンの最初に、占領目標まで<b>歩くと3ターン以上かかる歩兵</b>と、空いている輸送ユニットを組み合わせる (今は<b>兵員輸送車</b>。輸送機・輸送ヘリ・輸送船は今後ここに載せる)</li>';
+  html += '<li>待ち合わせ場所は、<b>両方から近づいて2ターン以内に落ち合える</b>マスのうち、目標まで一番早く着くところ。運んだほうが早いときだけ計画にする</li>';
+  html += '<li>輸送ユニットは、そのターンに歩兵が届くマスがあればそこへ寄せる。歩兵はそこへ乗り込む</li>';
+  html += '<li>乗せたら、撃破されそうなマスを避けて目標へ運び、<b>降りた歩兵がそのターンに目標へ届く</b>ところで降ろす (これ以上近づけなければ、安全なマスで降ろす)。兵員輸送車から降りた歩兵はすぐ動ける</li>';
+  html += '<li><b>2ターン乗れなければ</b>計画を取り消して歩く。輸送ユニットがやられた・目標を味方が取ったときも組み直す</li>';
+  html += '</ul>';
   html += '</div>';
 
   // 空挺降下兵
