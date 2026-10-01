@@ -3391,6 +3391,7 @@ function loadStage(key){
   currentPhase = s.startPhase || 'day';
   phaseTurn = 0;
   roundNumber = 0;
+  aiAmbushMemory = [];
   // 天候レイヤーの読み込み
   initWeather();
   if(s.weather && Array.isArray(s.weather)){
@@ -4561,7 +4562,8 @@ function _planAmbush(victim){
   }
   var willKill = (victim.hp - totalDmg * 10) <= 0;
   var msg = '⚡奇襲! ' + TYPE[victim.type].name + 'が伏兵に遭遇 — ' + partsList.join(' / ') + ' = 計' + totalDmg + 'ダメ' + (willKill ? ' (撃破)' : '');
-  return { plannedHits: plannedHits, totalDmg: totalDmg, willKill: willKill, msg: msg };
+  // ambushers: 隣で遭遇した伏兵 (奇襲を受けた側が位置を知りうるのはこれだけ)
+  return { plannedHits: plannedHits, totalDmg: totalDmg, willKill: willKill, msg: msg, ambushers: hiddenAdjacent };
 }
 
 function performAmbush(victim, onComplete){
@@ -4573,6 +4575,7 @@ function performAmbush(victim, onComplete){
   }
   var plannedHits = plan.plannedHits;
   if(window.AI_DEBUG) try{ console.log('  → AMBUSH! '+plannedHits.length+' hidden unit(s) attacking victim '+TYPE[victim.type].name+' @('+victim.x+','+victim.y+')'); }catch(e){}
+  rememberAmbush(victim, plan);
   setStatus(plan.msg);
   pushLog(plan.msg);
   // 1発ずつ順番にアニメーション
@@ -4620,6 +4623,7 @@ function resolveAmbushInstant(victim){
   victim.acted = true;
   victim.moved = true;
   if(victim.hp === 0 && victim.cargo && victim.cargo.length > 0) victim.cargo = [];
+  rememberAmbush(victim, plan);
   setStatus(plan.msg);
   pushLog(plan.msg + ' @('+victim.x+','+victim.y+')');
   if(window.AI_DEBUG) try{ console.log('  → AMBUSH! ' + plan.msg); }catch(e){}
@@ -9343,6 +9347,51 @@ function _aiTerrainDefAt(unit, x, y){
 // AI: 指定マス (x, y) で受ける可能性のあるダメージ合計を計算 (危険度スコア)
 // 自分から見て視認可能な敵 (faction以外、中立除く) が現在位置から (x, y) を射程に収めているか調べる
 // セクション1「防御力優先」: (x, y) の地形防御を引いた「実際に受けるダメージ」を計算
+// ===== 奇襲を受けた場所の記憶 (AI が同じ場所に何度も入らないため) =====
+// 視界の外にいる敵の位置は分からないので、覚えるのは自分の側で起きたことだけ:
+//   ・奇襲を受けたマス (撃破されても、どこでやられたかは分かる)
+//   ・そのとき隣で遭遇した伏兵の位置 (隣接して当たった相手)
+//   ・受けたダメージ (どれくらい危ない場所か)
+// 撃ってきた射程の長いユニット (重砲兵など) の位置は見えていないので覚えない。
+// 同盟陣営どうしは共有する (視界も共有しているため)。AMBUSH_MEMORY_ROUNDS ラウンドで忘れる。
+var aiAmbushMemory = [];
+var AMBUSH_MEMORY_ROUNDS = 3;
+function rememberAmbush(victim, plan){
+  if(!victim || !plan) return;
+  aiAmbushMemory = aiAmbushMemory.filter(function(m){ return roundNumber - m.round < AMBUSH_MEMORY_ROUNDS; });
+  aiAmbushMemory.push({
+    owner: victim.owner, x: victim.x, y: victim.y, round: roundNumber,
+    dmg: plan.totalDmg,
+    adj: (plan.ambushers || []).map(function(a){ return { x: a.x, y: a.y }; })
+  });
+  if(window.AI_DEBUG) try{ console.log('  → 奇襲の場所を記憶 ('+victim.x+','+victim.y+') dmg='+plan.totalDmg); }catch(e){}
+}
+function aiAmbushMemoryFor(faction){
+  return aiAmbushMemory.filter(function(m){
+    return isAlly(m.owner, faction) && roundNumber - m.round < AMBUSH_MEMORY_ROUNDS;
+  });
+}
+// (x, y) に止まると、覚えている奇襲の場所からどれだけ危ないか (ダメージの目安)
+//   奇襲を受けたマス: そのとき受けたダメージ / 1マス先: 6割 / 2マス先: 3割
+//   隣で遭遇した伏兵の隣: そのとき受けたダメージ (同じ伏兵に当たる)
+function aiAmbushMemoryDanger(faction, x, y){
+  var mem = aiAmbushMemoryFor(faction);
+  var total = 0;
+  for(var i=0; i<mem.length; i++){
+    var m = mem[i];
+    var d = manhattan(x, y, m.x, m.y);
+    var dg = 0;
+    if(d === 0) dg = m.dmg;
+    else if(d === 1) dg = m.dmg * 0.6;
+    else if(d === 2) dg = m.dmg * 0.3;
+    for(var j=0; j<m.adj.length; j++){
+      if(manhattan(x, y, m.adj[j].x, m.adj[j].y) <= 1){ dg = Math.max(dg, m.dmg); break; }
+    }
+    total += dg;
+  }
+  return total;
+}
+
 function aiComputeDangerScore(faction, x, y, selfUnit){
   var totalDanger = 0;
   // 移動先 (x, y) でユニットが受ける地形防御 + 自身の装甲
@@ -9372,6 +9421,8 @@ function aiComputeDangerScore(faction, x, y, selfUnit){
       if(realDmg > 0) totalDanger += realDmg;
     }
   }
+  // 見えていない敵は数えられないので、奇襲を受けた場所の記憶で補う
+  totalDanger += aiAmbushMemoryDanger(faction, x, y);
   return totalDanger;
 }
 
@@ -9792,6 +9843,41 @@ function _aiIsScoutUnit(unitType){
   return !!SCOUT_TYPES[unitType];
 }
 
+function _aiScoutAmbushSpot(u, aiFaction, sight){
+  var mem = aiAmbushMemoryFor(aiFaction);
+  // まだこのラウンドに覗いていない場所のうち、いちばん近いもの
+  var spot = null, spotD = Infinity;
+  for(var i=0; i<mem.length; i++){
+    if(mem[i].scoutedRound === roundNumber) continue;
+    var d = manhattan(u.x, u.y, mem[i].x, mem[i].y);
+    if(d < spotD){ spotD = d; spot = mem[i]; }
+  }
+  if(!spot) return false;
+  var movable = computeMovable(u);
+  var best = null, bestScore = -Infinity, bestInSight = false;
+  for(var mk in movable){
+    var xy = mk.split(',');
+    var mx = parseInt(xy[0]), my = parseInt(xy[1]);
+    var blocker = unitAt(mx, my);
+    if(blocker && blocker.id !== u.id) continue;
+    var dS = manhattan(mx, my, spot.x, spot.y);
+    var inSight = dS <= sight;
+    var danger = aiComputeDangerScore(aiFaction, mx, my, u);
+    var score = 0;
+    if(danger * 10 >= u.hp) score -= 100000;   // 撃破されそうなマスには行かない
+    score -= danger * 50;
+    if(inSight) score += 1000 + dS * 5;        // 視界に入るなら、なるべく離れて覗く
+    else score -= dS * 10;                     // 入らないなら近づく
+    if(score > bestScore){ bestScore = score; best = { x: mx, y: my }; bestInSight = inSight; }
+  }
+  if(!best || bestScore <= -100000) return false;
+  if(bestInSight) spot.scoutedRound = roundNumber;   // 同じ場所を2機で覗かない
+  if(window.AI_DEBUG) try{ console.log('  → 偵察 奇襲の場所('+spot.x+','+spot.y+')を覗く MOVE→('+best.x+','+best.y+')'+(bestInSight ? '' : ' (まだ届かない)')); }catch(e){}
+  if(best.x !== u.x || best.y !== u.y) executeMoveWithAmbushCheck(u, best.x, best.y);
+  u.acted = true;
+  return true;
+}
+
 // AI: 偵察ユニットの行動 (仕様書セクション11)
 // 1. 偵察対象を選ぶ (歩兵の占領目標 > 自軍占領下にない施設)
 // 2. 対象が視界範囲内に入る位置を選ぶ
@@ -9802,6 +9888,12 @@ function aiScoutAction(u, aiFaction){
   if(!_aiIsScoutUnit(u.type)) return false;
   var t = TYPE[u.type];
   var sight = t.sight || 2;
+
+  // === [0] 奇襲を受けた場所を覗きに行く (炙り出し) ===
+  // そこに隠れている敵を自分の視界に入れれば、あとから動く砲や戦車が撃てる。
+  // 敵が見えていても止まらない (手前の敵が見えた時点で止まると、奥の伏兵が見つからない)。
+  // このラウンドにまだ誰も覗いていない場所を、視界の端から (なるべく離れて) 覗く。
+  if(_aiScoutAmbushSpot(u, aiFaction, sight)) return true;
 
   // === [1] 偵察対象の選定 ===
   // 優先1: 歩兵が向かっている占領目標
@@ -10148,6 +10240,19 @@ function aiSupplyAction(u, aiFaction){
   return false;
 }
 
+// AI がユニットを動かす順番の役割 (小さいほど先)
+function _aiMoveOrderRole(u){
+  var t = TYPE[u.type];
+  if(_aiIsScoutUnit(u.type)) return 0;
+  if(t.weapons.length > 0){
+    var allIndirect = true;
+    for(var i=0; i<t.weapons.length; i++){ if(!t.weapons[i].indirect){ allIndirect = false; break; } }
+    if(allIndirect) return 1;
+  }
+  if(t.canCapture) return 3;
+  return 2;
+}
+
 function aiTurn(){
   // 現在のターン陣営 (turn) のAIが行動する
   var aiFaction = turn;
@@ -10212,6 +10317,11 @@ function aiTurn(){
     }
     if(aOnFacility && !bOnFacility) return -1;
     if(!aOnFacility && bOnFacility) return 1;
+    // 役割の順: 偵察 → 間接砲 → 直接撃つ部隊 → 占領する歩兵系
+    // 偵察が先に視界を広げ、見つかった敵を砲が撃ち、それから本隊が動く
+    // (以前は前線寄りの順だけで、偵察より先に本隊が見えない伏兵へ突っ込んでいた)
+    var rA = _aiMoveOrderRole(a), rB = _aiMoveOrderRole(b);
+    if(rA !== rB) return rA - rB;
     // 敵首都に近い順 (前線寄り先)
     var dA = unitFrontDist[a.id] || 9999;
     var dB = unitFrontDist[b.id] || 9999;
@@ -11545,6 +11655,9 @@ function aiTurn(){
           var pdRallyKey = mx+','+my;
           var dR = rallyPathFromGoal[pdRallyKey];
           if(dR === undefined) dR = 9999;
+          // 奇襲を受けた場所の近くは避ける
+          var memDgR = aiAmbushMemoryDanger(aiFaction, mx, my);
+          if(memDgR * 10 >= u.hp) continue;
           // 陸上間接攻撃ユニット: 前線より敵首都に近づきすぎない
           // (前線ユニットの距離より dR が小さい = より敵に近い → 除外)
           // 「1 歩後ろ」= frontlineDist + 1 以上
@@ -11963,7 +12076,9 @@ function aiTurn(){
             var terCheck = TER[M[my][mx]];
             if(capCheck && capCheck.owner === aiFaction && terCheck && terCheck.slots
                && (mx !== myGoal.x || my !== myGoal.y)) continue;
-            var dApp = manhattan(mx, my, myGoal.x, myGoal.y);
+            // 奇襲を受けた場所の近くは避ける (撃破されそうなら大回りしてでも)
+            var memDgC = aiAmbushMemoryDanger(aiFaction, mx, my);
+            var dApp = manhattan(mx, my, myGoal.x, myGoal.y) + (memDgC * 10 >= u.hp ? 1000 : memDgC * 0.2);
             if(dApp < bestApproachD){ bestApproachD = dApp; bestApproach = { x:mx, y:my }; }
           }
           if(bestApproach){ bestPos = bestApproach; captureTarget = bestApproach; }
@@ -12068,6 +12183,13 @@ function aiTurn(){
           else if(dCov <= 3) coverBonus += 50;
         }
         score += coverBonus;
+        // 危険度: 見えている敵の射程 + 奇襲を受けた場所の記憶。
+        // 止まると撃破されそうなマスには、敵を撃てるとしても行かない (撃てない安全なマスのほうを選ぶ)。
+        // 以前はここで危険を見ておらず、見えている敵を撃ちに行って奥の伏兵に全滅させられていた
+        // どのマスも撃破されそうなときは、撃てるかどうかより危険の小さいマスを選ぶ (下がる)
+        var dangerHere = aiComputeDangerScore(aiFaction, mx, my, u);
+        if(dangerHere * 10 >= u.hp) score = -100000 - dangerHere * 100 + distScore;
+        else score -= dangerHere * 20;
         // 自軍生産施設に居座るペナルティ: 動けるのに留まる選択肢には大きな負のスコア
         if(stayingOnFacility && !jm){
           // 生産中/完成ユニットがあるなら強烈なペナルティ、なければ穏やかなペナルティ
@@ -17521,6 +17643,7 @@ function renderAITab(){
 
   html += '<div style="margin-top:6px;"><b>偵察対象 (優先順位):</b></div>';
   html += '<ol style="margin:2px 0 0 18px; padding:0;">';
+  html += '<li><b>味方が奇襲を受けた場所</b> を最優先 (下の「奇襲を受けた場所の記憶」)。敵が見えていても止まらず、撃破されそうなマスを避けて、その場所を視界の端から覗く。見つかった敵は、あとから動く砲・戦車が撃つ</li>';
   html += '<li><b>歩兵が向かっている占領目標</b> を優先 (歩兵の進路を先行偵察)</li>';
   html += '<li>偵察ユニットごとに「最も近い歩兵の目標」を選ぶ (重複可)</li>';
   html += '<li>歩兵の数より偵察ユニットが多い場合 → 自軍占領下にない施設 (中立・敵施設) を偵察</li>';
@@ -17547,6 +17670,14 @@ function renderAITab(){
   html += '<li>偵察ユニットが見つけた敵 → 戦闘ユニットの行動判断材料になる</li>';
   html += '<li>戦闘ユニットがその敵を攻撃 → 排除されたら偵察ユニットが安全に前進可能</li>';
   html += '<li>これは「戦闘ユニットの行動ロジック」で自然に成立する (特別な連携処理は不要)</li>';
+  html += '</ul>';
+
+  html += '<div style="margin-top:6px;"><b>奇襲を受けた場所の記憶:</b></div>';
+  html += '<ul style="margin:2px 0 0 16px; padding:0;">';
+  html += '<li>奇襲を受けたマス・受けたダメージ・<b>隣で遭遇した伏兵の位置</b>を3ラウンド覚える (同盟陣営と共有)。見えていない射程の長い敵 (重砲兵など) の位置は覚えない</li>';
+  html += '<li>移動先を選ぶとき、そのマス (受けたダメージ)・1マス先 (6割)・2マス先 (3割)・遭遇した伏兵の隣 (受けたダメージ) を危険として数える。同じターンのうちから効く</li>';
+  html += '<li>敵を撃てる位置でも、見えている敵の射程と記憶から<b>撃破されそうなマスには行かない</b>。どこも撃破されそうなら、いちばん危険の小さいマスへ下がる</li>';
+  html += '<li>ユニットを動かす順番は <b>偵察 → 間接砲 → 直接撃つ部隊 → 占領する歩兵系</b> (同じ役割の中では前線寄りから)</li>';
   html += '</ul>';
 
   html += '<div style="margin-top:6px;"><b>空軍偵察ユニットの待機:</b></div>';
@@ -18437,7 +18568,7 @@ function buildSaveData(){
     weather: weather, weatherDrift: weatherDrift, windDirection: windDirection, windStrength: windStrength,
     nextWindDirection: nextWindDirection, nextWindStrength: nextWindStrength,
     stageLimits: stageLimits, campaignState: campaignState, playerIsAI: playerIsAI, gameOver: gameOver,
-    gameLog: gameLog
+    gameLog: gameLog, aiAmbushMemory: aiAmbushMemory
   };
 }
 function saveMetaOf(d){
@@ -18488,6 +18619,7 @@ function applySaveData(d){
   playerIsAI = !!d.playerIsAI;
   if(window._refreshPlayerAiBtn) window._refreshPlayerAiBtn();
   if(Array.isArray(d.gameLog)){ gameLog = d.gameLog; renderLog(); }
+  aiAmbushMemory = Array.isArray(d.aiAmbushMemory) ? d.aiAmbushMemory : [];
   // 選択状態やモードをすべて解除
   selected = null; pendingUnit = null; attackMode = false; unloadMode = false; setClear(unloadValidSet); unloadStarted = false; coupleMode = false; setClear(coupleValidSet); uncoupleMode = false; setClear(uncoupleValidSet); railRepairMode = false; setClear(railRepairSet); trainRepairMode = false; setClear(trainRepairSet); deployMode = false; setClear(deployValidSet); deployPendingIdx = -1;
   setClear(movableSet); setClear(attackableSet); setClear(enemyThreatSet); setClear(enemyMoveSet);
