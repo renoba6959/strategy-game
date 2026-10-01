@@ -6197,10 +6197,11 @@ function _aiPickLandCategory(phase, infCount){
     else if(infCount === 3) table = [20, 20, 60];
     else table = [10, 15, 75];
   } else { // F3
-    if(infCount <= 1) table = [60, 20, 20];
-    else if(infCount === 2) table = [25, 15, 60];
-    else if(infCount === 3) table = [20, 10, 70];
-    else table = [10, 10, 80];
+    // 終盤も敵の施設を奪う歩兵と、物資を運ぶ補給車が要るので、攻撃を減らして回した (2026-10-01)
+    if(infCount <= 1) table = [65, 20, 15];
+    else if(infCount === 2) table = [35, 15, 50];
+    else if(infCount === 3) table = [25, 15, 60];
+    else table = [15, 15, 70];
   }
   var r = Math.random() * 100;
   if(r < table[0]) return 'infantry';
@@ -6279,16 +6280,17 @@ function _aiPickLandReconAPC(facility, counts){
   var produces = facility.produces;
   var candidates = []; // [{ type, baseWeight }]
   // 偵察車数で確率変動 (仕様書通り)
-  // APC は30%で頭打ちにし、余ったぶんを補給車に回す (2026-10-01)。
+  // APC は15%で頭打ちにし、余ったぶんを補給車に回す (2026-10-01)。
+  // APC が無くても歩兵は歩いて前線へ行けるので、APC の枠は小さくてよい (ユーザーの判断)。
   // 備蓄が有限になり補給車の仕事 (拠点への運搬) が増えたのに、以前は補給車が常に15%で
   // 終盤には1回の生産あたり2%弱しか選ばれず、補給車を1台も持たない陣営が出ていた
   var sc = counts.scout;
   var probScout, probAPC, probSupply, probObs;
-  if(sc === 0)      { probScout = 35; probAPC = 30; probSupply = 20; probObs = 15; }
-  else if(sc === 1) { probScout = 25; probAPC = 30; probSupply = 25; probObs = 20; }
-  else if(sc === 2) { probScout = 15; probAPC = 30; probSupply = 30; probObs = 25; }
-  else if(sc === 3) { probScout = 10; probAPC = 30; probSupply = 30; probObs = 30; }
-  else              { probScout = 0;  probAPC = 30; probSupply = 35; probObs = 35; }
+  if(sc === 0)      { probScout = 35; probAPC = 15; probSupply = 35; probObs = 15; }
+  else if(sc === 1) { probScout = 25; probAPC = 15; probSupply = 40; probObs = 20; }
+  else if(sc === 2) { probScout = 15; probAPC = 15; probSupply = 45; probObs = 25; }
+  else if(sc === 3) { probScout = 10; probAPC = 15; probSupply = 45; probObs = 30; }
+  else              { probScout = 0;  probAPC = 15; probSupply = 50; probObs = 35; }
   // 上限ルール: APC ≤ 歩兵数、補給車 ≤ ceil(攻撃ユニット数/5)、観測兵 ≤ ceil(間接砲数/4)
   // ※ ベース0でも1体まで先読みOK
   var apcCap = Math.max(1, counts.infantry); // 0でも1体までOK
@@ -16932,15 +16934,15 @@ function renderAITab(){
   html += '<b style="color:#5a4a30;">第2層B: 偵察車/兵員輸送車(APC)/補給車/観測兵 の内部抽選 (偵察車数で変化)</b>';
   html += '<table style="width:100%; font-size:11px; margin-top:4px; border-collapse:collapse;">';
   html += '<tr style="background:#e6dfca;"><th style="padding:3px 6px; text-align:left;">偵察車数</th><th style="padding:3px 6px; text-align:center;">偵察車</th><th style="padding:3px 6px; text-align:center;">APC</th><th style="padding:3px 6px; text-align:center;">補給車</th><th style="padding:3px 6px; text-align:center;">観測兵</th></tr>';
-  html += '<tr><td style="padding:3px 6px;">0</td><td style="padding:3px 6px; text-align:center;">35%</td><td style="padding:3px 6px; text-align:center;">30%</td><td style="padding:3px 6px; text-align:center;">20%</td><td style="padding:3px 6px; text-align:center;">15%</td></tr>';
-  html += '<tr style="background:#fafaf3;"><td style="padding:3px 6px;">1</td><td style="padding:3px 6px; text-align:center;">25%</td><td style="padding:3px 6px; text-align:center;">30%</td><td style="padding:3px 6px; text-align:center;">25%</td><td style="padding:3px 6px; text-align:center;">20%</td></tr>';
-  html += '<tr><td style="padding:3px 6px;">2</td><td style="padding:3px 6px; text-align:center;">15%</td><td style="padding:3px 6px; text-align:center;">30%</td><td style="padding:3px 6px; text-align:center;">30%</td><td style="padding:3px 6px; text-align:center;">25%</td></tr>';
-  html += '<tr style="background:#fafaf3;"><td style="padding:3px 6px;">3</td><td style="padding:3px 6px; text-align:center;">10%</td><td style="padding:3px 6px; text-align:center;">30%</td><td style="padding:3px 6px; text-align:center;">30%</td><td style="padding:3px 6px; text-align:center;">30%</td></tr>';
-  html += '<tr><td style="padding:3px 6px;">4以上</td><td style="padding:3px 6px; text-align:center;">0%</td><td style="padding:3px 6px; text-align:center;">30%</td><td style="padding:3px 6px; text-align:center;">35%</td><td style="padding:3px 6px; text-align:center;">35%</td></tr>';
+  html += '<tr><td style="padding:3px 6px;">0</td><td style="padding:3px 6px; text-align:center;">35%</td><td style="padding:3px 6px; text-align:center;">15%</td><td style="padding:3px 6px; text-align:center;">35%</td><td style="padding:3px 6px; text-align:center;">15%</td></tr>';
+  html += '<tr style="background:#fafaf3;"><td style="padding:3px 6px;">1</td><td style="padding:3px 6px; text-align:center;">25%</td><td style="padding:3px 6px; text-align:center;">15%</td><td style="padding:3px 6px; text-align:center;">40%</td><td style="padding:3px 6px; text-align:center;">20%</td></tr>';
+  html += '<tr><td style="padding:3px 6px;">2</td><td style="padding:3px 6px; text-align:center;">15%</td><td style="padding:3px 6px; text-align:center;">15%</td><td style="padding:3px 6px; text-align:center;">45%</td><td style="padding:3px 6px; text-align:center;">25%</td></tr>';
+  html += '<tr style="background:#fafaf3;"><td style="padding:3px 6px;">3</td><td style="padding:3px 6px; text-align:center;">10%</td><td style="padding:3px 6px; text-align:center;">15%</td><td style="padding:3px 6px; text-align:center;">45%</td><td style="padding:3px 6px; text-align:center;">30%</td></tr>';
+  html += '<tr><td style="padding:3px 6px;">4以上</td><td style="padding:3px 6px; text-align:center;">0%</td><td style="padding:3px 6px; text-align:center;">15%</td><td style="padding:3px 6px; text-align:center;">50%</td><td style="padding:3px 6px; text-align:center;">35%</td></tr>';
   html += '</table>';
   html += '<div style="margin-top:6px;"><b>各上限ルール:</b></div>';
   html += '<ul style="margin:2px 0 0 16px; padding:0;">';
-  html += '<li><b>APC:</b> APC数 ≤ 歩兵数 (歩兵を超えてはいけない)。抽選の割合は<b>30%で頭打ち</b>にし、余ったぶんは補給車に回す (補給車の仕事が拠点への運搬まで増えたため)</li>';
+  html += '<li><b>APC:</b> APC数 ≤ 歩兵数 (歩兵を超えてはいけない)。抽選の割合は<b>15%で頭打ち</b>にし、余ったぶんは補給車に回す (補給車の仕事が拠点への運搬まで増えたため。APC が無くても歩兵は歩いて前線へ行ける)</li>';
   html += '<li><b>補給車:</b> 補給車数 ≤ 攻撃ユニット数 / 5 (切り上げ) ※「攻撃ユニット」=歩兵系・偵察/APC/補給車を除いた陸上ユニット</li>';
   html += '<li><b>観測兵:</b> 観測兵数 ≤ 間接砲ユニット数 / 4 (切り上げ) ※「間接砲ユニット」=陸:砲兵/重砲兵/自走砲/MLRS、海:駆逐艦/対空駆逐艦/軽巡/重巡/巡戦/戦艦</li>';
   html += '</ul>';
@@ -17012,16 +17014,16 @@ function renderAITab(){
 
   // フェーズ3
   html += '<h5 style="margin:14px 0 4px; font-size:12px; color:#185FA5;">フェーズ3: 中立施設・廃墟の残存 <b>39% 以下</b> (中盤後半〜終盤)</h5>';
-  html += '<div style="font-size:11px; color:#666; margin-bottom:6px;">占領可能な中立がほぼなくなる時期。攻撃ユニット中心の生産にシフトし、敵撃破フェーズへ移行。</div>';
+  html += '<div style="font-size:11px; color:#666; margin-bottom:6px;">占領可能な中立がほぼなくなる時期。攻撃ユニット中心の生産にシフトし、敵撃破フェーズへ移行。ただし<b>敵の施設を奪う歩兵</b>と<b>物資を運ぶ補給車</b>も要るので、歩兵系と偵察/補給の枠を残す。</div>';
 
   html += '<div style="background:#f9f7f0; padding:8px 10px; border-radius:4px; font-size:11px; margin-bottom:8px;">';
   html += '<b style="color:#5a4a30;">第1層: カテゴリ抽選 (歩兵数で変化)</b>';
   html += '<table style="width:100%; font-size:11px; margin-top:4px; border-collapse:collapse;">';
   html += '<tr style="background:#e6dfca;"><th style="padding:3px 6px; text-align:left;">歩兵数</th><th style="padding:3px 6px; text-align:center;">歩兵系</th><th style="padding:3px 6px; text-align:center;">偵察/APC</th><th style="padding:3px 6px; text-align:center;">攻撃</th></tr>';
-  html += '<tr><td style="padding:3px 6px;">0〜1</td><td style="padding:3px 6px; text-align:center;">60%</td><td style="padding:3px 6px; text-align:center;">20%</td><td style="padding:3px 6px; text-align:center;">20%</td></tr>';
-  html += '<tr style="background:#fafaf3;"><td style="padding:3px 6px;">2</td><td style="padding:3px 6px; text-align:center;">25%</td><td style="padding:3px 6px; text-align:center;">15%</td><td style="padding:3px 6px; text-align:center;"><b>60%</b></td></tr>';
-  html += '<tr><td style="padding:3px 6px;">3</td><td style="padding:3px 6px; text-align:center;">20%</td><td style="padding:3px 6px; text-align:center;">10%</td><td style="padding:3px 6px; text-align:center;"><b>70%</b></td></tr>';
-  html += '<tr style="background:#fafaf3;"><td style="padding:3px 6px;">4以上</td><td style="padding:3px 6px; text-align:center;">10%</td><td style="padding:3px 6px; text-align:center;">10%</td><td style="padding:3px 6px; text-align:center;"><b>80%</b></td></tr>';
+  html += '<tr><td style="padding:3px 6px;">0〜1</td><td style="padding:3px 6px; text-align:center;">65%</td><td style="padding:3px 6px; text-align:center;">20%</td><td style="padding:3px 6px; text-align:center;">15%</td></tr>';
+  html += '<tr style="background:#fafaf3;"><td style="padding:3px 6px;">2</td><td style="padding:3px 6px; text-align:center;">35%</td><td style="padding:3px 6px; text-align:center;">15%</td><td style="padding:3px 6px; text-align:center;"><b>50%</b></td></tr>';
+  html += '<tr><td style="padding:3px 6px;">3</td><td style="padding:3px 6px; text-align:center;">25%</td><td style="padding:3px 6px; text-align:center;">15%</td><td style="padding:3px 6px; text-align:center;"><b>60%</b></td></tr>';
+  html += '<tr style="background:#fafaf3;"><td style="padding:3px 6px;">4以上</td><td style="padding:3px 6px; text-align:center;">15%</td><td style="padding:3px 6px; text-align:center;">15%</td><td style="padding:3px 6px; text-align:center;"><b>70%</b></td></tr>';
   html += '</table>';
   html += '<div style="font-size:10px; color:#888; margin-top:4px;">※ 第2層 (内部抽選) はフェーズ2 と同じ (新規開放優先・除外ルール適用)</div>';
   html += '</div>';
