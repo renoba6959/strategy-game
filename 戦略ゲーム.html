@@ -14730,7 +14730,13 @@ function cancelMove(){
   // 触ってしまうと、連結相手が以前の移動の分まで巻き戻されて別の場所へ吹き飛び、
   // しかも moved が消えるので、その機関車がもう一度動けてしまう。
   // 編成の他の車輌がもう行動しているときも同じ (位置は確定)。
-  if(!pendingJustMoved || TYPE[pendingUnit.type].isTowed || trainMoveLocked(pendingUnit)){
+  if(!pendingJustMoved || pendingUnit.moveFixed || TYPE[pendingUnit.type].isTowed || trainMoveLocked(pendingUnit)){
+    // その場でコマンド欄を開いただけ (実際には動いていない) なら「動いた」印を外す。
+    // 外さないと、選び直したときに「動いたあとのユニット」としてその場から動けなくなる
+    var pu = pendingUnit;
+    if(!pendingJustMoved && pu.moved && !pu.moveFixed && !pu.deployedFromFacility && !trainOf(pu) && !unitUsedMove(pu)){
+      pu.moved = false;
+    }
     pendingUnit = null;
     setClear(attackableSet); setClear(unloadValidSet);
     unloadMode = false; unloadCargoIdx = -1; unloadStarted = false;
@@ -15041,6 +15047,14 @@ function onCellClick(x, y){
     if(canMoveHere){
       // 経路はカーソルを合わせた時点で表示済み (onCellHover)。クリックで即移動する
       movePreview = null;
+      // もう動いたユニットを選び直して自分のマスを押したとき: 移動前の位置を上書きせず、移動後として扱う
+      // (上書きすると「動いていない」ことになり、間接砲が移動後に撃てていた)
+      if(selected.moved && x === selected.x && y === selected.y){
+        var uFixed = selected; selected = null;
+        setClear(movableSet); setClear(attackableSet);
+        showCommandPanel(uFixed, unitUsedMove(uFixed));
+        return;
+      }
       preMoveX = selected.x; preMoveY = selected.y;
       var justMoved = !(x === selected.x && y === selected.y);
       if(willEmbark){
@@ -15176,6 +15190,15 @@ function onCellClick(x, y){
     movePreview = null;
     setClear(enemyThreatSet); setClear(enemyMoveSet); // 敵脅威範囲をクリア
     movableSet = computeMovable(clicked);
+    // 動いたあと待機していないユニット (別のユニットの出撃などで仮決定が置き去りになったもの) は、
+    // 選び直してもその場から動けない。以前は行動済みかどうかしか見ていなかったため、
+    // 空港に動かしたユニットが、修理スロットから出撃させたユニットを待機させたあとにもう一度動けた。
+    // 間にほかの行動を挟んでいるので、移動キャンセルで戻すこともできない (moveFixed)
+    if(clicked.moved){
+      movableSet = {};
+      setAdd(movableSet, clicked.x+','+clicked.y);
+      clicked.moveFixed = true;
+    }
     var atkPreview = {};
     for(var mk in movableSet){
       var mxy = mk.split(',');
