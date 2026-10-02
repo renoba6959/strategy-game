@@ -1986,6 +1986,13 @@ function isSupplyRouteFacility(x, y, owner, unit){
   return true;
 }
 
+// 備蓄を作る施設か (工場系・港系・空港系・弾薬工廠)。補給ルートの積み元はこれに限る。
+// 都市系・首都・補給拠点系は作らないので積み元にしない (降ろした物資の持ち帰りになる)
+function isProducingFacility(x, y){
+  var spec = facilityStockSpec(M[y][x]);
+  return !!(spec && (spec.fuelGain > 0 || spec.ammoGain > 0));
+}
+
 // 積む: 施設の備蓄 → 補給ユニットの在庫 (満載まで、上限なし=備蓄を空にしてもよい)
 // ただし「そのターンに降ろされたぶん」は積み出せない (下の supplyRouteUnload で記録する)。
 // 拠点を中継して補給車を並べると、1ターンのうちに物資が何リンクも先へ飛んでしまうため。
@@ -2539,6 +2546,18 @@ function runSupplyRoutes(owner){
          || (toIsFacility && !isSupplyRouteFacility(u.route.to.x, u.route.to.y, owner, u))){
         delete u.route; delete u.routeTarget;
         if(owner === 'P') setStatus('🚚 補給ルートの施設が失われたため、ルートを解除しました');
+        continue;
+      }
+      // 積み元が作らない拠点 (以前の版で設定できてしまったルート) なら解除する。
+      // 前線へ運んだ物資を別の拠点へ持ち出さないため
+      if(!isProducingFacility(u.route.from.x, u.route.from.y)){
+        var badFrom = TER[M[u.route.from.y][u.route.from.x]];
+        delete u.route; delete u.routeTarget;
+        if(owner === 'P'){
+          var msgR = '🚚 ' + TYPE[u.type].name + '(' + u.x + ',' + u.y + ') の補給ルートを解除しました（積み元の' + (badFrom ? badFrom.name : '拠点') + 'は備蓄を作らないため）';
+          setStatus(msgR);
+          if(window.plog) try{ plog(msgR); }catch(e){}
+        }
         continue;
       }
       if(u.routeTarget !== 'from' && u.routeTarget !== 'to'){
@@ -13171,6 +13190,11 @@ function handleRouteSetClick(x, y){
       setStatus(TYPE[u.type].cat === 'AIR'
         ? '🚚 空中給油機の積み元は自軍の空港系拠点のみです'
         : '🚚 積み元は自軍が占領している拠点を選んでください');
+      return true;
+    }
+    // 以前は作らない拠点 (都市・補給拠点系) も積み元に選べ、補給基地から補給基地へ物資を往復させていた
+    if(!isProducingFacility(x, y)){
+      setStatus('🚚 ' + TER[M[y][x]].name + 'は備蓄を作らないので積み元にできません。工場系・港系・空港系・弾薬工廠を選んでください（作らない拠点から積むときは「📦 積む」を使います）');
       return true;
     }
     routeSetMode.from = { x: x, y: y };
