@@ -2573,7 +2573,17 @@ function runSupplyRoutes(owner){
     if(TYPE[u.type].cat === 'AIR'){
       var nearPt = nearestAirRefuelPoint(u);
       // 補給できる場所にいて燃料が満タン近くでなければ、動かずに給油を待つ
-      if(nearPt && nearPt.dist <= 1 && supplyRouteWaitingForFuel(u)){
+      // 固定翼機 (空中給油機) は空港の真上でないと自分の燃料が入らないので、待つのは真上にいるときだけ。
+      // 以前は隣でも待っていたため、燃料が入らないまま毎ターン減り続けて身動きが取れなくなっていた
+      var refuelReach = isFixedWing(u) ? 0 : 1;
+      if(nearPt && nearPt.dist <= refuelReach && supplyRouteWaitingForFuel(u)){
+        u.moved = true; u.acted = true;
+        continue;
+      }
+      // 固定翼機が空港の隣で燃料が減っているなら、真上に移って給油を待つ (燃料が少ないまま飛び立たない)
+      if(isFixedWing(u) && nearPt && nearPt.dist === 1 && supplyRouteWaitingForFuel(u) && !unitAt(nearPt.x, nearPt.y)){
+        supplyRouteMove(u, nearPt.x, nearPt.y);
+        if(u.hp > 0 && manhattan(u.x, u.y, u.route.from.x, u.route.from.y) <= 1) supplyRouteTransfer(u, owner);
         u.moved = true; u.acted = true;
         continue;
       }
@@ -2588,6 +2598,9 @@ function runSupplyRoutes(owner){
     var goal = (u.routeTarget === 'from') ? u.route.from : u.route.to;
     // 積み元は必ず拠点。降ろし先は拠点なら隣に着け、駐留地点ならその上に立つ
     var goalIsFacility = (u.routeTarget === 'from') || (u.route.toKind !== 'point');
+    // 固定翼機は拠点の隣ではなく真上に着ける (空港の真上でないと自分の燃料が入らない)。
+    // 真上が塞がっていれば、supplyRouteMove が今までどおり隣に着ける
+    if(isFixedWing(u)) goalIsFacility = false;
     var didMove = supplyRouteMove(u, goal.x, goal.y, goalIsFacility);
     if(u.hp <= 0) continue;   // 移動先で奇襲を受けて撃破された
     supplyRouteTransfer(u, owner);
