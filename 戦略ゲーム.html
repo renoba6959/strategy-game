@@ -2254,10 +2254,10 @@ function supplyRouteMove(u, tx, ty, stopAdjacent){
     }
   }
   if(!best) return false;
-  var fromX = u.x, fromY = u.y;
-  u.preMoveX = fromX; u.preMoveY = fromY;
-  u.x = best.x; u.y = best.y;
-  consumeFuelForMove(u, fromX, fromY);
+  // 普通の移動と同じく、経路の途中で隠れた伏兵の隣に来たらそこで止まり、奇襲を受ける。
+  // 以前は選んだマスへ直接置き換えていたため、補給車が隠れた敵の隣を素通りでき、
+  // AI の補給車が自軍の防衛線の中まで入り込んでいた (プレイヤーの補給ルートも同じだった)
+  executeMoveWithAmbushCheck(u, best.x, best.y);
   return true;
 }
 
@@ -2582,13 +2582,14 @@ function runSupplyRoutes(owner){
       if(backTo){
         supplyRouteMove(u, backTo.x, backTo.y);
         u.moved = true; u.acted = true;
-        continue;
+        continue;   // 奇襲で撃破されていても、ここで終わるので積み降ろしはしない
       }
     }
     var goal = (u.routeTarget === 'from') ? u.route.from : u.route.to;
     // 積み元は必ず拠点。降ろし先は拠点なら隣に着け、駐留地点ならその上に立つ
     var goalIsFacility = (u.routeTarget === 'from') || (u.route.toKind !== 'point');
     var didMove = supplyRouteMove(u, goal.x, goal.y, goalIsFacility);
+    if(u.hp <= 0) continue;   // 移動先で奇襲を受けて撃破された
     supplyRouteTransfer(u, owner);
     // 目的地に近づけないターンを数える (敵や味方に塞がれて詰まったルートを検出する)
     if(didMove || manhattan(u.x, u.y, goal.x, goal.y) <= 1) u.routeStuck = 0;
@@ -2596,6 +2597,7 @@ function runSupplyRoutes(owner){
     u.moved = true;
     u.acted = true;
   }
+  units = units.filter(function(uu){ return uu.hp > 0; });   // 奇襲で撃破された補給ユニットを盤面から外す
 }
 
 // 収容ユニットの取り出し補給を、施設の備蓄から払う (段階2)
@@ -10635,6 +10637,13 @@ function aiTurn(){
     }
     if(window.AI_DEBUG){ try{ console.log('[AI '+aiFaction+'] unit='+TYPE[u.type].name+' @('+u.x+','+u.y+') hp='+u.hp+' fuel='+u.fuel+' acted='+u.acted); }catch(e){} }
     // 補給ユニット (補給車・給油艦・空中給油機): 補給対象の近くに移動
+    // 補給ルートで動いた補給ユニットは、このターンはもう動かさない。
+    // 以前はターンの始まりにルートで動いたあと、ここでもう一度動いていた (1ターンに2回)。
+    // 2回目は補給の要る味方を追って前へ出るので、少しずつ敵の陣地へ入り込んでいた
+    if(TYPE[u.type].isSupply && u.route && u.acted){
+      if(window.AI_DEBUG) try{ console.log('  → [supply] 補給ルートで行動済み'); }catch(e){}
+      step(); return;
+    }
     if(TYPE[u.type].isSupply){
       if(window.AI_DEBUG) try{ console.log('  → [supply path]'); }catch(e){}
       if(aiSupplyAction(u, aiFaction)){
