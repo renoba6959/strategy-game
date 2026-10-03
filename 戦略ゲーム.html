@@ -2822,8 +2822,7 @@ function getSupplySource(unit){
   //    弾薬補給が丸ごと無視されてしまうため)。同種が複数あるときは在庫が残っている方を優先。
   //    補給ユニットの補給範囲は既定1マス (隣接)。TYPE の supplyRange で広げられる。
   //    補給貨車だけ2マス: 線路から降りられず相手に近寄れないため、その見返り。
-  var fuelAny = null, fuelStocked = null;
-  var ammoAny = null, ammoStocked = null;
+  var fuelStocked = null, ammoStocked = null;
   for(var i=0; i<units.length; i++){
     var n = units[i];
     if(n.id === unit.id) continue;
@@ -2839,17 +2838,21 @@ function getSupplySource(unit){
     // 旧仕様 (supplyFuel未定義) は supplyAmmo の真偽から推定: supplyAmmo=true なら両方、false なら燃料のみ
     var canFuel = (typeof nt.supplyFuel === 'boolean') ? nt.supplyFuel : true;
     var canAmmo = !!nt.supplyAmmo;
+    // 在庫が残っている補給ユニットのうち、いちばん多いものを使う。
+    // 在庫が空の補給ユニットは補給元にしない。以前は在庫のある相手が居ないと空の補給車を
+    // 選んでいて、補給率が施設より高い扱いのため、在庫のある施設の範囲にいても空の補給車から
+    // 0 を受け取って終わっていた。在庫のある補給車が複数あっても、最初に見つけた1台だった
     if(canFuel){
-      if(!fuelAny) fuelAny = n;
-      if(!fuelStocked && _supplyStockLeft(n, 'fuel') > 0) fuelStocked = n;
+      var leftF = _supplyStockLeft(n, 'fuel');
+      if(leftF > 0 && (!fuelStocked || leftF > _supplyStockLeft(fuelStocked, 'fuel'))) fuelStocked = n;
     }
     if(canAmmo){
-      if(!ammoAny) ammoAny = n;
-      if(!ammoStocked && _supplyStockLeft(n, 'ammo') > 0) ammoStocked = n;
+      var leftA = _supplyStockLeft(n, 'ammo');
+      if(leftA > 0 && (!ammoStocked || leftA > _supplyStockLeft(ammoStocked, 'ammo'))) ammoStocked = n;
     }
   }
-  var uFuel = fuelStocked || fuelAny;
-  var uAmmo = ammoStocked || ammoAny;
+  var uFuel = fuelStocked;
+  var uAmmo = ammoStocked;
 
   // === D. 燃料・弾薬それぞれについて、補給量の多い源を採用する ===
   //    同率なら 施設 > 空母 > 補給ユニット の順 (施設は在庫を消費しないため)
