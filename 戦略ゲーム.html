@@ -8033,6 +8033,23 @@ function aiPickUpgradeTarget(ter, aiFaction){
   if(seaCount * 2 >= landCount && ter.upgradeTo.indexOf('WHEEL_FACTORY') >= 0){
     return 'WHEEL_FACTORY';
   }
+  // 川のあるマップでは、装輪系と戦車系を 1:1 にする (少ないほうを選ぶ。同数なら装輪系)。
+  // 以前は艦船の数だけで決めていて、海の無いマップでは必ず戦車系になり、
+  // 川を渡れる水陸両用戦車 (装輪系でしか作れない) を AI が一度も作れなかった
+  if(_aiMapInfo().hasRiver && ter.upgradeTo.indexOf('WHEEL_FACTORY') >= 0 && ter.upgradeTo.indexOf('TRACK_FACTORY') >= 0){
+    var WHEEL_LINE = { WHEEL_FACTORY:true, WHEEL_ARSENAL:true, WHEEL_WORKS:true };
+    var TRACK_LINE = { TRACK_FACTORY:true, TRACK_ARSENAL:true, TRACK_WORKS:true };
+    var nWheel = 0, nTrack = 0;
+    for(var fk in captures){
+      var fc = captures[fk];
+      if(fc.owner !== aiFaction) continue;
+      var fxy = fk.split(',');
+      var fKey = (fc.upgrading && fc.upgrading.target) ? fc.upgrading.target : M[parseInt(fxy[1])][parseInt(fxy[0])];
+      if(WHEEL_LINE[fKey]) nWheel++;
+      else if(TRACK_LINE[fKey]) nTrack++;
+    }
+    return (nWheel <= nTrack) ? 'WHEEL_FACTORY' : 'TRACK_FACTORY';
+  }
   // それ以外は戦車工廠 (重戦車・駆逐戦車などの強力なユニット)
   if(ter.upgradeTo.indexOf('TRACK_FACTORY') >= 0){
     return 'TRACK_FACTORY';
@@ -17665,6 +17682,7 @@ function renderAITab(){
   html += '<li>既にアップグレード中の施設は除外</li>';
   html += '<li>upgradeTo (アップグレード先) を持つ施設のみ</li>';
   html += '<li><b>レベル均等化:</b> 低レベル施設を優先 (Lv1 → Lv2 → Lv3)</li>';
+  html += '<li><b>工場の分かれ道 (装輪工場 / 戦車工場):</b> 艦船が陸のユニットの半分以上なら装輪工場。<b>川のあるマップでは装輪系と戦車系を 1:1</b> にする (持っている数の少ないほう、同数なら装輪系。アップグレード中のものも数える)。それ以外は戦車工場</li>';
   html += '</ul>';
   html += '</div>';
 
