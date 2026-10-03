@@ -2823,6 +2823,7 @@ function getSupplySource(unit){
   //    補給ユニットの補給範囲は既定1マス (隣接)。TYPE の supplyRange で広げられる。
   //    補給貨車だけ2マス: 線路から降りられず相手に近寄れないため、その見返り。
   var fuelStocked = null, ammoStocked = null;
+  var fuelUnits = [], ammoUnits = [];   // 在庫のある補給ユニットすべて (1か所で足りないときに続けて受け取る)
   for(var i=0; i<units.length; i++){
     var n = units[i];
     if(n.id === unit.id) continue;
@@ -2842,6 +2843,8 @@ function getSupplySource(unit){
     // 在庫が空の補給ユニットは補給元にしない。以前は在庫のある相手が居ないと空の補給車を
     // 選んでいて、補給率が施設より高い扱いのため、在庫のある施設の範囲にいても空の補給車から
     // 0 を受け取って終わっていた。在庫のある補給車が複数あっても、最初に見つけた1台だった
+    if(canFuel && typeof nt.supplyFuelMax === 'number' && _supplyStockLeft(n, 'fuel') > 0) fuelUnits.push(n);
+    if(canAmmo && typeof nt.supplyAmmoMax === 'number' && _supplyStockLeft(n, 'ammo') > 0) ammoUnits.push(n);
     if(canFuel){
       var leftF = _supplyStockLeft(n, 'fuel');
       if(leftF > 0 && (!fuelStocked || leftF > _supplyStockLeft(fuelStocked, 'fuel'))) fuelStocked = n;
@@ -2887,8 +2890,39 @@ function getSupplySource(unit){
     fuelFromUnit: fuelFromUnit, ammoFromUnit: ammoFromUnit,
     fuelFacility: fuelFacility, ammoFacility: ammoFacility,
     facilities: facAll,
+    fuelUnits: fuelUnits, ammoUnits: ammoUnits,
     isFacility: (!fuelFromUnit && !ammoFromUnit)
   };
+}
+
+// 1か所目 (src の主な補給元) で足りなかったぶんを受け取る、ほかの補給元の並び。
+// 補給率の高い順。同じ率なら施設を先にする (補給車が運んできた物資はなるべく残す)。補給車は在庫の多い順
+function _supplyExtraSources(src, kind){
+  var list = [];
+  var primUnit = (kind === 'fuel') ? src.fuelFromUnit : src.ammoFromUnit;
+  var primFac = (kind === 'fuel') ? src.fuelFacility : src.ammoFacility;
+  var us = (kind === 'fuel') ? (src.fuelUnits || []) : (src.ammoUnits || []);
+  for(var i=0; i<us.length; i++){
+    if(primUnit && us[i].id === primUnit.id) continue;
+    if(_supplyStockLeft(us[i], kind) <= 0) continue;
+    list.push({ unit: us[i], rate: 1.0, isFac: 0, stock: _supplyStockLeft(us[i], kind), name: TYPE[us[i].type].name });
+  }
+  var fs = src.facilities || [];
+  for(var j=0; j<fs.length; j++){
+    var f = fs[j];
+    if(primFac && f.x === primFac.x && f.y === primFac.y) continue;
+    var cap = captures[f.x+','+f.y];
+    if(!cap) continue;
+    var st = facilityStock(cap, M[f.y][f.x]);
+    if(!st.spec || ((kind === 'fuel') ? st.fuel : st.ammo) <= 0) continue;
+    list.push({ x: f.x, y: f.y, rate: f.rate, isFac: 1, stock: 0, name: (TER[M[f.y][f.x]] || {}).name || '拠点' });
+  }
+  list.sort(function(a, b){
+    if(a.rate !== b.rate) return b.rate - a.rate;
+    if(a.isFac !== b.isFac) return b.isFac - a.isFac;
+    return b.stock - a.stock;
+  });
+  return list;
 }
 
 // 補給ユニット n の残り在庫を返す (kind: 'fuel' / 'ammo')
@@ -5536,13 +5570,64 @@ function applyTurnStart(owner){
         didSupply = true;
       }
     }
+    // 1か所で足りなければ、範囲内のほかの補給元からも続けて受け取る。
+    // 補給拠点系は遠いほど率が下がるので、近くに補給車がいればそこからも受け取れる
+    var extraNames = [];
+    if(needFuel && src.fuel){
+      var fMaxX = t.fuelMax || 99;
+      var fSrcs = _supplyExtraSources(src, 'fuel');
+      for(var fxi=0; fxi<fSrcs.length; fxi++){
+        var fCur = (u.fuel !== undefined) ? u.fuel : fMaxX;
+        var fLack = fMaxX - fCur;
+        if(fLack <= 0) break;
+        var fs = fSrcs[fxi], fGot = 0;
+        if(fs.unit){
+          fGot = Math.min(fLack, fs.unit.supplyFuelCount);
+          fs.unit.supplyFuelCount -= fGot;
+        } else {
+          fGot = takeFacilityStock({ x: fs.x, y: fs.y }, 'fuel', Math.min(fLack, Math.ceil(fMaxX * fs.rate)));
+        }
+        if(fGot > 0){ u.fuel = fCur + fGot; didSupply = true; if(extraNames.indexOf(fs.name) < 0) extraNames.push(fs.name); }
+      }
+    }
+    if(needAmmo && src.ammo && u.ammo){
+      var aSrcs = _supplyExtraSources(src, 'ammo');
+      for(var axi=0; axi<aSrcs.length; axi++){
+        var as = aSrcs[axi], aGotAll = 0;
+        var aCounter = as.unit ? as.unit.supplyAmmoCount : 0;
+        for(var wj=0; wj<t.weapons.length; wj++){
+          var wx = t.weapons[wj];
+          if(wx.infiniteAmmo) continue;
+          var mx = weaponAmmoMax(u, wx);
+          var cx = (u.ammo[wj] !== undefined && u.ammo[wj] !== -1) ? u.ammo[wj] : mx;
+          if(cx >= mx) continue;
+          var ag = 0;
+          if(as.unit){ ag = Math.min(mx - cx, aCounter); aCounter -= ag; }
+          else ag = takeFacilityStock({ x: as.x, y: as.y }, 'ammo', Math.min(mx - cx, Math.ceil(mx * as.rate)));
+          if(ag > 0){ u.ammo[wj] = cx + ag; aGotAll += ag; }
+        }
+        if(as.unit) as.unit.supplyAmmoCount = aCounter;
+        if(aGotAll > 0){ didSupply = true; if(extraNames.indexOf(as.name) < 0) extraNames.push(as.name); }
+      }
+    }
+    if(extraNames.length > 0){
+      // 受け取ったあとで、まだ足りないかを見直す
+      partial = false;
+      if(src.fuel && u.fuel !== undefined && u.fuel < (t.fuelMax || 99)) partial = true;
+      if(src.ammo && u.ammo){
+        for(var wk=0; wk<t.weapons.length; wk++){
+          if(t.weapons[wk].infiniteAmmo) continue;
+          if(u.ammo[wk] < weaponAmmoMax(u, t.weapons[wk])){ partial = true; break; }
+        }
+      }
+    }
     if(didSupply){
       // ラベル: 燃料のみ=(燃)、弾薬のみ=(弾)、部分補給=(部分)、両方=無印
       var label = '';
       if(src.fuel && !src.ammo) label = '(燃)';
       else if(!src.fuel && src.ammo) label = partial ? '(弾/部分)' : '(弾)';
       else if(partial) label = '(部分)';
-      supplied.push(TYPE[u.type].name + label + '←' + src.name);
+      supplied.push(TYPE[u.type].name + label + '←' + src.name + (extraNames.length > 0 ? '＋' + extraNames.join('＋') : ''));
     }
   }
   if(supplied.length > 0){
